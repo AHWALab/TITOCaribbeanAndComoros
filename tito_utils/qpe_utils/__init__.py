@@ -10,6 +10,9 @@ from .imerg_retrieve import (
 from .hsaf_retrieve import (
     get_new_hsaf_precip,
 )
+from .scampr_retrieve import (
+    get_new_scampr_precip,
+)
 
 __all__ = [
     'retrieve_imerg_files',
@@ -20,4 +23,5 @@ __all__ = [
     'processIMERG',
     'get_new_precip',
     'get_new_hsaf_precip',
+    'get_new_scampr_precip',
 ]

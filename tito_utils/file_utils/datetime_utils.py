@@ -1,7 +1,17 @@
 import datetime
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from datetime import timedelta
+
+
+def to_naive_utc(dt):
+    """Normalize a datetime to naive UTC for safe timezone-agnostic comparisons."""
+    try:
+        if getattr(dt, "tzinfo", None) is not None:
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+    except Exception:
+        return dt
 
 def get_geotiff_datetime(geotiff_path):
     """Funtion that extracts a datetime object corresponding to a Geotiff's timestamp

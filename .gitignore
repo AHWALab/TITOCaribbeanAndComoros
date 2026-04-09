@@ -30,3 +30,16 @@ Thumbs.db
 *.tmp
 *.log
 temp/
+
+# Raster/binary data files — never commit these
+*.tif
+*.tiff
+*.aux.xml
+
+# Runtime data folders (precip downloads, EF5 staging, model states, outputs)
+# These are populated at run-time and can be very large.
+precip/
+precipEF5/
+qpf_store/
+states/
+outputs/

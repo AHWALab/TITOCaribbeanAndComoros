@@ -1,8 +1,9 @@
 import os            
 import re
 import shutil        
+import glob
 from datetime import datetime, timedelta, timezone  
-from tito_utils.file_utils.datetime_utils import get_geotiff_datetime
+from tito_utils.file_utils.datetime_utils import get_geotiff_datetime, to_naive_utc
 
 
 def _get_hsaf_datetime(filename):
@@ -11,6 +12,70 @@ def _get_hsaf_datetime(filename):
     if m:
         return datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M")
     return None
+
+
+def _get_scampr_datetime(filename):
+    """Extract datetime from a SCaMPR filename like scampr.qpe.YYYYMMDDHHMM.mmhInst.tif."""
+    m = re.match(r"scampr\.qpe\.(\d{12})\.mmhInst\.tif$", filename)
+    if m:
+        return datetime.strptime(m.group(1), "%Y%m%d%H%M")
+    return None
+
+
+def _to_naive_utc(dt):
+    """Normalize datetime to naive UTC for robust comparisons."""
+    return to_naive_utc(dt)
+
+
+def cleanup_nowcast_qpe(current_datetime, precipFolder, latency_hours=4):
+    """Delete synthetic IMERG nowcast/duplicated files generated to bridge latency.
+
+    Files with timestamps newer than current_datetime - latency_hours are
+    considered temporary nowcast/duplicated products and are removed.
+    This includes both imerg.qpe.* and imerg.qpf.* products.
+    """
+    removed = 0
+    current_naive_utc = _to_naive_utc(current_datetime)
+    latency_threshold = current_naive_utc - timedelta(hours=latency_hours)
+
+    try:
+        for fname in os.listdir(precipFolder):
+            if not fname.endswith(".tif"):
+                continue
+            if not (fname.startswith("imerg.qpe.") or fname.startswith("imerg.qpf.")):
+                continue
+
+            fpath = os.path.join(precipFolder, fname)
+            try:
+                geotiff_datetime = get_geotiff_datetime(fpath)
+                if geotiff_datetime > latency_threshold:
+                    os.remove(fpath)
+                    removed += 1
+            except Exception as e:
+                print(f"Error processing nowcast/duplicate IMERG file {fname}: {e}")
+    except Exception as e:
+        print(f"General error in cleanup_nowcast_qpe function: {e}")
+
+    return removed
+
+
+def cleanup_staged_precip_folders(staging_folders):
+    """Remove staged .tif files from EF5 precip folders.
+
+    This keeps per-region/shared staging folders clean between runs.
+    """
+    removed = 0
+    for folder in staging_folders:
+        try:
+            for tif_path in glob.glob(os.path.join(folder, "*.tif")):
+                try:
+                    os.remove(tif_path)
+                    removed += 1
+                except Exception as e:
+                    print(f"Error deleting staged precip file {tif_path}: {e}")
+        except Exception as e:
+            print(f"Error cleaning staged precip folder {folder}: {e}")
+    return removed
 
 def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
     """Function that cleans up the precip folder for the current EF5 run
@@ -21,17 +86,6 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
         precipFolder {str} -- path to the geotiff precipitation folder
         qpf_store_path {str} -- path to the folder where QPF files are stored
     """
-    # Normalize timezone handling: compare naive UTC datetimes to avoid
-    # "can't compare offset-naive and offset-aware datetimes" errors.
-    def _to_naive_utc(dt):
-        try:
-            if getattr(dt, "tzinfo", None) is not None:
-                return dt.astimezone(timezone.utc).replace(tzinfo=None)
-            return dt
-        except Exception:
-            # If anything unexpected, fall back to original value
-            return dt
-
     current_naive_utc = _to_naive_utc(current_datetime)
 
     qpes = []
@@ -105,6 +159,22 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
                         print(f"    Deleted old HSAF file: {fname}")
                     except Exception as e:
                         print(f"Error deleting HSAF file {fname}: {e}")
+
+        # --- SCaMPR file cleanup (scampr.qpe.* in precipFolder and _scampr_raw/) ---
+        scampr_raw_dir = os.path.join(precipFolder, "_scampr_raw")
+        for search_dir in [precipFolder, scampr_raw_dir]:
+            if not os.path.isdir(search_dir):
+                continue
+            for fname in os.listdir(search_dir):
+                if not fname.startswith("scampr.qpe.") or not fname.endswith(".tif"):
+                    continue
+                fdt = _get_scampr_datetime(fname)
+                if fdt is not None and fdt < older_QPE:
+                    try:
+                        os.remove(os.path.join(search_dir, fname))
+                        print(f"    Deleted old SCaMPR file: {fname}")
+                    except Exception as e:
+                        print(f"Error deleting SCaMPR file {fname}: {e}")
 
     except Exception as e:
         print(f"General error in cleanup_precip function: {e}")

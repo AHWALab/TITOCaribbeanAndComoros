@@ -14,7 +14,8 @@ import numpy as np
 import osgeo.gdal as gdal
 from osgeo.gdal import gdalconst
 from osgeo.gdalconst import GA_ReadOnly
-from tito_utils.file_utils.datetime_utils import extract_timestamp, extract_datetime_from_filename
+from tito_utils.file_utils.datetime_utils import extract_timestamp, extract_datetime_from_filename, to_naive_utc
+
 
 def retrieve_imerg_files(url, email_gpm, HindCastMode, date):
     if HindCastMode:
@@ -167,6 +168,7 @@ def get_new_precip(current_timestamp, ppt_server_path, precipFolder, email, Hind
     """
     #Look for the most recent file in precip folder
     #Obtainign the latest time step in the folder
+    current_timestamp = to_naive_utc(current_timestamp)
     files_folder = os.listdir(precipFolder)
     tif_files = [f for f in files_folder if "qpe" in f]
     
@@ -193,7 +195,7 @@ def get_new_precip(current_timestamp, ppt_server_path, precipFolder, email, Hind
                 for date in missing_dates:
                     #Verifying if missing dates are on the GPM server.
                     server_files = retrieve_imerg_files(ppt_server_path, email, HindCastMode, date)
-                    timestamps = [extract_timestamp(file) for file in server_files]
+                    timestamps = [to_naive_utc(extract_timestamp(file)) for file in server_files]
                     if date in timestamps:
                         print("    Downloading the last file of precip data")
                         #downloading the file 
@@ -233,7 +235,7 @@ def get_new_precip(current_timestamp, ppt_server_path, precipFolder, email, Hind
                 for date in missing_dates: 
                     #retrieven file names from GPM server
                     server_files = retrieve_imerg_files(ppt_server_path, email, HindCastMode, date)    
-                    timestamps = [extract_timestamp(file) for file in server_files]
+                    timestamps = [to_naive_utc(extract_timestamp(file)) for file in server_files]
                     
                     #Looking for timestaps missing in imerg
                     if date not in timestamps:
@@ -275,7 +277,7 @@ def get_new_precip(current_timestamp, ppt_server_path, precipFolder, email, Hind
             next_timestamp += timedelta(minutes=30)
             
             for date in missing_dates:     
-                timestamps = [extract_timestamp(file) for file in server_files]
+                timestamps = [to_naive_utc(extract_timestamp(file)) for file in server_files]
                 
                 if date not in timestamps:
                     print(f"    File {date} is missing")
@@ -310,3 +312,4 @@ def get_new_precip(current_timestamp, ppt_server_path, precipFolder, email, Hind
             os.remove(tif_file)
     except:
         print(' ')
+

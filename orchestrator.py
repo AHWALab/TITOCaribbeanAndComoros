@@ -23,14 +23,16 @@ import glob
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
+import threading
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor, as_completed as _as_completed
 import numpy as np
 import re
 import subprocess
 import sys
-from tito_utils.file_utils import cleanup_precip, newline
-from tito_utils.qpe_utils import get_new_precip, get_new_hsaf_precip
+from tito_utils.file_utils import cleanup_precip, cleanup_nowcast_qpe, cleanup_staged_precip_folders, newline
+from tito_utils.qpe_utils import get_new_precip, get_new_hsaf_precip, get_new_scampr_precip
 from tito_utils.qpf_utils import run_convlstm, download_GFS, GFS_searcher, WRF_searcher 
-from tito_utils.ef5 import prepare_ef5, run_ef5_simulation
+from tito_utils.ef5 import prepare_ef5, run_ef5_simulations_parallel
 print(">>> Modules imported")
 
 """
@@ -53,7 +55,7 @@ def main(args):
     # Read the configuration file from command line argument
     # Usage: python orchestrator.py <configuration_file.py>
     import importlib
-    config_module_name = os.path.splitext(os.path.basename(args[1]))[0] if len(args) > 1 else 'westafrica1km_config'
+    config_module_name = os.path.splitext(os.path.basename(args[1]))[0] if len(args) > 1 else 'Caribbean_Comoros_config'
     config_file = importlib.import_module(config_module_name)
     print(">>> Config file loaded")
 
@@ -65,15 +67,27 @@ def main(args):
     xmax = config_file.xmax
     ymax = config_file.ymax
     systemModel = config_file.systemModel
+    model_resolution = getattr(config_file, "model_resolution", "90m")
+    regions_to_run = getattr(config_file, "regions_to_run", [subdomain])
+    if isinstance(regions_to_run, str):
+        regions_to_run = [regions_to_run]
+    regions_to_run = [str(region).strip() for region in regions_to_run if str(region).strip()]
+    if not regions_to_run:
+        raise ValueError("No regions were configured to run. Set regions_to_run in the config.")
     systemName = config_file.systemName
     systemTimestep = config_file.systemTimestep
     ef5Path = config_file.ef5Path
-    precipFolder = config_file.precipFolder
+    precipFolder = getattr(config_file, "precipFolder", "precip/")
+    imerg_precip_root = getattr(config_file, "imerg_precip_folder", precipFolder)
+    hsaf_precip_root = getattr(config_file, "hsaf_precip_folder", precipFolder)
     statesPath = config_file.statesPath
     precipEF5Folder = config_file.precipEF5Folder
     modelStates = config_file.modelStates
     templatePath = config_file.templatePath
     template = config_file.templates
+    region_template_map = getattr(config_file, "region_template_map", {})
+    basicPath = getattr(config_file, "basicPath", "basic/")
+    parametersPath = getattr(config_file, "parametersPath", "parameters/")
     nowcast_model_name = config_file.nowcast_model_name
     dataPath = config_file.dataPath
     qpf_store_path = config_file.qpf_store_path
@@ -82,6 +96,7 @@ def main(args):
     alert_recipients = config_file.alert_recipients
     HindCastMode = config_file.HindCastMode
     HindCastDate = config_file.HindCastDate
+    region_hindcast_dates = getattr(config_file, "region_hindcast_dates", {})
     LR_run = config_file.run_LR
     LR_TimeStep = config_file.LR_timestep
     GFS_archive_path = config_file.QPF_archive_path  # legacy fallback
@@ -92,177 +107,468 @@ def main(args):
     email_gpm = config_file.email_gpm
     server = config_file.server
     qpe_source = getattr(config_file, "qpe_source", "IMERG").strip().upper()
+    qpf_source_default = getattr(config_file, "qpf_source", "GFS").strip().upper()
+    region_forcing_map = getattr(config_file, "region_forcing_map", {})
     hsaf_ftp_user = getattr(config_file, "hsaf_ftp_user", "")
     hsaf_ftp_pass = getattr(config_file, "hsaf_ftp_pass", "")
     hsaf_latency_minutes = int(getattr(config_file, "hsaf_latency_minutes", 20))
+    scampr_precip_root = getattr(config_file, "scampr_precip_folder", "precip/scampr/")
+    scampr_latency_minutes = int(getattr(config_file, "scampr_latency_minutes", 20))
     smtp_config = {
         'smtp_server': config_file.smtp_server,
         'smtp_port': config_file.smtp_port,
         'account_address': config_file.account_address,
         'account_password': config_file.account_password,
         'alert_sender': config_file.alert_sender}
+
+    def _parse_datetime_utc(date_text, label):
+        try:
+            return datetime.strptime(str(date_text), "%Y-%m-%d %H:%M")
+        except Exception as exc:
+            raise ValueError(f"Invalid datetime for {label}: {date_text}. Expected format YYYY-MM-DD HH:MM") from exc
+
+    def _round_cycle_time(input_time):
+        if systemTimestep == 30:
+            minutes = int(np.floor(input_time.minute / 30.0) * 30)
+        elif systemTimestep == 60:
+            minutes = 0
+        else:
+            step = max(1, int(systemTimestep))
+            minutes = int(np.floor(input_time.minute / float(step)) * step)
+        return input_time.replace(minute=minutes, second=0, microsecond=0)
+
+    def _with_sep(path_value):
+        return os.path.join(path_value, "")
+
+    def _normalize_qpe_source(value, fallback):
+        candidate = str(value).strip().upper()
+        if candidate in {"IMERG", "HSAF", "SCAMPR"}:
+            return candidate
+        return fallback
+
+    def _normalize_qpf_source(value, fallback):
+        candidate = str(value).strip().upper()
+        if candidate in {"GFS", "WRF"}:
+            return candidate
+        return fallback
+
+    region_qpe_sources = {}
+    region_qpf_requested = {}
+    for region in regions_to_run:
+        region_cfg = {}
+        if isinstance(region_forcing_map, dict):
+            region_cfg = region_forcing_map.get(region, {})
+        if not isinstance(region_cfg, dict):
+            region_cfg = {}
+
+        region_qpe_sources[region] = _normalize_qpe_source(
+            region_cfg.get("qpe_source", region_cfg.get("qpe", qpe_source)),
+            qpe_source,
+        )
+        region_qpf_requested[region] = _normalize_qpf_source(
+            region_cfg.get("qpf_source", region_cfg.get("qpf", qpf_source_default)),
+            qpf_source_default,
+        )
+
+    requested_qpe_sources = set(region_qpe_sources.values())
+    imerg_needed = "IMERG" in requested_qpe_sources
     
     newline(2)
     
-    # Real-time mode or Hindcast mode
-    # Figure out the timing for running the current timestep
-    if HindCastMode == True:
-        currentTime = datetime.strptime(HindCastDate, "%Y-%m-%d %H:%M")
-    else:
-        currentTime = datetime.now(timezone.utc)
-    
-    # Round down the current minutess to the nearest 30min increment in the past (for 30 forecast)
-    if systemTimestep == 30:
-        minutes = int(np.floor(currentTime.minute / 30.0) * 30)
-    if systemTimestep == 60: #for 60 min forecast
-        minutes = 0 
-    # Use the rounded down minutes as the timestamp for the current time step
-    currentTime = currentTime.replace(minute=minutes, second=0, microsecond=0)
-    
-    if HindCastMode == True:
-        print(f"*** Starting hindcast run cycle at {currentTime.strftime('%Y-%m-%d_%H:%M')} UTC ***")
+    region_cycle_times = {}
+    if HindCastMode:
+        default_hindcast_time = _round_cycle_time(_parse_datetime_utc(HindCastDate, "HindCastDate"))
+        for region in regions_to_run:
+            region_time_text = default_hindcast_time.strftime("%Y-%m-%d %H:%M")
+            if isinstance(region_hindcast_dates, dict) and region in region_hindcast_dates:
+                region_time_text = region_hindcast_dates[region]
+            region_cycle_times[region] = _round_cycle_time(
+                _parse_datetime_utc(region_time_text, f"region_hindcast_dates[{region}]")
+            )
+        print("*** Starting hindcast run cycle (region-specific timestamps) ***")
+        for region in regions_to_run:
+            print(f"    {region}: {region_cycle_times[region].strftime('%Y-%m-%d_%H:%M')} UTC")
         newline(2)
     else:
-        print(f"*** Starting real-time run cycle at {currentTime.strftime('%Y-%m-%d_%H:%M')} UTC ***")
-        newline(2) 
-        
-    # Configure the system to run once every hour
-    # Start the simulation using QPEs from 4-6 hours ago
-    systemStartTime = currentTime - timedelta(hours=4.5) 
-    # Save states for the current run with the current time step's timestamp
-    systemStateEndTime = currentTime - timedelta(hours=4) #change to 4
-    # Run warm up using the last hour of data until the current time step
-    systemWarmEndTime = currentTime - timedelta(hours=4)
-    # Only check for states as far as we have QPs (6 hours)
-    failTime = currentTime - timedelta(hours=6)
-    
-    systemStartLRTime = datetime.strptime(config_file.StartLRtime,"%Y-%m-%d %H:%M")
-    EndLRTime = datetime.strptime(config_file.EndLRTime,"%Y-%m-%d %H:%M")
+        realtime_cycle_time = _round_cycle_time(datetime.now(timezone.utc))
+        for region in regions_to_run:
+            region_cycle_times[region] = realtime_cycle_time
+        print(f"*** Starting real-time run cycle at {realtime_cycle_time.strftime('%Y-%m-%d_%H:%M')} UTC ***")
+        newline(2)
 
-    if HindCastMode and LR_run:
-        # Hindcast LR: QPF window from config, then 6h dry run
-        systemEndTime = EndLRTime + timedelta(hours=6)
-    elif HindCastMode and not LR_run:
-        systemEndTime = currentTime + timedelta(hours=6)  # nowcast +2h then 4h dry
-    elif not HindCastMode and LR_run:
-        # Operational LR: QPF starts NOW, runs 24h, then 6h dry run
-        systemStartLRTime = currentTime
-        EndLRTime = currentTime + timedelta(hours=24)
-        systemEndTime = EndLRTime + timedelta(hours=6)
-    else:  # not HindCastMode and not LR_run
-        if qpe_source == "HSAF":
-            systemEndTime = currentTime  # HSAF ends at current time, no future data
+    if LR_run:
+        if HindCastMode:
+            hindcast_lr_hours = getattr(config_file, "hindcast_lr_duration_hours", None)
+            if hindcast_lr_hours is not None:
+                lr_duration = timedelta(hours=float(hindcast_lr_hours))
+            else:
+                start_lr = _parse_datetime_utc(config_file.StartLRtime, "StartLRtime")
+                end_lr = _parse_datetime_utc(config_file.EndLRTime, "EndLRTime")
+                lr_duration = end_lr - start_lr
+                if lr_duration.total_seconds() <= 0:
+                    raise ValueError("EndLRTime must be later than StartLRtime in hindcast mode.")
         else:
-            systemEndTime = currentTime + timedelta(hours=6)  # IMERG: nowcast +2h then 4h dry
-
-    # For LR or HSAF, state save and warm-end align with the QPE/QPF boundary (currentTime)
-    if LR_run or qpe_source == "HSAF":
-        systemStateEndTime = currentTime
-        systemWarmEndTime = currentTime
+            lr_duration = timedelta(hours=24)
+    else:
+        lr_duration = timedelta(0)
 
     # NOWCAST is used for IMERG to fill the 4-hour latency gap up to currentTime.
     # It must run even when LR is enabled so the QPE window is complete before QPF takes over.
-    # Only HSAF disables nowcast (HSAF delivers data up to currentTime without a gap).
-    if qpe_source == "HSAF":
+    # Disable NOWCAST only if no region needs IMERG.
+    if not imerg_needed:
         NOWCAST = False
-        
-    ###-------------------------- START ROUTINES --------------------------------
-    try:
-        # Clean up old QPE files from GeoTIFF archive (older than 6 hours)
-        # Keep latest QPFs
-        print("***_________Cleaning old QPE files from the precip folder_________***")
-        cleanup_precip(currentTime, precipFolder, qpf_store_path)
-        newline(1)
-        print("***_________Precip folder cleaning completed_________***")
-        newline(2)
-        
-        # Get the necessary QPEs and QPFs for the current time step into the GeoTIFF precip folder store whether there's a QPE gap or the QPEs for the current time step is missing
-        if qpe_source == "HSAF":
-            print("***_________Retrieving HSAF files_________***")
-            if not hsaf_ftp_user or not hsaf_ftp_pass:
-                raise ValueError("HSAF selected but hsaf_ftp_user/hsaf_ftp_pass are missing in config.")
-            get_new_hsaf_precip(
-                current_timestamp=currentTime,
-                precipFolder=precipFolder,
-                ftp_user=hsaf_ftp_user,
-                ftp_pass=hsaf_ftp_pass,
-                xmin=xmin,
-                ymin=ymin,
-                xmax=xmax,
-                ymax=ymax,
-                latency_minutes=hsaf_latency_minutes,
-            )
-            newline(1)
-            print("***_________HSAF files are complete in precip folder_________***")
-        else:
-            print("***_________Retrieving IMERG files_________***")
-            get_new_precip(currentTime, server, precipFolder, email_gpm, HindCastMode, qpf_store_path, xmin, ymin, xmax, ymax)
-            newline(1)
-            print("***_________IMERG files are complete in precip folder_________***")
-        newline(1)
-        newline(2)
-    except:
-        print("There was a problem with the QPE routines. Ignoring errors and continuing with execution")
-        
-    ###-------------------------- START NOWCAST SECTION --------------------------------      
-    if NOWCAST:
-        try:
-            #if true, will create a nowcast filling the last 4 hours of imerge latency + 2hours of nowcast 
-            print(f"***_________Generating the nowcast from {currentTime - timedelta(hours=3.5)} to {currentTime + timedelta(hours=2.5)}_________***")
-            run_convlstm(currentTime, precipFolder, nowcast_model_name, xmin, ymin, xmax, ymax)
-            newline(1)
-            print("***_________Nowcast/ML files are complete in precip folder_________***")
-            newline(2)
-        except:
-            print("There was a problem with the ML routines. Ignoring errors and continuing with execution")
-            
-    ###-------------------------- START LR-QPF SECTION --------------------------------
-    qpf_source_lr = "GFS"  # default; updated below if WRF is used
-    if LR_run:
-        print(f"***_________Preparing QPF from {systemStartLRTime} to {EndLRTime}_________***")
-        try:
-            wrf_available = False
-            # 1. Try WRF first if an archive path is configured
-            if WRF_archive_path:
-                print("***_________Checking WRF files_________***")
-                wrf_available = WRF_searcher(
-                    WRF_archive_path, qpf_store_path, systemStartLRTime, EndLRTime,
-                    LR_TimeStep, WRF_var_name, WRF_filename_template
-                )
-            # 2. Fall back to GFS if WRF is unavailable or not configured
-            if wrf_available:
-                print("***_________WRF files converted and ready in qpf_store/wrf_data/_________***")
-                qpf_source_lr = "WRF"
-            else:
-                if WRF_archive_path:
-                    print("⚠️ WRF not available — falling back to GFS")
-                print("***_________Checking/Downloading GFS files_________***")
-                GFS_searcher(GFS_precip_path, qpf_store_path, systemStartLRTime, EndLRTime, xmin, xmax, ymin, ymax)
-                qpf_source_lr = "GFS"
-        except Exception as _lr_exc:
-            print(f"There was a problem with the QPF routines: {_lr_exc}. Continuing with execution.")
-        newline(1)
-        print("***_________All QPE + QPF files are ready in local folder_________***")
-    newline(2)
-    
+
     ###-------------------------- START EF5 SECTION --------------------------------
-    print("***_________Preparing the EF5 run_________***")
-    realSystemStartTime, controlFile = prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
-        systemStartTime, failTime, currentTime, systemName, SEND_ALERTS,
-        alert_recipients, smtp_config, tmpOutput, dataPath,
-        subdomain, systemModel, templatePath, template, systemStartLRTime,
-        systemWarmEndTime, systemStateEndTime, systemEndTime, LR_TimeStep, LR_run, qpe_source, qpf_source_lr)
-    
-    print(f"    Running simulation system for: {currentTime.strftime('%Y%m%d_%H%M')}")
-    print(f"    Simulations start at: {realSystemStartTime.strftime('%Y%m%d_%H%M')} and ends at: {systemEndTime.strftime('%Y%m%d_%H%M')} while state update ends at: {systemStateEndTime.strftime('%Y%m%d_%H%M')}")
-    
-    print("***_________EF5 is ready to be run_________***")
-    
-        # Use orchestrator's currentTime to timestamp outputs/logs
-    output_timestamp_str = currentTime.strftime("%Y%m%d.%H%M%S")
-    run_ef5_simulation(ef5Path, tmpOutput, controlFile, output_timestamp_str)
-    newline(2)
-    print("******** EF5 Outputs are ready!!! ********")
+    print("***_________Preparing EF5 runs for all configured regions_________***")
+
+    # ── Step 1: Pre-compute all region-specific config (pure computation, no I/O) ──────
+    region_configs = {}
+    for region in regions_to_run:
+        region_key = region.lower()
+        region_current_time = region_cycle_times[region]
+        output_timestamp_str = region_current_time.strftime("%Y%m%d.%H%M%S")
+        _qpe = region_qpe_sources[region]
+        _qpf_req = region_qpf_requested[region]
+
+        template_candidate = f"ef5_{region}_control_template.txt"
+        region_template = region_template_map.get(region, template_candidate)
+        region_template_path = os.path.join(templatePath, region_template)
+        if not os.path.isfile(region_template_path):
+            region_template = template
+            region_template_path = os.path.join(templatePath, region_template)
+        if not os.path.isfile(region_template_path):
+            raise FileNotFoundError(
+                f"Template not found for region {region}: expected {os.path.abspath(region_template_path)}"
+            )
+
+        precip_root = (
+            imerg_precip_root if _qpe == "IMERG"
+            else hsaf_precip_root if _qpe == "HSAF"
+            else scampr_precip_root
+        )
+        region_precip_folder = _with_sep(os.path.join(precip_root, region_key))
+        region_qpf_store_path = _with_sep(os.path.join(qpf_store_path, region_key))
+        region_gfs_archive_path = _with_sep(os.path.join(GFS_precip_path, region_key))
+        region_states_path = os.path.join(statesPath, region_key)
+        region_data_path = os.path.join(dataPath, region_key)
+        region_tmp_output = os.path.join(region_data_path, f"tmp_output_{systemModel}")
+
+        if LR_run:
+            r_start_lr = region_current_time
+            r_end_lr = r_start_lr + lr_duration
+            r_end_time = r_end_lr + timedelta(hours=6)
+            r_state_end = region_current_time
+            r_warm_end = region_current_time
+            r_qpf = _qpf_req        # will be resolved to GFS/WRF/none in the worker
+        else:
+            r_start_lr = region_current_time
+            r_end_lr = region_current_time
+            r_end_time = region_current_time
+            r_qpf = "none"
+            if _qpe in {"HSAF", "SCAMPR"}:
+                r_state_end = region_current_time
+                r_warm_end = region_current_time
+            else:
+                r_state_end = region_current_time - timedelta(hours=4)
+                r_warm_end = region_current_time - timedelta(hours=4)
+
+        region_configs[region] = {
+            "region_key":           region_key,
+            "region_current_time":  region_current_time,
+            "output_timestamp_str": output_timestamp_str,
+            "qpe_source":           _qpe,
+            "qpf_source":           r_qpf,          # may be overridden in worker
+            "qpf_requested":        _qpf_req,
+            "region_precip_folder": region_precip_folder,
+            "region_qpf_store_path": region_qpf_store_path,
+            "region_gfs_archive_path": region_gfs_archive_path,
+            "region_states_path":   region_states_path,
+            "region_data_path":     region_data_path,
+            "region_tmp_output":    region_tmp_output,
+            "region_template":      region_template,
+            "r_start_lr":           r_start_lr,
+            "r_end_lr":             r_end_lr,
+            "r_end_time":           r_end_time,
+            "r_state_end":          r_state_end,
+            "r_warm_end":           r_warm_end,
+            "r_system_start":       region_current_time - timedelta(hours=4.5),
+            "r_fail_time":          region_current_time - timedelta(hours=6),
+            "cycle_time_key":       region_current_time.strftime("%Y%m%d%H%M"),
+        }
+
+    # ── Step 2: GFS pre-download — once per unique cycle_time (deduplication) ──────────
+    # In real-time mode all regions share the same cycle_time_key → one download serves all.
+    # In hindcast mode with different per-region dates, each unique time downloads once.
+    # WRF-requested regions are skipped here (WRF resolution happens in the worker).
+    gfs_shared_data_folders = {}   # cycle_time_key → absolute path to gfs_data/ folder
+
+    def _copy_shared_gfs_to_region(shared_gfs_data: str, region_qpf_store: str) -> None:
+        from shutil import copy2
+        dest = os.path.join(region_qpf_store, "gfs_data")
+        makedirs(dest, exist_ok=True)
+        for src_f in glob.glob(os.path.join(shared_gfs_data, "*.tif")):
+            try:
+                copy2(src_f, dest)
+            except Exception as _ce:
+                print(f"    Warning: could not copy GFS file {os.path.basename(src_f)}: {_ce}")
+
+    if LR_run:
+        gfs_groups = {}   # cycle_time_key → lead region cfg (first seen)
+        for region in regions_to_run:
+            cfg = region_configs[region]
+            if cfg["qpf_requested"] == "GFS":
+                key = cfg["cycle_time_key"]
+                if key not in gfs_groups:
+                    gfs_groups[key] = cfg
+
+        for cycle_key, lead_cfg in gfs_groups.items():
+            shared_archive = _with_sep(os.path.join(GFS_precip_path, "_shared", cycle_key))
+            shared_store   = _with_sep(os.path.join(qpf_store_path,   "_shared", cycle_key))
+            makedirs(shared_archive, exist_ok=True)
+            makedirs(shared_store,   exist_ok=True)
+            num_regions_using = sum(
+                1 for r in regions_to_run
+                if region_configs[r]["cycle_time_key"] == cycle_key
+                and region_configs[r]["qpf_requested"] == "GFS"
+            )
+            print(f"***_________Downloading shared GFS for cycle {cycle_key} "
+                  f"(shared by {num_regions_using} region(s))_________***")
+            try:
+                GFS_searcher(
+                    shared_archive,
+                    shared_store,
+                    lead_cfg["r_start_lr"],
+                    lead_cfg["r_end_lr"],
+                    xmin, xmax, ymin, ymax,
+                )
+                gfs_shared_data_folders[cycle_key] = os.path.join(shared_store, "gfs_data")
+            except Exception as _gfs_pre_exc:
+                print(f"    Shared GFS download failed for {cycle_key}: {_gfs_pre_exc}. "
+                      f"Regions will attempt individual downloads.")
+
+    # ── Step 3: Parallel per-region forcing prep ─────────────────────────────────────
+    _lock = threading.Lock()
+    staged_precip_folders = set()
+    region_imerg_folders_used = []
+    ef5_jobs = []
+
+    def _prepare_one_region(region):
+        cfg = region_configs[region]
+        region_key          = cfg["region_key"]
+        region_current_time = cfg["region_current_time"]
+        output_timestamp_str = cfg["output_timestamp_str"]
+        local_qpe_source    = cfg["qpe_source"]
+        local_qpf_source    = cfg["qpf_source"]    # "none" when not LR_run
+        qpf_requested       = cfg["qpf_requested"]
+        region_precip_folder   = cfg["region_precip_folder"]
+        region_qpf_store_path  = cfg["region_qpf_store_path"]
+        region_gfs_archive_path = cfg["region_gfs_archive_path"]
+        region_states_path  = cfg["region_states_path"]
+        region_data_path    = cfg["region_data_path"]
+        region_tmp_output   = cfg["region_tmp_output"]
+        region_template     = cfg["region_template"]
+        r_start_lr   = cfg["r_start_lr"]
+        r_end_lr     = cfg["r_end_lr"]
+        r_end_time   = cfg["r_end_time"]
+        r_state_end  = cfg["r_state_end"]
+        r_warm_end   = cfg["r_warm_end"]
+        r_system_start = cfg["r_system_start"]
+        r_fail_time    = cfg["r_fail_time"]
+        cycle_time_key  = cfg["cycle_time_key"]
+
+        for dirpath in [region_precip_folder, region_qpf_store_path,
+                        region_gfs_archive_path, region_states_path, region_data_path]:
+            makedirs(dirpath, exist_ok=True)
+
+        print(f"***_________Preparing forcings for {region} at "
+              f"{region_current_time.strftime('%Y-%m-%d_%H:%M')} UTC_________***")
+
+        # ── QPE cleanup ────────────────────────────────────────────────────────────
+        try:
+            cleanup_precip(region_current_time, region_precip_folder, region_qpf_store_path)
+        except Exception as _ce:
+            print(f"    Warning: precip cleanup failed for {region}: {_ce}")
+
+        # ── QPE retrieval ──────────────────────────────────────────────────────────
+        if local_qpe_source == "HSAF":
+            try:
+                if not hsaf_ftp_user or not hsaf_ftp_pass:
+                    raise ValueError("HSAF selected but hsaf_ftp_user/hsaf_ftp_pass are missing in config.")
+                get_new_hsaf_precip(
+                    current_timestamp=region_current_time,
+                    precipFolder=region_precip_folder,
+                    ftp_user=hsaf_ftp_user,
+                    ftp_pass=hsaf_ftp_pass,
+                    xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
+                    latency_minutes=hsaf_latency_minutes,
+                )
+                print(f"    {region}: HSAF files are ready")
+            except Exception as _he:
+                print(f"    There was a problem with HSAF retrieval for {region}: {_he}. Continuing.")
+
+        elif local_qpe_source == "SCAMPR":
+            try:
+                get_new_scampr_precip(
+                    current_timestamp=region_current_time,
+                    precipFolder=region_precip_folder,
+                    xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
+                    latency_minutes=scampr_latency_minutes,
+                )
+                print(f"    {region}: SCaMPR files are ready")
+            except Exception as _se:
+                print(f"    There was a problem with SCaMPR retrieval for {region}: {_se}. Continuing.")
+
+        else:   # IMERG
+            try:
+                get_new_precip(
+                    region_current_time, server, region_precip_folder,
+                    email_gpm, HindCastMode, region_qpf_store_path,
+                    xmin, ymin, xmax, ymax,
+                )
+                print(f"    {region}: IMERG files are ready")
+            except Exception as _ie:
+                print(f"    There was a problem with IMERG retrieval for {region}: {_ie}. Continuing.")
+
+            if NOWCAST:
+                try:
+                    print(
+                        f"    {region}: generating nowcast from "
+                        f"{(region_current_time - timedelta(hours=3.5)).strftime('%Y-%m-%d_%H:%M')} to "
+                        f"{(region_current_time + timedelta(hours=2.5)).strftime('%Y-%m-%d_%H:%M')}"
+                    )
+                    run_convlstm(region_current_time, region_precip_folder,
+                                 nowcast_model_name, xmin, ymin, xmax, ymax)
+                    with _lock:
+                        region_imerg_folders_used.append((region_precip_folder, region_current_time))
+                except Exception as _ne:
+                    print(f"    There was a problem with the nowcast routine for {region}: {_ne}. Continuing.")
+
+        # ── QPF (LR) ───────────────────────────────────────────────────────────────
+        if LR_run:
+            if qpf_requested == "WRF":
+                wrf_ok = False
+                if WRF_archive_path:
+                    try:
+                        wrf_ok = WRF_searcher(
+                            WRF_archive_path, region_qpf_store_path,
+                            r_start_lr, r_end_lr,
+                            LR_TimeStep, WRF_var_name, WRF_filename_template,
+                        )
+                    except Exception as _we:
+                        print(f"    WRF processing failed for {region}: {_we}")
+                if wrf_ok:
+                    local_qpf_source = "WRF"
+                else:
+                    if WRF_archive_path:
+                        print(f"    {region}: WRF not available — falling back to GFS")
+                    local_qpf_source = "GFS"
+
+            if local_qpf_source == "GFS":
+                if cycle_time_key in gfs_shared_data_folders:
+                    # Reuse the already-downloaded shared GFS — just copy tifs to region store.
+                    _copy_shared_gfs_to_region(gfs_shared_data_folders[cycle_time_key],
+                                               region_qpf_store_path)
+                else:
+                    # Unique hindcast time or shared pre-download failed — download per-region.
+                    try:
+                        GFS_searcher(
+                            region_gfs_archive_path, region_qpf_store_path,
+                            r_start_lr, r_end_lr,
+                            xmin, xmax, ymin, ymax,
+                        )
+                    except Exception as _ge:
+                        print(f"    There was a problem with GFS routines for {region}: {_ge}. Continuing.")
+
+        # ── EF5 control file prep ──────────────────────────────────────────────────
+        forcing_folder = f"{local_qpe_source.lower()}_{local_qpf_source.lower()}"
+        region_precip_ef5_folder = os.path.join(precipEF5Folder, region_key, forcing_folder)
+        makedirs(region_precip_ef5_folder, exist_ok=True)
+
+        realSystemStartTime, controlFile, run_output_path = prepare_ef5(
+            region_precip_ef5_folder,
+            region_precip_folder,
+            _with_sep(region_states_path),
+            modelStates,
+            r_system_start,
+            r_fail_time,
+            region_current_time,
+            systemName,
+            SEND_ALERTS,
+            alert_recipients,
+            smtp_config,
+            _with_sep(region_tmp_output),
+            _with_sep(region_data_path),
+            region,
+            systemModel,
+            templatePath,
+            region_template,
+            r_start_lr,
+            r_warm_end,
+            r_state_end,
+            r_end_time,
+            LR_TimeStep,
+            LR_run,
+            region,
+            model_resolution,
+            basicPath,
+            parametersPath,
+            local_qpe_source,
+            local_qpf_source,
+            stage_precip=True,
+            output_timestamp_str=output_timestamp_str,
+            qpf_store_forcing_path=region_qpf_store_path,
+        )
+
+        print(
+            f"    Region {region} ({local_qpe_source}/{local_qpf_source}): "
+            f"start {realSystemStartTime.strftime('%Y%m%d_%H%M')} -> "
+            f"end {r_end_time.strftime('%Y%m%d_%H%M')}, "
+            f"control {controlFile}"
+        )
+
+        with _lock:
+            staged_precip_folders.add(region_precip_ef5_folder)
+            ef5_jobs.append({
+                "region":               region,
+                "ef5Path":              ef5Path,
+                "tmpOutput":            run_output_path + "/",
+                "controlFile":          controlFile,
+                "output_timestamp_str": output_timestamp_str,
+            })
+
+    try:
+        with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:
+            futures = {executor.submit(_prepare_one_region, r): r for r in regions_to_run}
+            for future in _as_completed(futures):
+                r = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f"    !!! Region {r} forcing prep raised an exception: {exc}")
+
+        if ef5_jobs:
+            print("***_________Running EF5 in parallel for all regions_________***")
+            run_ef5_simulations_parallel(ef5_jobs, max_workers=len(ef5_jobs))
+            newline(2)
+            print("******** EF5 Outputs are ready!!! ********")
+        else:
+            print("No EF5 jobs were prepared.")
+    finally:
+        if NOWCAST and imerg_needed and region_imerg_folders_used:
+            print("***_________Cleaning end-of-run IMERG nowcast/duplicated files_________***")
+            removed_nowcast_total = 0
+            cleaned_folders = set()
+            for folder_path, cycle_time in region_imerg_folders_used:
+                key = (folder_path, cycle_time.strftime("%Y%m%d%H%M"))
+                if key in cleaned_folders:
+                    continue
+                cleaned_folders.add(key)
+                removed_nowcast_total += cleanup_nowcast_qpe(cycle_time, folder_path)
+            print(f"    Removed {removed_nowcast_total} IMERG nowcast/duplicated files from region folders")
+        if staged_precip_folders:
+            print("***_________Cleaning staged precipEF5 folders_________***")
+            removed_staged = cleanup_staged_precip_folders(staged_precip_folders)
+            print(f"    Removed {removed_staged} staged precip files from precipEF5 folders")
              
 """
 Run the main() function when invoked as a script

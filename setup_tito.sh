@@ -3,7 +3,7 @@
 echo "Creating conda environment from tito_env.yml..."
 conda env create -f tito_env.yml 
 # Activate the conda environment
-conda activate tito_env
+conda activate tito_env2
 
 echo "Installing ML libraries..."
 cd Nowcast/nowcasting/

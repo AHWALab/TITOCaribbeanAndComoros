@@ -322,7 +322,7 @@ def main(args):
                     gfs_groups[key] = cfg
 
         for cycle_key, lead_cfg in gfs_groups.items():
-            shared_archive = _with_sep(os.path.join(GFS_precip_path, "_shared", cycle_key))
+            shared_archive = _with_sep(GFS_precip_path)
             shared_store   = _with_sep(os.path.join(qpf_store_path,   "_shared", cycle_key))
             makedirs(shared_archive, exist_ok=True)
             makedirs(shared_store,   exist_ok=True)

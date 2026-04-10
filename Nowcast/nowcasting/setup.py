@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -9,8 +9,5 @@ setup(name='servir',
       long_description=long_description,
       author="",
       author_email="",
-      packages=['servir', 'servir_data_utils', 'servir_nowcasting_examples'],
-      package_dir={'servir': '/',
-                   'servir_data_utils': '',
-                   'servir_nowcasting_examples':''},
+      packages=find_namespace_packages(),
       python_requires='>=3.12')

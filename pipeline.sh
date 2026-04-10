@@ -16,7 +16,7 @@ shopt -s nullglob
 
 WAIT_MINUTES=0   # cron offset (hh:07 via manage_cron.sh) is the primary data-arrival gate
 CONFIG="Caribbean_Comoros_config.py"
-CONDA_ENV="tito_env"
+CONDA_ENV="tito_env2"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$PROJECT_ROOT/outputs/logs"

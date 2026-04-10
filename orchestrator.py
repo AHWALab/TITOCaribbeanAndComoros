@@ -253,24 +253,26 @@ def main(args):
         region_data_path = os.path.join(dataPath, region_key)
         region_tmp_output = os.path.join(region_data_path, f"tmp_output_{systemModel}")
 
+        # IMERG has a 4-hour latency: EF5 can only simulate up to (cycle_time - 4h).
+        # State and warm-end timestamps must reflect this offset so the next cycle
+        # can locate the states written by the current run.
+        # SCaMPR and HSAF have no meaningful latency, so they use cycle_time directly.
+        _imerg_offset = timedelta(hours=4) if _qpe == "IMERG" else timedelta(0)
+
         if LR_run:
             r_start_lr = region_current_time
             r_end_lr = r_start_lr + lr_duration
             r_end_time = r_end_lr + timedelta(hours=6)
-            r_state_end = region_current_time
-            r_warm_end = region_current_time
+            r_state_end = region_current_time - _imerg_offset
+            r_warm_end = region_current_time - _imerg_offset
             r_qpf = _qpf_req        # will be resolved to GFS/WRF/none in the worker
         else:
             r_start_lr = region_current_time
             r_end_lr = region_current_time
             r_end_time = region_current_time
             r_qpf = "none"
-            if _qpe in {"HSAF", "SCAMPR"}:
-                r_state_end = region_current_time
-                r_warm_end = region_current_time
-            else:
-                r_state_end = region_current_time - timedelta(hours=4)
-                r_warm_end = region_current_time - timedelta(hours=4)
+            r_state_end = region_current_time - _imerg_offset
+            r_warm_end = region_current_time - _imerg_offset
 
         region_configs[region] = {
             "region_key":           region_key,
@@ -291,8 +293,10 @@ def main(args):
             "r_end_time":           r_end_time,
             "r_state_end":          r_state_end,
             "r_warm_end":           r_warm_end,
-            "r_system_start":       region_current_time - timedelta(hours=4.5),
-            "r_fail_time":          region_current_time - timedelta(hours=6),
+            # system_start: 30min earlier than the warm/state target so find_available_states
+            # has a small search window.  For IMERG this is already offset -4h via r_warm_end.
+            "r_system_start":       r_warm_end - timedelta(minutes=30),
+            "r_fail_time":          r_warm_end - timedelta(hours=6),
             "cycle_time_key":       region_current_time.strftime("%Y%m%d%H%M"),
         }
 

@@ -140,7 +140,8 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
 
         print(f"    Deleting all QPF files in store folder older than: {imerg_Latency}")
         qpf_stored_files = os.listdir(qpf_store_path)
-        qpf_stored_files = [f for f in qpf_stored_files if f.endswith('.tif')]        max_qpf = current_naive_utc - timedelta(hours=4)
+        qpf_stored_files = [f for f in qpf_stored_files if f.endswith('.tif')]
+        max_qpf = current_naive_utc - timedelta(hours=4)
         for qpf_stored in qpf_stored_files:
             try:
                 qpf_datetime = get_geotiff_datetime(qpf_store_path + qpf_stored)

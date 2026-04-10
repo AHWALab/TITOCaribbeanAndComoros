@@ -90,9 +90,14 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
 
     qpes = []
     qpfs = []
-    older_QPE = current_naive_utc - timedelta(hours=9.5)
+    # For hourly operational runs the simulation lookback window is 6 hours.
+    # Add 30 min of buffer so files at the exact boundary are never accidentally
+    # removed while EF5 may still be reading them.  This means each hourly cycle
+    # only removes the small batch of files (1-2 for IMERG, 6 for SCaMPR/HSAF)
+    # that just slipped off the back of the simulation window.
+    older_QPE = current_naive_utc - timedelta(hours=6, minutes=30)
     imerg_Latency = current_naive_utc - timedelta(hours=4)
-    
+
     try:
         # List all precip files
         precip_files = os.listdir(precipFolder)
@@ -104,7 +109,6 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
             elif "qpf" in file:
                 qpfs.append(file)
 
-        print("    Deleting all QPE files older than Fail Time: ", older_QPE)
         for qpe in qpes:
             try:
                 geotiff_datetime = get_geotiff_datetime(precipFolder + qpe)
@@ -113,7 +117,6 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
             except Exception as e:
                 print(f"Error processing QPE file {qpe}: {e}")
 
-        print("    Deleting all QPF files older than Current Time: ", current_naive_utc)
         print("    Copying all QPF files older than Current Time: ", current_naive_utc, " into qpf_store folder.")
         for qpf in qpfs:
             try:
@@ -124,7 +127,9 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
             except Exception as e:
                 print(f"Error processing QPF file {qpf}: {e}")
 
-        print(f"    Deleting all QPE files newer than Imerg Latency Time: {imerg_Latency} because it might be duplicated files")
+        # Remove duplicate/nowcast IMERG files that are newer than the latency boundary
+        # (cleanup_nowcast_qpe in the finally block also does this, but doing it here
+        # ensures the precip folder is clean before the new download starts).
         for qpedup in qpes:
             try:
                 geotiff_datetime = get_geotiff_datetime(precipFolder + qpedup)
@@ -135,8 +140,7 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
 
         print(f"    Deleting all QPF files in store folder older than: {imerg_Latency}")
         qpf_stored_files = os.listdir(qpf_store_path)
-        qpf_stored_files = [f for f in qpf_stored_files if f.endswith('.tif')]
-        max_qpf = current_naive_utc - timedelta(hours=4)
+        qpf_stored_files = [f for f in qpf_stored_files if f.endswith('.tif')]        max_qpf = current_naive_utc - timedelta(hours=4)
         for qpf_stored in qpf_stored_files:
             try:
                 qpf_datetime = get_geotiff_datetime(qpf_store_path + qpf_stored)

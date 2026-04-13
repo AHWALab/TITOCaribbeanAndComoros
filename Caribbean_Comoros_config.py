@@ -45,7 +45,7 @@ tmpOutput = dataPath + "tmp_output_" + systemModel + "/"
 qpe_source = "IMERG"
 
 # Default QPF source for LR control generation.
-# Options: "GFS" (default), "WRF"
+# Options: "GFS" (default), "WRF", "AROME", or a list e.g. ["GFS", "AROME"]
 qpf_source = "GFS"
 
 # Optional per-region forcing override.
@@ -60,11 +60,11 @@ qpf_source = "GFS"
 #     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
 # }
 region_forcing_map = {
-    "Antigua":   {"qpe_source": "SCAMPR", "qpf_source": "GFS"},  # Caribbean — SCaMPR
-    "Barbados":  {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
-    "Guatemala": {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
-    "Haiti":     {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
-    "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "GFS"},  # Africa — HSAF
+    "Antigua":   {"qpe_source": "SCAMPR", "qpf_source": ["GFS", "AROME"]},  # Caribbean — ANTIL domain
+    "Barbados":  {"qpe_source": "SCAMPR", "qpf_source": ["GFS", "AROME"]},
+    "Guatemala": {"qpe_source": "SCAMPR", "qpf_source": "GFS"},              # No AROME (outside domain)
+    "Haiti":     {"qpe_source": "SCAMPR", "qpf_source": ["GFS", "AROME"]},
+    "Comoros":   {"qpe_source": "HSAF",   "qpf_source": ["GFS", "AROME"]},  # Indian Ocean — INDIEN domain
 }
 
 # HSAF credentials/settings (required only when qpe_source == "HSAF")
@@ -129,6 +129,11 @@ WRF_filename_template = "PREC_d01_YYYY-MM-DD_HH_mm_SS.nc"  # WRF filename patter
 # GFS tifs are stored here persistently and reused across cycles.
 # The orchestrator writes to per-region subfolders under this root.
 GFS_precip_path = "precip/gfs/"                     # persistent GFS tif archive root
+
+# AROME configuration (used when qpf_source includes "AROME").
+# AROME tifs are stored per-region under this root as a cache.
+# Domain routing is automatic: ANTIL for Caribbean, INDIEN for Comoros.
+AROME_precip_path = "precip/arome/"                  # persistent AROME tif cache root
 
 # Email associated to GPM account
 email_gpm = 'vrobledodelgado@uiowa.edu'

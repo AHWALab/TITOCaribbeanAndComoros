@@ -31,7 +31,7 @@ import subprocess
 import sys
 from tito_utils.file_utils import cleanup_precip, cleanup_nowcast_qpe, cleanup_staged_precip_folders, newline
 from tito_utils.qpe_utils import get_new_precip, get_new_hsaf_precip, get_new_scampr_precip
-from tito_utils.qpf_utils import run_convlstm, download_GFS, GFS_searcher, WRF_searcher 
+from tito_utils.qpf_utils import run_convlstm, download_GFS, GFS_searcher, WRF_searcher, AROME_searcher, get_arome_domain_for_region 
 from tito_utils.ef5 import prepare_ef5, run_ef5_simulations_parallel
 print(">>> Modules imported")
 
@@ -104,6 +104,7 @@ def main(args):
     WRF_var_name = getattr(config_file, "WRF_var_name", "PREC_ACC_C")
     WRF_filename_template = getattr(config_file, "WRF_filename_template", "PREC_d01_YYYY-MM-DD_HH_mm_SS.nc")
     GFS_precip_path = getattr(config_file, "GFS_precip_path", GFS_archive_path)
+    AROME_precip_path = getattr(config_file, "AROME_precip_path", "precip/arome/")
     email_gpm = config_file.email_gpm
     server = config_file.server
     qpe_source = getattr(config_file, "qpe_source", "IMERG").strip().upper()
@@ -146,11 +147,28 @@ def main(args):
             return candidate
         return fallback
 
-    def _normalize_qpf_source(value, fallback):
+    _VALID_QPF_SOURCES = {"GFS", "WRF", "AROME"}
+
+    def _normalize_qpf_sources(value, fallback):
+        """Normalise QPF source(s) to a list. Accepts a string or a list/tuple.
+
+        Examples
+        --------
+        "GFS"            → ["GFS"]
+        ["GFS", "AROME"] → ["GFS", "AROME"]
+        "UNKNOWN"        → [fallback]
+        """
+        if isinstance(value, (list, tuple)):
+            result = []
+            for v in value:
+                c = str(v).strip().upper()
+                if c in _VALID_QPF_SOURCES:
+                    result.append(c)
+            return result if result else [fallback.upper()]
         candidate = str(value).strip().upper()
-        if candidate in {"GFS", "WRF"}:
-            return candidate
-        return fallback
+        if candidate in _VALID_QPF_SOURCES:
+            return [candidate]
+        return [fallback.upper()]
 
     region_qpe_sources = {}
     region_qpf_requested = {}
@@ -165,7 +183,9 @@ def main(args):
             region_cfg.get("qpe_source", region_cfg.get("qpe", qpe_source)),
             qpe_source,
         )
-        region_qpf_requested[region] = _normalize_qpf_source(
+        # qpf_source may now be a list (e.g. ["GFS", "AROME"]) — always stored as list
+        _default_qpf_list = _normalize_qpf_sources(qpf_source_default, qpf_source_default)
+        region_qpf_requested[region] = _normalize_qpf_sources(
             region_cfg.get("qpf_source", region_cfg.get("qpf", qpf_source_default)),
             qpf_source_default,
         )
@@ -249,6 +269,7 @@ def main(args):
         region_precip_folder = _with_sep(os.path.join(precip_root, region_key))
         region_qpf_store_path = _with_sep(os.path.join(qpf_store_path, region_key))
         region_gfs_archive_path = _with_sep(os.path.join(GFS_precip_path, region_key))
+        region_arome_archive_path = _with_sep(os.path.join(AROME_precip_path, region_key))
         region_states_path = os.path.join(statesPath, region_key)
         region_data_path = os.path.join(dataPath, region_key)
         region_tmp_output = os.path.join(region_data_path, f"tmp_output_{systemModel}")
@@ -265,12 +286,12 @@ def main(args):
             r_end_time = r_end_lr + timedelta(hours=6)
             r_state_end = region_current_time - _imerg_offset
             r_warm_end = region_current_time - _imerg_offset
-            r_qpf = _qpf_req        # will be resolved to GFS/WRF/none in the worker
+            r_qpf = _qpf_req        # list of QPF sources, resolved in the worker
         else:
             r_start_lr = region_current_time
             r_end_lr = region_current_time
             r_end_time = region_current_time
-            r_qpf = "none"
+            r_qpf = []              # no QPF in QPE-only mode
             r_state_end = region_current_time - _imerg_offset
             r_warm_end = region_current_time - _imerg_offset
 
@@ -279,11 +300,12 @@ def main(args):
             "region_current_time":  region_current_time,
             "output_timestamp_str": output_timestamp_str,
             "qpe_source":           _qpe,
-            "qpf_source":           r_qpf,          # may be overridden in worker
-            "qpf_requested":        _qpf_req,
+            "qpf_source":           r_qpf,          # list; may be empty for QPE-only
+            "qpf_requested":        _qpf_req,        # list (same as r_qpf when LR_run)
             "region_precip_folder": region_precip_folder,
             "region_qpf_store_path": region_qpf_store_path,
             "region_gfs_archive_path": region_gfs_archive_path,
+            "region_arome_archive_path": region_arome_archive_path,
             "region_states_path":   region_states_path,
             "region_data_path":     region_data_path,
             "region_tmp_output":    region_tmp_output,
@@ -320,7 +342,8 @@ def main(args):
         gfs_groups = {}   # cycle_time_key → lead region cfg (first seen)
         for region in regions_to_run:
             cfg = region_configs[region]
-            if cfg["qpf_requested"] == "GFS":
+            # Include GFS and WRF (WRF may fall back to GFS at runtime)
+            if any(s in cfg["qpf_requested"] for s in ("GFS", "WRF")):
                 key = cfg["cycle_time_key"]
                 if key not in gfs_groups:
                     gfs_groups[key] = cfg
@@ -333,7 +356,7 @@ def main(args):
             num_regions_using = sum(
                 1 for r in regions_to_run
                 if region_configs[r]["cycle_time_key"] == cycle_key
-                and region_configs[r]["qpf_requested"] == "GFS"
+                and any(s in region_configs[r]["qpf_requested"] for s in ("GFS", "WRF"))
             )
             print(f"***_________Downloading shared GFS for cycle {cycle_key} "
                   f"(shared by {num_regions_using} region(s))_________***")
@@ -350,6 +373,62 @@ def main(args):
                 print(f"    Shared GFS download failed for {cycle_key}: {_gfs_pre_exc}. "
                       f"Regions will attempt individual downloads.")
 
+    # ── AROME shared pre-download (one per cycle × domain) ──────────────────────────────
+    arome_shared_data_folders = {}   # (cycle_time_key, domain) → path to arome_data/
+
+    def _copy_shared_arome_to_region(shared_arome_data: str, region_qpf_store: str) -> None:
+        from shutil import copy2
+        dest = os.path.join(region_qpf_store, "arome_data")
+        makedirs(dest, exist_ok=True)
+        for src_f in glob.glob(os.path.join(shared_arome_data, "*.tif")):
+            try:
+                copy2(src_f, dest)
+            except Exception as _ce:
+                print(f"    Warning: could not copy AROME file {os.path.basename(src_f)}: {_ce}")
+
+    if LR_run:
+        arome_groups = {}   # (cycle_key, domain) → lead region cfg (first seen)
+        for region in regions_to_run:
+            cfg = region_configs[region]
+            if "AROME" not in cfg["qpf_requested"]:
+                continue
+            try:
+                domain = get_arome_domain_for_region(region)
+            except ValueError:
+                print(f"    AROME: region '{region}' has no AROME domain configured — skipping.")
+                continue
+            key = (cfg["cycle_time_key"], domain)
+            if key not in arome_groups:
+                arome_groups[key] = cfg
+
+        for (cycle_key, domain), lead_cfg in arome_groups.items():
+            shared_arome_store = _with_sep(
+                os.path.join(qpf_store_path, "_shared_arome", cycle_key, domain)
+            )
+            makedirs(shared_arome_store, exist_ok=True)
+            num_arome_regions = sum(
+                1 for r in regions_to_run
+                if region_configs[r]["cycle_time_key"] == cycle_key
+                and "AROME" in region_configs[r]["qpf_requested"]
+            )
+            print(f"***_________Downloading shared AROME ({domain}) for cycle {cycle_key} "
+                  f"(shared by {num_arome_regions} region(s))_________***")
+            try:
+                AROME_searcher(
+                    shared_arome_store,
+                    shared_arome_store,
+                    lead_cfg["r_start_lr"],
+                    lead_cfg["r_end_lr"],
+                    xmin, xmax, ymin, ymax,
+                    domain,
+                )
+                arome_shared_data_folders[(cycle_key, domain)] = os.path.join(
+                    shared_arome_store, "arome_data"
+                )
+            except Exception as _arome_pre_exc:
+                print(f"    Shared AROME download failed for ({cycle_key}, {domain}): "
+                      f"{_arome_pre_exc}. Regions will attempt individual downloads.")
+
     # ── Step 3: Parallel per-region forcing prep ─────────────────────────────────────
     _lock = threading.Lock()
     staged_precip_folders = set()
@@ -362,11 +441,12 @@ def main(args):
         region_current_time = cfg["region_current_time"]
         output_timestamp_str = cfg["output_timestamp_str"]
         local_qpe_source    = cfg["qpe_source"]
-        local_qpf_source    = cfg["qpf_source"]    # "none" when not LR_run
-        qpf_requested       = cfg["qpf_requested"]
+        qpf_source_list     = cfg["qpf_source"]    # list of QPF sources ([] when QPE-only)
+        qpf_requested       = cfg["qpf_requested"]  # same list
         region_precip_folder   = cfg["region_precip_folder"]
         region_qpf_store_path  = cfg["region_qpf_store_path"]
         region_gfs_archive_path = cfg["region_gfs_archive_path"]
+        region_arome_archive_path = cfg["region_arome_archive_path"]
         region_states_path  = cfg["region_states_path"]
         region_data_path    = cfg["region_data_path"]
         region_tmp_output   = cfg["region_tmp_output"]
@@ -381,7 +461,8 @@ def main(args):
         cycle_time_key  = cfg["cycle_time_key"]
 
         for dirpath in [region_precip_folder, region_qpf_store_path,
-                        region_gfs_archive_path, region_states_path, region_data_path]:
+                        region_gfs_archive_path, region_arome_archive_path,
+                        region_states_path, region_data_path]:
             makedirs(dirpath, exist_ok=True)
 
         print(f"***_________Preparing forcings for {region} at "
@@ -447,98 +528,157 @@ def main(args):
                 except Exception as _ne:
                     print(f"    There was a problem with the nowcast routine for {region}: {_ne}. Continuing.")
 
-        # ── QPF (LR) ───────────────────────────────────────────────────────────────
-        if LR_run:
-            if qpf_requested == "WRF":
-                wrf_ok = False
-                if WRF_archive_path:
-                    try:
-                        wrf_ok = WRF_searcher(
-                            WRF_archive_path, region_qpf_store_path,
-                            r_start_lr, r_end_lr,
-                            LR_TimeStep, WRF_var_name, WRF_filename_template,
-                        )
-                    except Exception as _we:
-                        print(f"    WRF processing failed for {region}: {_we}")
-                if wrf_ok:
-                    local_qpf_source = "WRF"
-                else:
+        # ── QPF (LR) — loop over every requested QPF source ────────────────────────
+        # For each QPF source in qpf_source_list we create one EF5 job.
+        # QPE warm-up always runs but states are saved only once:
+        #   • First / only QPF (GFS/WRF): save_states=True
+        #   • Additional QPF sources (AROME): save_states=False → no state overwrite
+        # AROME outputs go to tmp_output_<model>_arome/ to keep results separate.
+
+        # Build list of (actual_qpf, tmp_output, stage_precip, save_states)
+        _qpf_jobs_to_build = []
+
+        if not LR_run:
+            # QPE-only simulation — single job, no QPF
+            _qpf_jobs_to_build.append(("none", region_tmp_output, True, True))
+        else:
+            for _qpf_item in qpf_source_list:
+                actual_qpf = _qpf_item
+
+                # ── WRF (with GFS fallback) ──────────────────────────────────────
+                if _qpf_item == "WRF":
+                    wrf_ok = False
                     if WRF_archive_path:
-                        print(f"    {region}: WRF not available — falling back to GFS")
-                    local_qpf_source = "GFS"
+                        try:
+                            wrf_ok = WRF_searcher(
+                                WRF_archive_path, region_qpf_store_path,
+                                r_start_lr, r_end_lr,
+                                LR_TimeStep, WRF_var_name, WRF_filename_template,
+                            )
+                        except Exception as _we:
+                            print(f"    WRF processing failed for {region}: {_we}")
+                    if wrf_ok:
+                        actual_qpf = "WRF"
+                    else:
+                        if WRF_archive_path:
+                            print(f"    {region}: WRF not available — falling back to GFS")
+                        actual_qpf = "GFS"
 
-            if local_qpf_source == "GFS":
-                if cycle_time_key in gfs_shared_data_folders:
-                    # Reuse the already-downloaded shared GFS — just copy tifs to region store.
-                    _copy_shared_gfs_to_region(gfs_shared_data_folders[cycle_time_key],
-                                               region_qpf_store_path)
-                else:
-                    # Unique hindcast time or shared pre-download failed — download per-region.
-                    try:
-                        GFS_searcher(
-                            region_gfs_archive_path, region_qpf_store_path,
-                            r_start_lr, r_end_lr,
-                            xmin, xmax, ymin, ymax,
+                # ── GFS ──────────────────────────────────────────────────────────
+                if actual_qpf == "GFS":
+                    if cycle_time_key in gfs_shared_data_folders:
+                        _copy_shared_gfs_to_region(
+                            gfs_shared_data_folders[cycle_time_key],
+                            region_qpf_store_path,
                         )
-                    except Exception as _ge:
-                        print(f"    There was a problem with GFS routines for {region}: {_ge}. Continuing.")
+                    else:
+                        try:
+                            GFS_searcher(
+                                region_gfs_archive_path, region_qpf_store_path,
+                                r_start_lr, r_end_lr,
+                                xmin, xmax, ymin, ymax,
+                            )
+                        except Exception as _ge:
+                            print(f"    GFS problem for {region}: {_ge}. Continuing.")
 
-        # ── EF5 control file prep ──────────────────────────────────────────────────
-        forcing_folder = f"{local_qpe_source.lower()}_{local_qpf_source.lower()}"
-        region_precip_ef5_folder = os.path.join(precipEF5Folder, region_key, forcing_folder)
-        makedirs(region_precip_ef5_folder, exist_ok=True)
+                # ── AROME ────────────────────────────────────────────────────────
+                elif actual_qpf == "AROME":
+                    try:
+                        arome_domain = get_arome_domain_for_region(region)
+                        arome_key = (cycle_time_key, arome_domain)
+                        if arome_key in arome_shared_data_folders:
+                            _copy_shared_arome_to_region(
+                                arome_shared_data_folders[arome_key],
+                                region_qpf_store_path,
+                            )
+                        else:
+                            AROME_searcher(
+                                region_arome_archive_path, region_qpf_store_path,
+                                r_start_lr, r_end_lr,
+                                xmin, xmax, ymin, ymax,
+                                arome_domain,
+                            )
+                    except Exception as _ae:
+                        print(f"    AROME problem for {region}: {_ae}. Skipping AROME run.")
+                        continue
 
-        realSystemStartTime, controlFile, run_output_path = prepare_ef5(
-            region_precip_ef5_folder,
-            region_precip_folder,
-            _with_sep(region_states_path),
-            modelStates,
-            r_system_start,
-            r_fail_time,
-            region_current_time,
-            systemName,
-            SEND_ALERTS,
-            alert_recipients,
-            smtp_config,
-            _with_sep(region_tmp_output),
-            _with_sep(region_data_path),
-            region,
-            systemModel,
-            templatePath,
-            region_template,
-            r_start_lr,
-            r_warm_end,
-            r_state_end,
-            r_end_time,
-            LR_TimeStep,
-            LR_run,
-            region,
-            model_resolution,
-            basicPath,
-            parametersPath,
-            local_qpe_source,
-            local_qpf_source,
-            stage_precip=True,
-            output_timestamp_str=output_timestamp_str,
-            qpf_store_forcing_path=region_qpf_store_path,
-        )
+                # AROME outputs to a separate folder; does not overwrite states
+                if actual_qpf == "AROME":
+                    _tmp_out = os.path.join(
+                        region_data_path, f"tmp_output_{systemModel}_arome"
+                    )
+                    _save_states = False
+                else:
+                    _tmp_out = region_tmp_output
+                    _save_states = True
 
-        print(
-            f"    Region {region} ({local_qpe_source}/{local_qpf_source}): "
-            f"start {realSystemStartTime.strftime('%Y%m%d_%H%M')} -> "
-            f"end {r_end_time.strftime('%Y%m%d_%H%M')}, "
-            f"control {controlFile}"
-        )
+                _qpf_jobs_to_build.append((
+                    actual_qpf,
+                    _tmp_out,
+                    True,          # always stage QPE: each QPF source has its own precipEF5 folder
+                    _save_states,
+                ))
 
-        with _lock:
-            staged_precip_folders.add(region_precip_ef5_folder)
-            ef5_jobs.append({
-                "region":               region,
-                "ef5Path":              ef5Path,
-                "tmpOutput":            run_output_path + "/",
-                "controlFile":          controlFile,
-                "output_timestamp_str": output_timestamp_str,
-            })
+        # ── EF5 control file prep — one job per QPF source ─────────────────────────
+        for (_qpf_src, _tmp_out, _do_stage, _do_save_states) in _qpf_jobs_to_build:
+            forcing_folder = f"{local_qpe_source.lower()}_{_qpf_src.lower()}"
+            region_precip_ef5_folder = os.path.join(
+                precipEF5Folder, region_key, forcing_folder
+            )
+            makedirs(region_precip_ef5_folder, exist_ok=True)
+
+            realSystemStartTime, controlFile, run_output_path = prepare_ef5(
+                region_precip_ef5_folder,
+                region_precip_folder,
+                _with_sep(region_states_path),
+                modelStates,
+                r_system_start,
+                r_fail_time,
+                region_current_time,
+                systemName,
+                SEND_ALERTS,
+                alert_recipients,
+                smtp_config,
+                _with_sep(_tmp_out),
+                _with_sep(region_data_path),
+                region,
+                systemModel,
+                templatePath,
+                region_template,
+                r_start_lr,
+                r_warm_end,
+                r_state_end,
+                r_end_time,
+                LR_TimeStep,
+                LR_run,
+                region,
+                model_resolution,
+                basicPath,
+                parametersPath,
+                local_qpe_source,
+                _qpf_src,
+                stage_precip=_do_stage,
+                output_timestamp_str=output_timestamp_str,
+                qpf_store_forcing_path=region_qpf_store_path,
+                save_states=_do_save_states,
+            )
+
+            print(
+                f"    Region {region} ({local_qpe_source}/{_qpf_src}): "
+                f"start {realSystemStartTime.strftime('%Y%m%d_%H%M')} → "
+                f"end {r_end_time.strftime('%Y%m%d_%H%M')}, "
+                f"control {controlFile}"
+            )
+
+            with _lock:
+                staged_precip_folders.add(region_precip_ef5_folder)
+                ef5_jobs.append({
+                    "region":               region,
+                    "ef5Path":              ef5Path,
+                    "tmpOutput":            run_output_path + "/",
+                    "controlFile":          controlFile,
+                    "output_timestamp_str": output_timestamp_str,
+                })
 
     try:
         with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:

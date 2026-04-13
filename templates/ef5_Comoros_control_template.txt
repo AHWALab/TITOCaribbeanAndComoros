@@ -26,6 +26,13 @@ FREQ={TIMESTEPLR}
 LOC=qpf_store/wrf_data/
 NAME=wrf.YYYYMMDDHHUU.tif
 
+[PrecipForcing AROME]
+TYPE=TIF
+UNIT=mm/h
+FREQ=1h
+LOC=qpf_store/arome_data/
+NAME=arome.YYYYMMDDHH00.tif
+
 [PETForcing CLIMO]
 LOC=pet/
 FREQ=1m

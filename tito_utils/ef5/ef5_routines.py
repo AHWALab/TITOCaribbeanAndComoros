@@ -434,6 +434,7 @@ def write_control_file(
     qpf_store_forcing_path,
     qpe_source="IMERG",
     qpf_source="GFS",
+    save_states=True,
 ):
     rmtree(tmpOutput, ignore_errors=1)
     mkdir_p(tmpOutput)
@@ -483,6 +484,8 @@ def write_control_file(
             line = line.replace("LOC=qpf_store/gfs_data/", f"LOC={qpf_loc}gfs_data/")
         if "LOC=qpf_store/wrf_data/" in line:
             line = line.replace("LOC=qpf_store/wrf_data/", f"LOC={qpf_loc}wrf_data/")
+        if "LOC=qpf_store/arome_data/" in line:
+            line = line.replace("LOC=qpf_store/arome_data/", f"LOC={qpf_loc}arome_data/")
 
         if "task=Simulation_QPE" in line:
             if LR_run:
@@ -497,6 +500,12 @@ def write_control_file(
             line = re.sub(r'PRECIPFORECAST=\w+', f'PRECIPFORECAST={qpf_source.upper()}', line)
 
         if statesFound and "TIME_WARMEND=" in line:
+            if not line.lstrip().startswith('#'):
+                line = "#" + line
+
+        # When save_states=False (e.g. AROME secondary run) suppress state writes
+        # so the primary run's (GFS) states are not overwritten.
+        if not save_states and "TIME_STATE=" in line:
             if not line.lstrip().startswith('#'):
                 line = "#" + line
 
@@ -608,7 +617,8 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
     subdomain, systemModel, templatePath, template, systemStartLRTime,
     systemWarmEndTime, systemStateEndTime, systemEndTime, LR_TimeStep, LR_run,
     region_name, model_resolution, basicPath, parametersPath, qpe_source="IMERG", qpf_source="GFS",
-    stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="qpf_store/"):
+    stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="qpf_store/",
+    save_states=True):
 
     # Copy precipitation files into staging folder only once when requested.
     if stage_precip:
@@ -657,6 +667,7 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
         qpf_store_forcing_path,
         qpe_source,
         qpf_source,
+        save_states=save_states,
     )
 
     """

@@ -713,7 +713,19 @@ def main(args):
             print("***_________Cleaning staged precipEF5 folders_________***")
             removed_staged = cleanup_staged_precip_folders(staged_precip_folders)
             print(f"    Removed {removed_staged} staged precip files from precipEF5 folders")
-             
+        # Prune stale _shared_arome cycle directories (keep only the current run's cycles)
+        _shared_arome_root = os.path.join(qpf_store_path, "_shared_arome")
+        if os.path.isdir(_shared_arome_root):
+            current_arome_cycle_keys = {ck for (ck, _dom) in arome_shared_data_folders}
+            for _cycle_dir in os.listdir(_shared_arome_root):
+                if _cycle_dir not in current_arome_cycle_keys:
+                    _stale = os.path.join(_shared_arome_root, _cycle_dir)
+                    try:
+                        shutil.rmtree(_stale)
+                        print(f"    Removed stale AROME shared cache: {_cycle_dir}")
+                    except Exception as _re:
+                        print(f"    Warning: could not remove stale AROME cache {_stale}: {_re}")
+
 """
 Run the main() function when invoked as a script
 """

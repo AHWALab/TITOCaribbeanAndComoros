@@ -138,10 +138,11 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
             except Exception as e:
                 print(f"Error processing QPE duplicate file {qpedup}: {e}")
 
-        print(f"    Deleting all QPF files in store folder older than: {imerg_Latency}")
+        max_qpf = current_naive_utc - timedelta(hours=4)
+        print(f"    Deleting all QPF files in store folder and subfolders older than: {max_qpf}")
+        
         qpf_stored_files = os.listdir(qpf_store_path)
         qpf_stored_files = [f for f in qpf_stored_files if f.endswith('.tif')]
-        max_qpf = current_naive_utc - timedelta(hours=4)
         for qpf_stored in qpf_stored_files:
             try:
                 qpf_datetime = get_geotiff_datetime(qpf_store_path + qpf_stored)
@@ -149,6 +150,8 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
                     os.remove(qpf_store_path + qpf_stored)
             except Exception as e:
                 print(f"Error processing stored QPF file {qpf_stored}: {e}")
+
+
         # --- HSAF file cleanup (h40_*_fdk.tif in precipFolder and _hsaf_raw/) ---
         hsaf_raw_dir = os.path.join(precipFolder, "_hsaf_raw")
         for search_dir in [precipFolder, hsaf_raw_dir]:

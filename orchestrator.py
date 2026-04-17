@@ -725,6 +725,33 @@ def main(args):
                         print(f"    Removed stale AROME shared cache: {_cycle_dir}")
                     except Exception as _re:
                         print(f"    Warning: could not remove stale AROME cache {_stale}: {_re}")
+        
+        # Prune stale _shared cycle directories (for GFS)
+        _shared_gfs_root = os.path.join(qpf_store_path, "_shared")
+        if os.path.isdir(_shared_gfs_root):
+            current_gfs_cycle_keys = set(gfs_shared_data_folders.keys())
+            for _cycle_dir in os.listdir(_shared_gfs_root):
+                if _cycle_dir not in current_gfs_cycle_keys:
+                    _stale = os.path.join(_shared_gfs_root, _cycle_dir)
+                    try:
+                        shutil.rmtree(_stale)
+                        print(f"    Removed stale GFS shared cache: {_cycle_dir}")
+                    except Exception as _re:
+                        print(f"    Warning: could not remove stale GFS cache {_stale}: {_re}")
+        
+        # Completely wipe the region-specific QPF stores to free space
+        print("***_________Cleaning regional qpf_store forecast data_________***")
+        for region in regions_to_run:
+            if region in region_configs:
+                r_store = region_configs[region]["region_qpf_store_path"]
+                for subfolder in ["gfs_data", "arome_data", "wrf_data"]:
+                    sub_path = os.path.join(r_store, subfolder)
+                    if os.path.isdir(sub_path):
+                        try:
+                            shutil.rmtree(sub_path)
+                            print(f"    Removed regional forecast cache: {sub_path}")
+                        except Exception as _re:
+                            print(f"    Warning: could not remove {sub_path}: {_re}")
 
 """
 Run the main() function when invoked as a script

@@ -16,6 +16,7 @@ Please use this script and a configuration file as follows:
 
 """
 
+import shutil
 from shutil import rmtree, copy
 import os
 from os import makedirs, listdir, rename, remove

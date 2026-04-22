@@ -18,7 +18,7 @@ ymin = -12.0
 ymax = 24.0
 nowcast_model_name = "convlstm" 
 systemName = systemModel.upper() + " " + domain.upper() + " " + subdomain.upper()
-ef5Path = "/Dedicated/Humberto/EF5Binary/EF5V1.2.6/bin/ef5" 
+ef5Path = "/home/nammehta/EF5Master/EF5/bin/ef5" 
 statesPath = "states/"
 # Legacy combined precip folder (kept for backward compatibility).
 precipFolder = "precip/"
@@ -128,7 +128,7 @@ WRF_filename_template = "PREC_d01_YYYY-MM-DD_HH_mm_SS.nc"  # WRF filename patter
 # GFS configuration (used when run_LR=True and WRF not available).
 # GFS tifs are stored here persistently and reused across cycles.
 # The orchestrator writes to per-region subfolders under this root.
-GFS_precip_path = "precip/gfs/"                     # persistent GFS tif archive root
+GFS_precip_path = "/Dedicated/Humberto/Naman/TITO_Caribbean_Comoros_VM/TITOCaribbeanAndComoros/precip/gfs"                     # persistent GFS tif archive root
 
 # AROME configuration (used when qpf_source includes "AROME").
 # AROME tifs are stored per-region under this root as a cache.

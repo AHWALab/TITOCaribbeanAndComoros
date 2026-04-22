@@ -1,30 +1,174 @@
 #!/usr/bin/env python3
-"""Météo-France AROME Outre-Mer precipitation downloader for TITO.
+"""
+================================================================================
+AROME Precipitation Downloader Module (QPF - Quantitative Precipitation Forecast)
+================================================================================
 
-Downloads SP2 GRIB2 packages from Météo-France open data (data.gouv.fr),
-extracts the cumulative rainfall variable 'tirf', derives hourly precipitation
-rates by differencing consecutive leads, clips to a bounding box, and writes
-GeoTIFF files compatible with EF5.
+Description:
+------------
+Downloads Météo-France AROME Outre-Mer (Overseas) high-resolution precipitation
+forecasts from data.gouv.fr, extracts cumulative rainfall 'tirf' variable,
+derives hourly precipitation rates by differencing consecutive leads, clips to
+specified domain, and writes EF5-compatible GeoTIFF files. Provides the primary
+high-resolution QPF for TITO in Caribbean and Indian Ocean regions.
 
-File naming convention: arome.YYYYMMDDHH00.tif  (valid time, UTC)
+Standalone Usage:
+-----------------
+1. No authentication required - uses public open data
 
-Supported AROME domains
------------------------
-ANTIL  : Caribbean (Antilles) — covers Antigua, Barbados, Haiti, etc.
-INDIEN : Indian Ocean (Réunion / Mayotte / Comoros)
+2. Basic standalone script example:
 
-Model specification
--------------------
-- Resolution  : 0.025° (~2.8 km)
-- Run cadence : 00Z, 06Z, 12Z, 18Z
-- Max lead    : 42 hourly steps per run
-- Variable    : tirf (Time integral of rain flux) — cumulative mm since run start
-- Licence     : Météo-France Licence Ouverte 2.0
+   from datetime import datetime, timedelta
+   from arome_downloader import download_AROME, get_arome_domain_for_region
+   
+   # Define forecast window
+   start_time = datetime(2024, 1, 15, 0, 0)
+   end_time = datetime(2024, 1, 16, 18, 0)
+   
+   # Define domain bounds (e.g., Caribbean)
+   xmin, ymin, xmax, ymax = -85.0, 10.0, -60.0, 25.0
+   
+   # Get domain for your region
+   domain = get_arome_domain_for_region("haiti")  # Returns "ANTIL"
+   # Or specify directly: domain = "ANTIL"  # or "INDIEN"
+   
+   # Download AROME forecast
+   written_files = download_AROME(
+       start_time=start_time,
+       end_time=end_time,
+       xmin=xmin, xmax=xmax,
+       ymin=ymin, ymax=ymax,
+       out_dir="./arome_output",
+       domain=domain,
+       max_cycles_back=4
+   )
+   print(f"Downloaded {len(written_files)} forecast files")
 
-Usage from orchestrator
------------------------
-from tito_utils.qpf_utils.arome_downloader import download_AROME, get_arome_domain_for_region
-written = download_AROME(start_time, end_time, xmin, xmax, ymin, ymax, out_dir, domain)
+3. Direct GRIB2 URL construction for testing:
+
+   # AROME cycle time (00, 06, 12, 18 UTC)
+   run_time = "2024-01-15T00:00:00"
+   domain = "ANTIL"
+   lead = 6  # Hours (1 to 42)
+   
+   url = (
+       "https://object.files.data.gouv.fr/meteofrance-pnt/pnt/"
+       f"{run_time}Z/arome-om/{domain}/0025/SP2/"
+       f"arome-om-{domain}__0025__SP2__{lead:03d}H__{run_time}Z.grib2"
+   )
+   print(url)
+
+TITO Integration:
+-----------------
+TITO (Threading Inputs to Outputs) uses this module to:
+1. Provide primary high-resolution QPF for Caribbean (ANTIL) and Indian Ocean (INDIEN)
+   regions as the main precipitation forcing for EF5
+2. Supply 42-hour forecast at 2.8km resolution for accurate flood forecasting
+3. Automatically determine appropriate AROME domain based on region name
+
+Called by: TITO orchestrator during forecast phase
+Functions:
+  - download_AROME()              - Main entry point for batch downloads
+  - get_arome_domain_for_region()   - Maps TITO region to AROME domain code
+
+Parameters expected from TITO:
+  - start_time, end_time: Forecast window (str or datetime, UTC)
+  - xmin/xmax/ymin/ymax: Domain bounding box in degrees
+  - out_dir: Output directory for GeoTIFFs
+  - domain: "ANTIL" (Caribbean) or "INDIEN" (Indian Ocean)
+  - max_cycles_back: Retry attempts with older AROME cycles (default 4)
+
+TITO typically calls with:
+  - 42-hour forecast horizon (maximum available from AROME)
+  - Region-mapped domain via get_arome_domain_for_region()
+  - Automatic cycle fallback if latest run unavailable
+
+Required Packages:
+------------------
+- xarray: Multi-dimensional array handling for GRIB2 data
+  pip install xarray
+  OR with conda:
+  conda install -c conda-forge xarray
+
+- rioxarray: Rasterio integration for xarray (registers .rio accessor)
+  pip install rioxarray
+  OR with conda:
+  conda install -c conda-forge rioxarray
+
+- cfgrib: GRIB2 file reading engine for xarray
+  pip install cfgrib
+  May need eccodes backend:
+  conda install -c conda-forge eccodes
+
+- requests: HTTP library for downloading GRIB2 files
+  pip install requests
+
+- numpy: Numerical operations and array manipulation
+  pip install numpy
+
+- rasterio: Geospatial raster I/O for GeoTIFF export
+  pip install rasterio
+  OR with conda:
+  conda install -c conda-forge rasterio
+
+- Internal TITO dependencies: None (self-contained module)
+
+Data Source:
+------------
+Météo-France AROME Outre-Mer (Overseas) SP2 Package
+- URL: https://object.files.data.gouv.fr/meteofrance-pnt/pnt/
+- Licence: Météo-France Licence Ouverte 2.0 (open data)
+- Spatial Resolution: 0.025° x 0.025° (~2.8 km)
+- Temporal Resolution: Hourly (42 steps per run)
+- Coverage: Regional domains:
+  * ANTIL: Caribbean (Antilles) - covers Antigua, Barbados, Haiti, etc.
+  * INDIEN: Indian Ocean - covers Réunion, Mayotte, Comoros
+- Format: GRIB2 (downloaded) → GeoTIFF (output)
+- Cycles: 00Z, 06Z, 12Z, 18Z UTC
+- Variable: tirf (Time integral of rain flux) - cumulative mm since run start
+- Latency: ~2 hours after cycle time (AROME_GRACE_HOURS)
+
+Output Format:
+--------------
+GeoTIFF files named: arome.YYYYMMDDHH00.tif (valid time, UTC)
+- Projection: EPSG:4326 (WGS84)
+- Units: mm/hour (hourly rate derived from cumulative tirf)
+- Data type: float32
+- NoData value: -9999.0
+
+Domain Mapping:
+---------------
+TITO region → AROME domain:
+  - "antigua"  → "ANTIL"
+  - "barbados" → "ANTIL"
+  - "haiti"    → "ANTIL"
+  - "comoros"  → "INDIEN"
+
+Usage: domain = get_arome_domain_for_region("haiti")
+
+Processing Steps:
+-----------------
+1. Downloads SP2 GRIB2 files for required lead times
+2. Extracts 'tirf' (cumulative rainfall) variable using cfgrib
+3. Differences consecutive leads: hourly_rate = tirf(H) - tirf(H-1)
+4. Clips to requested bounding box
+5. Writes GeoTIFF with proper georeferencing
+
+Retry Logic:
+------------
+If insufficient data for requested window:
+1. Automatically tries previous AROME cycles (up to max_cycles_back)
+2. Steps back 6 hours per attempt (AROME cycle frequency)
+3. Skips leads that cannot be produced
+4. Returns successfully written files even if incomplete
+
+Notes:
+------
+- Longitude wrapping handled (0-360° to -180-180° for Caribbean)
+- GRIB files cached in _grib_cache/ subfolder to avoid re-download
+- First lead (H=1) uses tirf directly (assumes tirf(0)=0)
+- Validates cycle age with AROME_GRACE_HOURS before attempting download
+================================================================================
 """
 
 from __future__ import annotations

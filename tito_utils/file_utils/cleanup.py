@@ -77,7 +77,7 @@ def cleanup_staged_precip_folders(staging_folders):
             print(f"Error cleaning staged precip folder {folder}: {e}")
     return removed
 
-def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
+def cleanup_precip(current_datetime, precipFolder, qpf_store_path, keep_gap_fill=False, older_qpe_hours=6.5):
     """Function that cleans up the precip folder for the current EF5 run
 
     Arguments:
@@ -85,17 +85,22 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
         failTime {datetime} -- datetime object representing the maximum datetime in the past
         precipFolder {str} -- path to the geotiff precipitation folder
         qpf_store_path {str} -- path to the folder where QPF files are stored
+        keep_gap_fill {bool} -- when True, skip deletion of QPE files newer than T-4h.
+            Set to True for IMERG_SCAMPR/IMERG_HSAF hindcast experiments where those
+            files are SCaMPR/HSAF gap-fill outputs from the previous step and must
+            be preserved as inputs for the current step's EF5 run.
+        older_qpe_hours {float} -- QPE files older than this many hours before
+            current_datetime are removed.  Default 6.5 h is right for EF5's
+            6 h simulation window.  Pass 10.0 for IMERG_NOWCAST mode so that
+            the ConvLSTM model always has its 12 required 30-min input frames
+            (12 × 0.5 h = 6 h ending at the 4 h IMERG latency boundary =
+            currentTime − 10 h oldest file needed).
     """
     current_naive_utc = _to_naive_utc(current_datetime)
 
     qpes = []
     qpfs = []
-    # For hourly operational runs the simulation lookback window is 6 hours.
-    # Add 30 min of buffer so files at the exact boundary are never accidentally
-    # removed while EF5 may still be reading them.  This means each hourly cycle
-    # only removes the small batch of files (1-2 for IMERG, 6 for SCaMPR/HSAF)
-    # that just slipped off the back of the simulation window.
-    older_QPE = current_naive_utc - timedelta(hours=6, minutes=30)
+    older_QPE = current_naive_utc - timedelta(hours=older_qpe_hours)
     imerg_Latency = current_naive_utc - timedelta(hours=4)
 
     try:
@@ -127,16 +132,18 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path):
             except Exception as e:
                 print(f"Error processing QPF file {qpf}: {e}")
 
-        # Remove duplicate/nowcast IMERG files that are newer than the latency boundary
-        # (cleanup_nowcast_qpe in the finally block also does this, but doing it here
-        # ensures the precip folder is clean before the new download starts).
-        for qpedup in qpes:
-            try:
-                geotiff_datetime = get_geotiff_datetime(precipFolder + qpedup)
-                if geotiff_datetime > current_naive_utc - timedelta(hours=4):
-                    os.remove(precipFolder + qpedup)
-            except Exception as e:
-                print(f"Error processing QPE duplicate file {qpedup}: {e}")
+        # Remove duplicate/nowcast IMERG files that are newer than the latency boundary.
+        # Skip this in IMERG_SCAMPR/IMERG_HSAF hindcast mode (keep_gap_fill=True): those
+        # newer files are SCaMPR/HSAF gap-fill outputs written by the previous step and
+        # are legitimate EF5 inputs for the current step — they must not be deleted here.
+        if not keep_gap_fill:
+            for qpedup in qpes:
+                try:
+                    geotiff_datetime = get_geotiff_datetime(precipFolder + qpedup)
+                    if geotiff_datetime > current_naive_utc - timedelta(hours=4):
+                        os.remove(precipFolder + qpedup)
+                except Exception as e:
+                    print(f"Error processing QPE duplicate file {qpedup}: {e}")
 
         max_qpf = current_naive_utc - timedelta(hours=4)
         print(f"    Deleting all QPF files in store folder and subfolders older than: {max_qpf}")

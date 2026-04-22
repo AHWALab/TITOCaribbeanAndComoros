@@ -31,7 +31,7 @@ import re
 import subprocess
 import sys
 from tito_utils.file_utils import cleanup_precip, cleanup_nowcast_qpe, cleanup_staged_precip_folders, newline
-from tito_utils.qpe_utils import get_new_precip, get_new_hsaf_precip, get_new_scampr_precip
+from tito_utils.qpe_utils import get_new_precip, get_gpm_files, get_new_hsaf_precip, get_new_scampr_precip, fill_imerg_gap_with_scampr, fill_imerg_gap_with_hsaf
 from tito_utils.qpf_utils import run_convlstm, download_GFS, GFS_searcher, WRF_searcher, AROME_searcher, get_arome_domain_for_region 
 from tito_utils.ef5 import prepare_ef5, run_ef5_simulations_parallel
 print(">>> Modules imported")
@@ -51,12 +51,24 @@ def main(args):
     """
     ###-------------------------- SETTING SECTION --------------------------------
     #set true of False to fill 4h imerg latency and create +2h hours (nowcast)
-    NOWCAST = True 
-    
-    # Read the configuration file from command line argument
-    # Usage: python orchestrator.py <configuration_file.py>
+    NOWCAST = True
+
+    # Parse CLI arguments.  Supports legacy positional-only and new named overrides:
+    #   python orchestrator.py config.py                     # standard
+    #   python orchestrator.py config.py --hindcast-date "YYYY-MM-DD HH:MM"
+    #   python orchestrator.py config.py --regions Antigua,Haiti
     import importlib
-    config_module_name = os.path.splitext(os.path.basename(args[1]))[0] if len(args) > 1 else 'Caribbean_Comoros_config'
+    import argparse as _argparse
+    _ap = _argparse.ArgumentParser(add_help=False)
+    _ap.add_argument("config", nargs="?", default="Caribbean_Comoros_config")
+    _ap.add_argument("--hindcast-date", default=None, dest="hindcast_date",
+                     help="Override HindCastDate and force HindCastMode=True")
+    _ap.add_argument("--regions", default=None,
+                     help="Comma-separated region names to run (overrides config)")
+    _cli, _ = _ap.parse_known_args(args[1:])
+    _cli_hindcast_date = _cli.hindcast_date
+    _cli_regions = [r.strip() for r in _cli.regions.split(",") if r.strip()] if _cli.regions else None
+    config_module_name = os.path.splitext(os.path.basename(_cli.config))[0]
     config_file = importlib.import_module(config_module_name)
     print(">>> Config file loaded")
 
@@ -75,6 +87,9 @@ def main(args):
     regions_to_run = [str(region).strip() for region in regions_to_run if str(region).strip()]
     if not regions_to_run:
         raise ValueError("No regions were configured to run. Set regions_to_run in the config.")
+    # CLI --regions override (useful for hindcast experiments targeting specific regions).
+    if _cli_regions:
+        regions_to_run = [r for r in _cli_regions if r]
     systemName = config_file.systemName
     systemTimestep = config_file.systemTimestep
     ef5Path = config_file.ef5Path
@@ -98,6 +113,14 @@ def main(args):
     HindCastMode = config_file.HindCastMode
     HindCastDate = config_file.HindCastDate
     region_hindcast_dates = getattr(config_file, "region_hindcast_dates", {})
+
+    # CLI --hindcast-date override: forces hindcast mode with a single shared date.
+    # Clears per-region dates so all regions use the same cycle time (required
+    # for the sequential hindcast_manager.py stepping logic).
+    if _cli_hindcast_date:
+        HindCastMode = True
+        HindCastDate = _cli_hindcast_date
+        region_hindcast_dates = {}
     LR_run = config_file.run_LR
     LR_TimeStep = config_file.LR_timestep
     GFS_archive_path = config_file.QPF_archive_path  # legacy fallback
@@ -111,11 +134,25 @@ def main(args):
     qpe_source = getattr(config_file, "qpe_source", "IMERG").strip().upper()
     qpf_source_default = getattr(config_file, "qpf_source", "GFS").strip().upper()
     region_forcing_map = getattr(config_file, "region_forcing_map", {})
+
+    # QPE gap-fill mode — applies to both operational and hindcast runs.
+    # Controls how the IMERG 4-hour latency gap is filled.
+    _VALID_QPE_EXPERIMENTS = {"IMERG_ONLY", "IMERG_SCAMPR", "IMERG_HSAF", "IMERG_NOWCAST", "NONE"}
+    hindcast_qpe_experiment = getattr(config_file, "hindcast_qpe_experiment", "IMERG_NOWCAST").strip().upper()
+    if hindcast_qpe_experiment not in _VALID_QPE_EXPERIMENTS:
+        print(f"    Warning: unknown hindcast_qpe_experiment '{hindcast_qpe_experiment}', defaulting to IMERG_NOWCAST")
+        hindcast_qpe_experiment = "IMERG_NOWCAST"
+    # qpe_gap_fill_mode supersedes hindcast_qpe_experiment and applies to all run modes.
+    _qpe_gap_fill_mode = getattr(config_file, "qpe_gap_fill_mode", hindcast_qpe_experiment).strip().upper()
+    if _qpe_gap_fill_mode not in _VALID_QPE_EXPERIMENTS:
+        print(f"    Warning: unknown qpe_gap_fill_mode '{_qpe_gap_fill_mode}', defaulting to IMERG_NOWCAST")
+        _qpe_gap_fill_mode = "IMERG_NOWCAST"
     hsaf_ftp_user = getattr(config_file, "hsaf_ftp_user", "")
     hsaf_ftp_pass = getattr(config_file, "hsaf_ftp_pass", "")
     hsaf_latency_minutes = int(getattr(config_file, "hsaf_latency_minutes", 20))
     scampr_precip_root = getattr(config_file, "scampr_precip_folder", "precip/scampr/")
     scampr_latency_minutes = int(getattr(config_file, "scampr_latency_minutes", 20))
+    nowcast_domains_cfg = getattr(config_file, "nowcast_domains", None)
     smtp_config = {
         'smtp_server': config_file.smtp_server,
         'smtp_port': config_file.smtp_port,
@@ -193,7 +230,16 @@ def main(args):
 
     requested_qpe_sources = set(region_qpe_sources.values())
     imerg_needed = "IMERG" in requested_qpe_sources
-    
+
+    # Hindcast QPE experiment: force all regions to use IMERG as base QPE source
+    # (overrides region_forcing_map) so the chosen gap-fill strategy can be applied.
+    # In operational mode (HindCastMode=False) this block never executes.
+    if HindCastMode and hindcast_qpe_experiment not in ("NONE",):
+        for _r in regions_to_run:
+            region_qpe_sources[_r] = "IMERG"
+        imerg_needed = True
+        requested_qpe_sources = {"IMERG"}
+
     newline(2)
     
     region_cycle_times = {}
@@ -211,7 +257,7 @@ def main(args):
             print(f"    {region}: {region_cycle_times[region].strftime('%Y-%m-%d_%H:%M')} UTC")
         newline(2)
     else:
-        realtime_cycle_time = _round_cycle_time(datetime.now(timezone.utc))
+        realtime_cycle_time = _round_cycle_time(datetime.now(timezone.utc).replace(tzinfo=None))
         for region in regions_to_run:
             region_cycle_times[region] = realtime_cycle_time
         print(f"*** Starting real-time run cycle at {realtime_cycle_time.strftime('%Y-%m-%d_%H:%M')} UTC ***")
@@ -233,11 +279,15 @@ def main(args):
     else:
         lr_duration = timedelta(0)
 
-    # NOWCAST is used for IMERG to fill the 4-hour latency gap up to currentTime.
-    # It must run even when LR is enabled so the QPE window is complete before QPF takes over.
-    # Disable NOWCAST only if no region needs IMERG.
+    # NOWCAST (ML ConvLSTM) fills the IMERG 4-hour latency gap only when
+    # qpe_gap_fill_mode == "IMERG_NOWCAST".  In IMERG_SCAMPR / IMERG_HSAF /
+    # IMERG_ONLY modes the gap is handled by IR QPE or left unfilled, so the
+    # ML nowcast is disabled regardless of whether this is a hindcast or
+    # operational run.
     if not imerg_needed:
         NOWCAST = False
+    elif _qpe_gap_fill_mode != "IMERG_NOWCAST":
+        NOWCAST = False  # SCaMPR/HSAF/none gap fill used instead of ML nowcast
 
     ###-------------------------- START EF5 SECTION --------------------------------
     print("***_________Preparing EF5 runs for all configured regions_________***")
@@ -275,11 +325,21 @@ def main(args):
         region_data_path = os.path.join(dataPath, region_key)
         region_tmp_output = os.path.join(region_data_path, f"tmp_output_{systemModel}")
 
-        # IMERG has a 4-hour latency: EF5 can only simulate up to (cycle_time - 4h).
-        # State and warm-end timestamps must reflect this offset so the next cycle
-        # can locate the states written by the current run.
-        # SCaMPR and HSAF have no meaningful latency, so they use cycle_time directly.
-        _imerg_offset = timedelta(hours=4) if _qpe == "IMERG" else timedelta(0)
+        # Determine the effective IMERG offset and QPE experiment for this region.
+        # The offset controls when EF5 saves states (TIME_WARMEND / TIME_STATE):
+        #   All IMERG-based experiments → offset = 4h (state snapshot at T−4h,
+        #   the last real IMERG boundary).  For IMERG_SCAMPR / IMERG_HSAF the
+        #   EF5 simulation still runs to T using gap-fill precip for outputs and
+        #   alerts, but the state file is always anchored at T−4h to keep
+        #   state chaining clean — both in hindcast steps and across operational
+        #   hourly cycles ("save state at last IMERG" requirement).
+        #   SCaMPR/HSAF primary sources always use offset = 0 (no IMERG latency).
+        if _qpe == "IMERG":
+            _effective_experiment = _qpe_gap_fill_mode  # same in operational and hindcast
+            _imerg_offset = timedelta(hours=4)  # state always at T−4h (last real IMERG)
+        else:
+            _effective_experiment = "N/A"
+            _imerg_offset = timedelta(0)
 
         if LR_run:
             r_start_lr = region_current_time
@@ -301,6 +361,7 @@ def main(args):
             "region_current_time":  region_current_time,
             "output_timestamp_str": output_timestamp_str,
             "qpe_source":           _qpe,
+            "qpe_experiment":       _effective_experiment,
             "qpf_source":           r_qpf,          # list; may be empty for QPE-only
             "qpf_requested":        _qpf_req,        # list (same as r_qpf when LR_run)
             "region_precip_folder": region_precip_folder,
@@ -322,6 +383,28 @@ def main(args):
             "r_fail_time":          r_warm_end - timedelta(hours=6),
             "cycle_time_key":       region_current_time.strftime("%Y%m%d%H%M"),
         }
+
+    # ── Per-domain nowcast bbox mapping (built from nowcast_domains_cfg) ────────────────
+    # Maps each region to (xmin, ymin, xmax, ymax) and a domain name for the
+    # IMERG_NOWCAST hindcast path.  Falls back to the global bbox for regions
+    # not listed in any domain, and is ignored entirely outside IMERG_NOWCAST.
+    _region_nowcast_bbox = {}   # region → (xmin, ymin, xmax, ymax)
+    _region_nowcast_domain = {} # region → domain name
+    if nowcast_domains_cfg:
+        for _dn, _dcfg in nowcast_domains_cfg.items():
+            _dx1 = _dcfg.get("xmin", xmin)
+            _dy1 = _dcfg.get("ymin", ymin)
+            _dx2 = _dcfg.get("xmax", xmax)
+            _dy2 = _dcfg.get("ymax", ymax)
+            for _r in _dcfg.get("regions", []):
+                if _r in regions_to_run:
+                    _region_nowcast_bbox[_r] = (_dx1, _dy1, _dx2, _dy2)
+                    _region_nowcast_domain[_r] = _dn
+    # Fallback: any IMERG region not covered by a domain uses the global bbox
+    for _r in regions_to_run:
+        if _r not in _region_nowcast_bbox:
+            _region_nowcast_bbox[_r] = (xmin, ymin, xmax, ymax)
+            _region_nowcast_domain[_r] = "_default"
 
     # ── Step 2: GFS pre-download — once per unique cycle_time (deduplication) ──────────
     # In real-time mode all regions share the same cycle_time_key → one download serves all.
@@ -430,36 +513,107 @@ def main(args):
                 print(f"    Shared AROME download failed for ({cycle_key}, {domain}): "
                       f"{_arome_pre_exc}. Regions will attempt individual downloads.")
 
+    # ── Shared IMERG pre-download (serial; one download shared by all IMERG regions) ──
+    # IMERG uses the same global bounding box and time window for all regions.
+    # Download once to the first IMERG region's folder then copy to all others to
+    # avoid redundant NASA PPS requests and parallel write conflicts.
+    imerg_shared_done = set()   # cycle_time_keys where shared IMERG download succeeded
+
+    if imerg_needed and not NOWCAST:
+        _imerg_groups = {}
+        for region in regions_to_run:
+            cfg = region_configs[region]
+            if cfg["qpe_source"] == "IMERG":
+                key = cfg["cycle_time_key"]
+                _imerg_groups.setdefault(key, []).append(region)
+
+        for cycle_key, _ir_list in _imerg_groups.items():
+            _ref_region = _ir_list[0]
+            _ref_cfg    = region_configs[_ref_region]
+            _ref_folder = _ref_cfg["region_precip_folder"]
+            makedirs(_ref_folder, exist_ok=True)
+            makedirs(_ref_cfg["region_qpf_store_path"], exist_ok=True)
+            n_imerg = len(_ir_list)
+            print(f"***_________Downloading shared IMERG for cycle {cycle_key} "
+                  f"(shared by {n_imerg} region(s))_________***")
+
+            # Strip stale gap-fill IMERG files before downloading fresh data.
+            _ref_experiment = _ref_cfg.get("qpe_experiment", "IMERG_NOWCAST")
+            if _ref_experiment in ("IMERG_SCAMPR", "IMERG_HSAF"):
+                _prev_end = _ref_cfg["region_current_time"] - timedelta(hours=5)
+                for _fn in list(os.listdir(_ref_folder)):
+                    if _fn.startswith("imerg.qpe.") and _fn.endswith(".30minAccum.tif"):
+                        try:
+                            if datetime.strptime(_fn[10:22], "%Y%m%d%H%M") > _prev_end:
+                                os.remove(os.path.join(_ref_folder, _fn))
+                        except Exception:
+                            pass
+
+            try:
+                get_new_precip(
+                    _ref_cfg["region_current_time"], server, _ref_folder,
+                    email_gpm, HindCastMode, _ref_cfg["region_qpf_store_path"],
+                    xmin, ymin, xmax, ymax,
+                )
+                imerg_shared_done.add(cycle_key)
+
+                # Copy freshly downloaded files to every other IMERG region.
+                _imerg_tifs = sorted(glob.glob(
+                    os.path.join(_ref_folder, "imerg.qpe.*.30minAccum.tif")
+                ))
+                for _other in _ir_list[1:]:
+                    _oth_cfg    = region_configs[_other]
+                    _oth_folder = _oth_cfg["region_precip_folder"]
+                    makedirs(_oth_folder, exist_ok=True)
+                    # Strip stale gap-fill files in the destination folder first.
+                    _oth_experiment = _oth_cfg.get("qpe_experiment", "IMERG_NOWCAST")
+                    if _oth_experiment in ("IMERG_SCAMPR", "IMERG_HSAF"):
+                        _prev_end_oth = _oth_cfg["region_current_time"] - timedelta(hours=5)
+                        for _fn in list(os.listdir(_oth_folder)):
+                            if _fn.startswith("imerg.qpe.") and _fn.endswith(".30minAccum.tif"):
+                                try:
+                                    if datetime.strptime(_fn[10:22], "%Y%m%d%H%M") > _prev_end_oth:
+                                        os.remove(os.path.join(_oth_folder, _fn))
+                                except Exception:
+                                    pass
+                    _copied = 0
+                    for _src in _imerg_tifs:
+                        try:
+                            shutil.copy2(_src, os.path.join(_oth_folder, os.path.basename(_src)))
+                            _copied += 1
+                        except Exception as _ce:
+                            print(f"    Warning: IMERG copy to {_other} failed "
+                                  f"({os.path.basename(_src)}): {_ce}")
+                    print(f"    IMERG: {_copied} file(s) copied to {_other}")
+            except Exception as _ie:
+                print(f"    Shared IMERG download failed for {cycle_key}: {_ie}. "
+                      f"Regions will download individually.")
+
     # ── Step 3: Parallel per-region forcing prep ─────────────────────────────────────
     _lock = threading.Lock()
     staged_precip_folders = set()
     region_imerg_folders_used = []
     ef5_jobs = []
 
-    def _prepare_one_region(region):
+    # ── Phase 1 worker: QPE cleanup + download only (no nowcast) ───────────────────
+    # Nowcast is pulled out of the parallel loop and run once after all IMERG
+    # downloads finish, then the gap-fill files are copied to every IMERG region.
+    # This fixes two bugs: (a) shared HDF5 temp-file race conditions when nowcast
+    # ran in parallel across regions, and (b) too many output files being generated
+    # (the model generated T+2 h of extra files; now truncated to cycle time T).
+    def _qpe_download_for_region(region):
         cfg = region_configs[region]
         region_key          = cfg["region_key"]
         region_current_time = cfg["region_current_time"]
-        output_timestamp_str = cfg["output_timestamp_str"]
         local_qpe_source    = cfg["qpe_source"]
-        qpf_source_list     = cfg["qpf_source"]    # list of QPF sources ([] when QPE-only)
-        qpf_requested       = cfg["qpf_requested"]  # same list
+        local_qpe_experiment = cfg.get("qpe_experiment", "IMERG_NOWCAST")
         region_precip_folder   = cfg["region_precip_folder"]
         region_qpf_store_path  = cfg["region_qpf_store_path"]
         region_gfs_archive_path = cfg["region_gfs_archive_path"]
         region_arome_archive_path = cfg["region_arome_archive_path"]
         region_states_path  = cfg["region_states_path"]
         region_data_path    = cfg["region_data_path"]
-        region_tmp_output   = cfg["region_tmp_output"]
-        region_template     = cfg["region_template"]
-        r_start_lr   = cfg["r_start_lr"]
-        r_end_lr     = cfg["r_end_lr"]
-        r_end_time   = cfg["r_end_time"]
-        r_state_end  = cfg["r_state_end"]
-        r_warm_end   = cfg["r_warm_end"]
-        r_system_start = cfg["r_system_start"]
-        r_fail_time    = cfg["r_fail_time"]
-        cycle_time_key  = cfg["cycle_time_key"]
+        cycle_time_key      = cfg["cycle_time_key"]
 
         for dirpath in [region_precip_folder, region_qpf_store_path,
                         region_gfs_archive_path, region_arome_archive_path,
@@ -470,8 +624,19 @@ def main(args):
               f"{region_current_time.strftime('%Y-%m-%d_%H:%M')} UTC_________***")
 
         # ── QPE cleanup ────────────────────────────────────────────────────────────
+        # Keep SCAMPR/HSAF gap-fill IMERG files from the previous cycle so EF5
+        # can use them — applies in both operational and hindcast SCAMPR/HSAF modes.
+        _keep_gap_fill = local_qpe_experiment in ("IMERG_SCAMPR", "IMERG_HSAF")
+        # For IMERG_NOWCAST the ConvLSTM model needs in_seq_length=12 input frames
+        # (12 × 30 min = 6 h) ending at the IMERG latency boundary (currentTime − 4 h).
+        # The oldest frame needed is therefore currentTime − 10 h.  Use 10 h as the
+        # QPE retention window so cleanup_precip never removes those frames.
+        # All other experiments use the default 6.5 h window (EF5's 6 h sim window
+        # with a 30 min buffer).
+        _older_qpe_hours = 10.0 if NOWCAST else 6.5
         try:
-            cleanup_precip(region_current_time, region_precip_folder, region_qpf_store_path)
+            cleanup_precip(region_current_time, region_precip_folder, region_qpf_store_path,
+                           keep_gap_fill=_keep_gap_fill, older_qpe_hours=_older_qpe_hours)
         except Exception as _ce:
             print(f"    Warning: precip cleanup failed for {region}: {_ce}")
 
@@ -505,29 +670,137 @@ def main(args):
                 print(f"    There was a problem with SCaMPR retrieval for {region}: {_se}. Continuing.")
 
         else:   # IMERG
-            try:
-                get_new_precip(
-                    region_current_time, server, region_precip_folder,
-                    email_gpm, HindCastMode, region_qpf_store_path,
-                    xmin, ymin, xmax, ymax,
+            if cycle_time_key in imerg_shared_done:
+                # Shared pre-download already populated every IMERG region folder
+                # (including stale gap-fill strip). Nothing more to do here.
+                print(f"    {region}: IMERG files ready (shared pre-download)")
+            else:
+                # Shared download not attempted (NOWCAST mode) or failed — fall
+                # back to per-region download.
+                if local_qpe_experiment in ("IMERG_SCAMPR", "IMERG_HSAF"):
+                    _prev_imerg_end = region_current_time - timedelta(hours=5)
+                    for _fn in list(os.listdir(region_precip_folder)):
+                        if not (_fn.startswith("imerg.qpe.") and _fn.endswith(".30minAccum.tif")):
+                            continue
+                        try:
+                            _fdt = datetime.strptime(_fn[10:22], "%Y%m%d%H%M")
+                            if _fdt > _prev_imerg_end:
+                                os.remove(os.path.join(region_precip_folder, _fn))
+                        except Exception:
+                            pass
+                # In IMERG_NOWCAST mode use the domain-specific bbox.
+                _imerg_dl_xmin, _imerg_dl_ymin, _imerg_dl_xmax, _imerg_dl_ymax = (
+                    _region_nowcast_bbox.get(region, (xmin, ymin, xmax, ymax))
+                    if NOWCAST else (xmin, ymin, xmax, ymax)
                 )
-                print(f"    {region}: IMERG files are ready")
-            except Exception as _ie:
-                print(f"    There was a problem with IMERG retrieval for {region}: {_ie}. Continuing.")
-
-            if NOWCAST:
                 try:
-                    print(
-                        f"    {region}: generating nowcast from "
-                        f"{(region_current_time - timedelta(hours=3.5)).strftime('%Y-%m-%d_%H:%M')} to "
-                        f"{(region_current_time + timedelta(hours=2.5)).strftime('%Y-%m-%d_%H:%M')}"
+                    get_new_precip(
+                        region_current_time, server, region_precip_folder,
+                        email_gpm, HindCastMode, region_qpf_store_path,
+                        _imerg_dl_xmin, _imerg_dl_ymin, _imerg_dl_xmax, _imerg_dl_ymax,
                     )
-                    run_convlstm(region_current_time, region_precip_folder,
-                                 nowcast_model_name, xmin, ymin, xmax, ymax)
-                    with _lock:
-                        region_imerg_folders_used.append((region_precip_folder, region_current_time))
-                except Exception as _ne:
-                    print(f"    There was a problem with the nowcast routine for {region}: {_ne}. Continuing.")
+                    print(f"    {region}: IMERG files are ready")
+                except Exception as _ie:
+                    print(f"    There was a problem with IMERG retrieval for {region}: {_ie}. Continuing.")
+            # Nowcast is handled in the shared step below — not here.
+
+    # ── Phase 2 worker: hindcast gap fill + QPF + EF5 control file prep ────────────
+    def _prep_qpf_ef5_for_region(region):
+        cfg = region_configs[region]
+        region_key          = cfg["region_key"]
+        region_current_time = cfg["region_current_time"]
+        output_timestamp_str = cfg["output_timestamp_str"]
+        local_qpe_source    = cfg["qpe_source"]
+        local_qpe_experiment = cfg.get("qpe_experiment", "IMERG_NOWCAST")
+        qpf_source_list     = cfg["qpf_source"]    # list of QPF sources ([] when QPE-only)
+        qpf_requested       = cfg["qpf_requested"]  # same list
+        region_precip_folder   = cfg["region_precip_folder"]
+        region_qpf_store_path  = cfg["region_qpf_store_path"]
+        region_gfs_archive_path = cfg["region_gfs_archive_path"]
+        region_arome_archive_path = cfg["region_arome_archive_path"]
+        region_states_path  = cfg["region_states_path"]
+        region_data_path    = cfg["region_data_path"]
+        region_tmp_output   = cfg["region_tmp_output"]
+        region_template     = cfg["region_template"]
+        r_start_lr   = cfg["r_start_lr"]
+        r_end_lr     = cfg["r_end_lr"]
+        r_end_time   = cfg["r_end_time"]
+        r_state_end  = cfg["r_state_end"]
+        r_warm_end   = cfg["r_warm_end"]
+        r_system_start = cfg["r_system_start"]
+        r_fail_time    = cfg["r_fail_time"]
+        cycle_time_key  = cfg["cycle_time_key"]
+
+        # ── IMERG gap fills (SCAMPR / HSAF) — operational and hindcast ───────────
+        # Nowcast (IMERG_NOWCAST) is handled in the shared step between phases.
+        # SCaMPR and HSAF gap fills run per-region here in both modes.
+        if local_qpe_source == "IMERG" and not NOWCAST:
+            if local_qpe_experiment == "IMERG_SCAMPR":
+                # ── Fill the 4-h IMERG gap with SCaMPR (global NOAA RRQPE) ─────
+                _gap_start = region_current_time - timedelta(hours=4)
+                _gap_end   = region_current_time
+                if scampr_shared_folder:
+                    # Use the shared SCaMPR download — no per-region S3 fetch needed.
+                    _scampr_source = scampr_shared_folder
+                else:
+                    # Fallback: shared download failed; download per-region.
+                    _scampr_source = os.path.join(scampr_precip_root, region_key, "")
+                    os.makedirs(_scampr_source, exist_ok=True)
+                    _scampr_older_than = region_current_time - timedelta(hours=6.5)
+                    for _sf in list(os.listdir(_scampr_source)):
+                        _m = re.match(r"scampr\.qpe\.(\d{12})\.mmhInst\.tif$", _sf)
+                        if _m:
+                            try:
+                                if datetime.strptime(_m.group(1), "%Y%m%d%H%M") < _scampr_older_than:
+                                    os.remove(os.path.join(_scampr_source, _sf))
+                            except Exception:
+                                pass
+                    try:
+                        _gap_latency = 0 if HindCastMode else scampr_latency_minutes
+                        get_new_scampr_precip(
+                            current_timestamp=region_current_time,
+                            precipFolder=_scampr_source,
+                            xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
+                            latency_minutes=_gap_latency,
+                        )
+                    except Exception as _sc_dl_e:
+                        print(f"    {region}: SCaMPR download failed: {_sc_dl_e}. Skipping gap fill.")
+                        _scampr_source = None
+                try:
+                    if _scampr_source:
+                        _filled = fill_imerg_gap_with_scampr(
+                            region_precip_folder, _scampr_source, _gap_start, _gap_end
+                        )
+                        print(f"    {region}: SCaMPR→IMERG gap fill complete ({_filled} 30-min windows)")
+                except Exception as _gf_e:
+                    print(f"    {region}: SCaMPR gap fill failed: {_gf_e}. Continuing without gap fill.")
+
+            elif local_qpe_experiment == "IMERG_HSAF":
+                # ── Case 2b: Fill the 4-h IMERG gap with HSAF H40B (Comoros/Africa) ─
+                _gap_start = region_current_time - timedelta(hours=4)
+                _gap_end   = region_current_time
+                _hsaf_gap_folder = os.path.join(hsaf_precip_root, region_key, "")
+                os.makedirs(_hsaf_gap_folder, exist_ok=True)
+                try:
+                    if not hsaf_ftp_user or not hsaf_ftp_pass:
+                        raise ValueError(
+                            "IMERG_HSAF experiment requires hsaf_ftp_user/hsaf_ftp_pass in config."
+                        )
+                    _gap_latency = 0 if HindCastMode else hsaf_latency_minutes
+                    get_new_hsaf_precip(
+                        current_timestamp=region_current_time,
+                        precipFolder=_hsaf_gap_folder,
+                        ftp_user=hsaf_ftp_user, ftp_pass=hsaf_ftp_pass,
+                        xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
+                        latency_minutes=_gap_latency,
+                    )
+                    _filled = fill_imerg_gap_with_hsaf(
+                        region_precip_folder, _hsaf_gap_folder, _gap_start, _gap_end
+                    )
+                    print(f"    {region}: HSAF→IMERG gap fill complete ({_filled} 30-min windows)")
+                except Exception as _gf_e:
+                    print(f"    {region}: HSAF gap fill failed: {_gf_e}. Continuing without gap fill.")
+            # IMERG_ONLY: no gap fill — simulation ends at T − 4h, nothing more to do.
 
         # ── QPF (LR) — loop over every requested QPF source ────────────────────────
         # For each QPF source in qpf_source_list we create one EF5 job.
@@ -682,8 +955,175 @@ def main(args):
                 })
 
     try:
+        # ── Phase 1: parallel QPE downloads ─────────────────────────────────────────
+        print("***_________Downloading QPE for all regions_________***")
         with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:
-            futures = {executor.submit(_prepare_one_region, r): r for r in regions_to_run}
+            futures = {executor.submit(_qpe_download_for_region, r): r for r in regions_to_run}
+            for future in _as_completed(futures):
+                r = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f"    !!! Region {r} QPE download raised an exception: {exc}")
+
+        # ── Shared nowcast: run once on the first IMERG region, copy to all others ──
+        # All IMERG regions share the same bounding box so the nowcast output is
+        # valid for every region.  Running here (after Phase 1 downloads, before
+        # Phase 2 QPF/EF5 prep) prevents the HDF5 race condition that occurred
+        # when regions ran run_convlstm in parallel against the same temp files.
+        # Nowcast now also only generates files up to cycle time T — not T+2.5 h.
+        if NOWCAST and imerg_needed:
+            _imerg_regions = [r for r in regions_to_run
+                              if region_configs[r]["qpe_source"] == "IMERG"]
+
+            # Group IMERG regions by nowcast domain so each domain gets its own
+            # ConvLSTM run over a geographically appropriate bbox.
+            # This keeps the model centred on the Caribbean or on Comoros rather
+            # than producing a mid-Atlantic centre-crop from the full combined bbox.
+            _domain_groups = {}  # domain_name → [region, ...]
+            for _r in _imerg_regions:
+                _dn = _region_nowcast_domain.get(_r, "_default")
+                _domain_groups.setdefault(_dn, []).append(_r)
+
+            for _dname, _d_regions in _domain_groups.items():
+                _ref_region = _d_regions[0]
+                _ref_folder = region_configs[_ref_region]["region_precip_folder"]
+                _ref_time   = region_configs[_ref_region]["region_current_time"]
+                _gap_start  = _ref_time - timedelta(hours=4)
+                _nc_xmin, _nc_ymin, _nc_xmax, _nc_ymax = _region_nowcast_bbox.get(
+                    _ref_region, (xmin, ymin, xmax, ymax)
+                )
+                print(
+                    f"***_________Running shared nowcast on {_ref_region} [{_dname}] "
+                    f"(fills {_gap_start.strftime('%Y-%m-%d_%H:%M')} → "
+                    f"{_ref_time.strftime('%Y-%m-%d_%H:%M')} UTC)_________***"
+                )
+                # ── Backfill historical IMERG so ConvLSTM always has enough input ──
+                # model_picker.predict() → prediction_function(input_precip[-12:]) as
+                # batch_x, and zeros(input_precip.shape) as batch_y.  When T_all < 7,
+                # test_dat.shape[1] = 2*T_all, and 2*T_all - out_seq_length - 1 < 0.
+                # A fresh hindcast folder often has only 1-4 recent IMERG files because
+                # get_new_precip only downloads forward.  We need T_all ≥ 12 (full
+                # in_seq_length) ending at T-4h, so the oldest file must be at T-9.5h.
+                _qpe_needed_oldest = _ref_time - timedelta(hours=9, minutes=30)
+                _target_latency   = _ref_time - timedelta(hours=4)
+                _existing_qpe = sorted(
+                    f for f in os.listdir(_ref_folder)
+                    if f.startswith('imerg.qpe.') and f.endswith('.30minAccum.tif')
+                )
+                _oldest_qpe_dt = (
+                    datetime.strptime(_existing_qpe[0][10:22], '%Y%m%d%H%M')
+                    if _existing_qpe else _ref_time  # sentinel: force full backfill
+                )
+                if _oldest_qpe_dt > _qpe_needed_oldest:
+                    # Cap download ceiling at T-4h+30min to avoid requesting files
+                    # that the IMERG server hasn't published yet.
+                    _backfill_newest = min(_oldest_qpe_dt,
+                                          _target_latency + timedelta(minutes=30))
+                    _bf_start = _qpe_needed_oldest - timedelta(minutes=30)
+                    _bf_end   = _backfill_newest - timedelta(hours=1)
+                    print(
+                        f"    Backfilling IMERG for nowcast input: "
+                        f"{_qpe_needed_oldest.strftime('%Y-%m-%d %H:%M')} → "
+                        f"{(_backfill_newest - timedelta(minutes=30)).strftime('%Y-%m-%d %H:%M')} UTC"
+                    )
+                    try:
+                        get_gpm_files(
+                            _ref_folder, _bf_start, _bf_end,
+                            server, email_gpm,
+                            _nc_xmin, _nc_ymin, _nc_xmax, _nc_ymax,
+                        )
+                    except Exception as _bf_e:
+                        print(f"    IMERG backfill warning: {_bf_e}. Nowcast may use fewer input frames.")
+                try:
+                    run_convlstm(_ref_time, _ref_folder, nowcast_model_name,
+                                 _nc_xmin, _nc_ymin, _nc_xmax, _nc_ymax)
+                    region_imerg_folders_used.append((_ref_folder, _ref_time))
+
+                    # Collect the newly created gap-fill files (timestamps > T−4h)
+                    _nc_files = []
+                    for _pattern in ["imerg.qpe.*.30minAccum.tif",
+                                     "imerg.qpf.*.30minAccum.tif"]:
+                        for _src in glob.glob(os.path.join(_ref_folder, _pattern)):
+                            try:
+                                _dt_str = os.path.basename(_src).split('.')[2]
+                                _dt = datetime.strptime(_dt_str, '%Y%m%d%H%M')
+                                if _dt > _gap_start:
+                                    _nc_files.append(_src)
+                            except Exception:
+                                pass
+
+                    # Copy nowcast files to every other region in this domain
+                    for _other_region in _d_regions[1:]:
+                        _other_folder = region_configs[_other_region]["region_precip_folder"]
+                        _other_time   = region_configs[_other_region]["region_current_time"]
+                        makedirs(_other_folder, exist_ok=True)
+                        _copied = 0
+                        for _src in _nc_files:
+                            try:
+                                shutil.copy2(
+                                    _src,
+                                    os.path.join(_other_folder, os.path.basename(_src))
+                                )
+                                _copied += 1
+                            except Exception as _ce:
+                                print(f"    Warning: could not copy {os.path.basename(_src)}"
+                                      f" to {_other_region}: {_ce}")
+                        region_imerg_folders_used.append((_other_folder, _other_time))
+                        print(f"    Copied {_copied} nowcast file(s) to {_other_region}")
+
+                except Exception as _ne:
+                    print(f"    Shared nowcast [{_dname}] failed: {_ne}. Continuing without nowcast gap fill.")
+
+        # ── Shared SCaMPR gap-fill download (serial, used by all IMERG_SCAMPR regions) ─
+        # SCaMPR covers the same global bbox for every region. Download once to a shared
+        # folder and pass that path into each region's gap-fill call, eliminating the
+        # 5× redundant S3 fetches that were happening inside _prep_qpf_ef5_for_region.
+        scampr_shared_folder = None   # path to shared SCaMPR TIF folder, or None
+
+        if _qpe_gap_fill_mode == "IMERG_SCAMPR" and imerg_needed:
+            _scampr_shared_path = _with_sep(os.path.join(scampr_precip_root, "_shared"))
+            makedirs(_scampr_shared_path, exist_ok=True)
+
+            _scampr_ref_cfg = next(
+                (region_configs[r] for r in regions_to_run
+                 if region_configs[r]["qpe_source"] == "IMERG"),
+                None,
+            )
+            if _scampr_ref_cfg is not None:
+                _n_scampr = sum(
+                    1 for r in regions_to_run if region_configs[r]["qpe_source"] == "IMERG"
+                )
+                print(f"***_________Downloading shared SCaMPR gap fill "
+                      f"(used by {_n_scampr} region(s))_________***")
+
+                # Remove SCaMPR files older than 6.5 h from the shared folder.
+                _sc_older_than = _scampr_ref_cfg["region_current_time"] - timedelta(hours=6.5)
+                for _sf in list(os.listdir(_scampr_shared_path)):
+                    _m = re.match(r"scampr\.qpe\.(\d{12})\.mmhInst\.tif$", _sf)
+                    if _m:
+                        try:
+                            if datetime.strptime(_m.group(1), "%Y%m%d%H%M") < _sc_older_than:
+                                os.remove(os.path.join(_scampr_shared_path, _sf))
+                        except Exception:
+                            pass
+
+                try:
+                    _sc_latency = 0 if HindCastMode else scampr_latency_minutes
+                    get_new_scampr_precip(
+                        current_timestamp=_scampr_ref_cfg["region_current_time"],
+                        precipFolder=_scampr_shared_path,
+                        xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
+                        latency_minutes=_sc_latency,
+                    )
+                    scampr_shared_folder = _scampr_shared_path
+                except Exception as _sc_e:
+                    print(f"    Shared SCaMPR download failed: {_sc_e}. "
+                          f"Regions will attempt individual downloads.")
+
+        # ── Phase 2: parallel QPF retrieval + EF5 control file prep ─────────────────
+        with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:
+            futures = {executor.submit(_prep_qpf_ef5_for_region, r): r for r in regions_to_run}
             for future in _as_completed(futures):
                 r = futures[future]
                 try:
@@ -712,47 +1152,47 @@ def main(args):
             print(f"    Removed {removed_nowcast_total} IMERG nowcast/duplicated files from region folders")
         if staged_precip_folders:
             print("***_________Cleaning staged precipEF5 folders_________***")
-            removed_staged = cleanup_staged_precip_folders(staged_precip_folders)
-            print(f"    Removed {removed_staged} staged precip files from precipEF5 folders")
-        # Prune stale _shared_arome cycle directories (keep only the current run's cycles)
-        _shared_arome_root = os.path.join(qpf_store_path, "_shared_arome")
-        if os.path.isdir(_shared_arome_root):
-            current_arome_cycle_keys = {ck for (ck, _dom) in arome_shared_data_folders}
-            for _cycle_dir in os.listdir(_shared_arome_root):
-                if _cycle_dir not in current_arome_cycle_keys:
-                    _stale = os.path.join(_shared_arome_root, _cycle_dir)
-                    try:
-                        shutil.rmtree(_stale)
-                        print(f"    Removed stale AROME shared cache: {_cycle_dir}")
-                    except Exception as _re:
-                        print(f"    Warning: could not remove stale AROME cache {_stale}: {_re}")
+        #     removed_staged = cleanup_staged_precip_folders(staged_precip_folders)
+        #     print(f"    Removed {removed_staged} staged precip files from precipEF5 folders")
+        # # Prune stale _shared_arome cycle directories (keep only the current run's cycles)
+        # _shared_arome_root = os.path.join(qpf_store_path, "_shared_arome")
+        # if os.path.isdir(_shared_arome_root):
+        #     current_arome_cycle_keys = {ck for (ck, _dom) in arome_shared_data_folders}
+        #     for _cycle_dir in os.listdir(_shared_arome_root):
+        #         if _cycle_dir not in current_arome_cycle_keys:
+        #             _stale = os.path.join(_shared_arome_root, _cycle_dir)
+        #             try:
+        #                 shutil.rmtree(_stale)
+        #                 print(f"    Removed stale AROME shared cache: {_cycle_dir}")
+        #             except Exception as _re:
+        #                 print(f"    Warning: could not remove stale AROME cache {_stale}: {_re}")
         
-        # Prune stale _shared cycle directories (for GFS)
-        _shared_gfs_root = os.path.join(qpf_store_path, "_shared")
-        if os.path.isdir(_shared_gfs_root):
-            current_gfs_cycle_keys = set(gfs_shared_data_folders.keys())
-            for _cycle_dir in os.listdir(_shared_gfs_root):
-                if _cycle_dir not in current_gfs_cycle_keys:
-                    _stale = os.path.join(_shared_gfs_root, _cycle_dir)
-                    try:
-                        shutil.rmtree(_stale)
-                        print(f"    Removed stale GFS shared cache: {_cycle_dir}")
-                    except Exception as _re:
-                        print(f"    Warning: could not remove stale GFS cache {_stale}: {_re}")
+        # # Prune stale _shared cycle directories (for GFS)
+        # _shared_gfs_root = os.path.join(qpf_store_path, "_shared")
+        # if os.path.isdir(_shared_gfs_root):
+        #     current_gfs_cycle_keys = set(gfs_shared_data_folders.keys())
+        #     for _cycle_dir in os.listdir(_shared_gfs_root):
+        #         if _cycle_dir not in current_gfs_cycle_keys:
+        #             _stale = os.path.join(_shared_gfs_root, _cycle_dir)
+        #             try:
+        #                 shutil.rmtree(_stale)
+        #                 print(f"    Removed stale GFS shared cache: {_cycle_dir}")
+        #             except Exception as _re:
+        #                 print(f"    Warning: could not remove stale GFS cache {_stale}: {_re}")
         
-        # Completely wipe the region-specific QPF stores to free space
-        print("***_________Cleaning regional qpf_store forecast data_________***")
-        for region in regions_to_run:
-            if region in region_configs:
-                r_store = region_configs[region]["region_qpf_store_path"]
-                for subfolder in ["gfs_data", "arome_data", "wrf_data"]:
-                    sub_path = os.path.join(r_store, subfolder)
-                    if os.path.isdir(sub_path):
-                        try:
-                            shutil.rmtree(sub_path)
-                            print(f"    Removed regional forecast cache: {sub_path}")
-                        except Exception as _re:
-                            print(f"    Warning: could not remove {sub_path}: {_re}")
+        # # Completely wipe the region-specific QPF stores to free space
+        # print("***_________Cleaning regional qpf_store forecast data_________***")
+        # for region in regions_to_run:
+        #     if region in region_configs:
+        #         r_store = region_configs[region]["region_qpf_store_path"]
+        #         for subfolder in ["gfs_data", "arome_data", "wrf_data"]:
+        #             sub_path = os.path.join(r_store, subfolder)
+        #             if os.path.isdir(sub_path):
+        #                 try:
+        #                     shutil.rmtree(sub_path)
+        #                     print(f"    Removed regional forecast cache: {sub_path}")
+        #                 except Exception as _re:
+        #                     print(f"    Warning: could not remove {sub_path}: {_re}")
 
 """
 Run the main() function when invoked as a script

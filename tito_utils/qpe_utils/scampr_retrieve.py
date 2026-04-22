@@ -1,16 +1,122 @@
 """
-scampr_retrieve.py
-==================
-Download NOAA Enterprise Rain Rate (SCaMPR / RRQPE) files from the
-public AWS S3 bucket, convert each NetCDF to a GeoTIFF, and populate
-the TITO per-region precip folder with files named in the standard
-''scampr.qpe.YYYYMMDDHHUU.mmhInst.tif'' convention so EF5 can
-ingest them directly.
+================================================================================
+SCaMPR Precipitation Retrieval Module (QPE - Quantitative Precipitation Estimate)
+================================================================================
 
-Bucket  : s3://noaa-enterprise-rainrate-pds   (public, no credentials)
-Path    : BLEND/RainRate-Blend-INST/YYYY/MM/DD/HH/
-Freq    : 10 minutes  (matches HSAF cadence)
-Unit    : mm/h instantaneous  (same as HSAF H40B)
+Description:
+------------
+Downloads NOAA Enterprise Rain Rate (SCaMPR / RRQPE - Self-Calibrating 
+Multivariate Precipitation Retrieval) files from AWS S3, converts NetCDF
+to GeoTIFF format, and prepares data for EF5 hydrologic model ingestion.
+Provides 10-minute instantaneous rain rate estimates over the entire globe.
+
+Standalone Usage:
+-----------------
+1. No authentication required - uses public AWS S3 bucket
+
+2. Basic standalone script example:
+
+   from datetime import datetime
+   from scampr_retrieve import get_new_scampr_precip
+   
+   # Define domain bounds (e.g., Caribbean region)
+   xmin, ymin, xmax, ymax = -85.0, 10.0, -60.0, 25.0
+   
+   # Current timestamp for data retrieval
+   current_time = datetime.utcnow()
+   
+   # Download SCaMPR data
+   get_new_scampr_precip(
+       current_timestamp=current_time,
+       precipFolder="./scampr_output",
+       xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
+       latency_minutes=20,    # Expected data latency
+       lookback_hours=6       # Hours of historical data to retrieve
+   )
+
+3. Direct S3 exploration (for testing):
+
+   import boto3
+   from botocore import UNSIGNED
+   from botocore.config import Config
+   
+   s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
+   response = s3.list_objects_v2(
+       Bucket="noaa-enterprise-rainrate-pds",
+       Prefix="BLEND/RainRate-Blend-INST/2024/01/15/12/"
+   )
+   for obj in response.get("Contents", []):
+       print(obj["Key"])
+
+TITO Integration:
+-----------------
+TITO (Threading Inputs to Outputs) uses this module to:
+1. Provide alternative QPE source when other observations are unavailable
+2. Supply 10-minute instantaneous precipitation rates for high-temporal-resolution
+   applications in the Caribbean and Indian Ocean regions
+3. Fill observation gaps in the precipitation time series
+
+Called by: TITO orchestrator during precipitation preparation phase
+Function: get_new_scampr_precip() - Main entry point for TITO
+
+Parameters expected from TITO:
+  - current_timestamp: datetime for the current forecast cycle (UTC)
+  - precipFolder: Output directory for processed GeoTIFFs
+  - xmin/ymin/xmax/ymax: Domain bounding box in degrees
+  - latency_minutes: Expected data latency (default 20 min)
+  - lookback_hours: Historical data window to populate (default 6 hours)
+
+Required Packages:
+------------------
+- boto3: AWS SDK for Python to access S3 bucket
+  pip install boto3 botocore
+
+- numpy: Array manipulation for raster data
+  pip install numpy
+
+- xarray: NetCDF data handling
+  pip install xarray
+  Note: Also requires netCDF4 backend:
+  conda install -c conda-forge netCDF4
+
+- rasterio: GeoTIFF writing with proper georeferencing
+  pip install rasterio
+  OR:
+  conda install -c conda-forge rasterio
+
+- Internal TITO dependencies: None (self-contained module)
+
+Data Source:
+------------
+NOAA Enterprise Rain Rate (SCaMPR / RRQPE)
+- Source: s3://noaa-enterprise-rainrate-pds (public bucket)
+- Spatial Resolution: 0.02° x 0.02° (~2 km)
+- Temporal Resolution: 10 minutes
+- Coverage: Global (-180° to 180°, -60° to 70° latitude)
+- Format: NetCDF4 (converted to GeoTIFF)
+- Latency: ~15-20 minutes
+
+Output Format:
+--------------
+GeoTIFF files named: scampr.qpe.YYYYMMDDHHMM.mmhInst.tif
+- Projection: EPSG:4326 (WGS84)
+- Units: mm/hour (instantaneous rain rate)
+- NoData: NaN (float32)
+- Compression: DEFLATE with predictor=2
+
+Behavior:
+---------
+- Downloads 10-minute products for the lookback window
+- Files inside latency window are filled by copying last available data
+- Creates _scampr_raw/ subfolder for temporary downloads/conversions
+- Skips slots that cannot be filled (no data gaps)
+
+Notes:
+------
+- No AWS credentials required (public bucket with UNSIGNED access)
+- Clips data to requested bounding box before writing to save space
+- Matches HSAF H40B temporal cadence (10 minutes)
+================================================================================
 """
 
 import os

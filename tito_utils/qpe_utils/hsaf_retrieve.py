@@ -1,3 +1,136 @@
+"""
+================================================================================
+HSAF Precipitation Retrieval Module (QPE - Quantitative Precipitation Estimate)
+================================================================================
+
+Description:
+------------
+Downloads HSAF (EUMETSAT Hydrological Satellite Application Facility) H40B 
+product from MeteoAM FTP server, decompresses .nc.gz files, converts NetCDF
+to GeoTIFF format, and prepares data for EF5 hydrologic model ingestion.
+Provides 10-minute instantaneous rain rate estimates from multi-satellite
+precipitation products.
+
+Standalone Usage:
+-----------------
+1. Obtain HSAF credentials (free registration required):
+   - Register at: https://www.meteoam.it/it/dati-az/ftphsaf
+   - Username and password will be provided via email
+
+2. Basic standalone script example:
+
+   from datetime import datetime
+   from hsaf_retrieve import get_new_hsaf_precip
+   
+   # Define domain bounds
+   xmin, ymin, xmax, ymax = -85.0, 10.0, -60.0, 25.0
+   
+   # Your HSAF credentials
+   ftp_user = "your_hsaf_username"
+   ftp_pass = "your_hsaf_password"
+   
+   # Current timestamp for data retrieval
+   current_time = datetime.utcnow()
+   
+   # Download HSAF data
+   get_new_hsaf_precip(
+       current_timestamp=current_time,
+       precipFolder="./hsaf_output",
+       ftp_user=ftp_user,
+       ftp_pass=ftp_pass,
+       xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
+       latency_minutes=20,    # Expected data latency
+       lookback_hours=6       # Hours of historical data to retrieve
+   )
+
+3. Test FTP connectivity:
+
+   curl --head --user "username:password" \
+        ftp://ftphsaf.meteoam.it/h40B/h40_cur_mon_data/h40_20240115_1200_fdk.nc.gz
+
+TITO Integration:
+-----------------
+TITO (Threading Inputs to Outputs) uses this module to:
+1. Provide multi-satellite precipitation estimates for flood forecasting
+2. Supply 10-minute instantaneous precipitation rates for high-temporal-resolution
+   applications
+3. Alternative or complementary QPE source to IMERG and SCaMPR
+
+Called by: TITO orchestrator during precipitation preparation phase
+Function: get_new_hsaf_precip() - Main entry point for TITO
+
+Parameters expected from TITO:
+  - current_timestamp: datetime for the current forecast cycle (UTC)
+  - precipFolder: Output directory for processed GeoTIFFs
+  - ftp_user: HSAF FTP username
+  - ftp_pass: HSAF FTP password
+  - xmin/ymin/xmax/ymax: Domain bounding box in degrees
+  - latency_minutes: Expected data latency (default 20 min)
+  - lookback_hours: Historical data window to populate (default 6 hours)
+
+Required Packages:
+------------------
+- Standard library only (no Python package dependencies):
+  - os, re, shutil, subprocess, datetime, pathlib
+
+- External tools required:
+  - curl: For HTTP/FTP file download
+    Windows: Download from https://curl.se/windows/
+    Linux: sudo apt-get install curl
+    macOS: brew install curl
+  
+  - gzip: For .nc.gz decompression
+    Usually pre-installed on Unix/Linux/macOS
+    Windows: Use 7-Zip or Git Bash
+  
+  - GDAL command-line tools: For NetCDF to GeoTIFF conversion
+    conda install -c conda-forge gdal
+    Required tools: gdalwarp, gdal_translate
+
+- Internal TITO dependencies: None (self-contained module)
+
+Data Source:
+------------
+HSAF (Hydrological Satellite Application Facility) H40B Product
+- Server: ftp://ftphsaf.meteoam.it/h40B/h40_cur_mon_data/
+- Spatial Resolution: 0.04° x 0.04° (~4 km at equator)
+- Temporal Resolution: 10 minutes
+- Coverage: 70°N to 70°S
+- Format: NetCDF4 compressed (.nc.gz) → GeoTIFF
+- Latency: ~15-20 minutes
+
+Output Format:
+--------------
+GeoTIFF files named: h40_YYYYMMDD_HHMM_fdk.tif
+- Projection: EPSG:4326 (WGS84)
+- Units: mm/hour (instantaneous rain rate)
+- Variable: rr (rain rate)
+- NoData: -9999
+- Compression: DEFLATE
+
+Authentication:
+---------------
+Requires free registration at MeteoAM:
+https://www.meteoam.it/it/dati-az/ftphsaf
+
+Behavior:
+---------
+- Downloads 10-minute H40B products from FTP server
+- Uses curl for robust HTTP/FTP transfers
+- Decompresses .nc.gz files using gzip
+- Converts using gdalwarp (NETCDF driver) → gdal_translate (-unscale)
+- Files inside latency window filled by copying last available data
+- Creates _hsaf_raw/ subfolder for temporary downloads
+
+Notes:
+------
+- Normalizes input timestamps to naive UTC internally
+- Skips already-downloaded files on subsequent runs
+- Gracefully handles missing files by continuing to next timestamp
+- Requires libgdal-netcdf for NetCDF driver support (install via conda)
+================================================================================
+"""
+
 import os
 import re
 import shutil

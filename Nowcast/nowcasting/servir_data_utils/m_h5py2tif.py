@@ -53,8 +53,20 @@ def h5py2tif(h5_fname, meta_fname, tif_directory):
         output_dts = hf['timestamps'][:]
         output_dts = np.array([datetime.datetime.strptime(x.decode('utf-8'), '%Y-%m-%d %H:%M:%S') for x in output_dts])
 
-    pred_imgs = np.insert(pred_imgs, 0, 0, axis=2)
-    pred_imgs = np.insert(pred_imgs, -1, 0, axis=2)
+    # Restore the centre-crop applied in model_picker.load_model() by zero-padding
+    # back to the original nx × ny extent read from the metadata JSON.
+    # Previously two columns were hard-coded here (+1 left, +1 right), which only
+    # worked when the IMERG tifs were exactly model_width+2 pixels wide (518 for
+    # img_width=516).  The combined Caribbean+Comoros bbox produces 1400-wide tifs,
+    # causing the old code to fail with
+    #   "cannot reshape array of size 186480 into shape (1400)".
+    h_model, w_model = pred_imgs.shape[1], pred_imgs.shape[2]
+    if h_model != ny or w_model != nx:
+        pred_out = np.zeros((pred_imgs.shape[0], ny, nx), dtype=pred_imgs.dtype)
+        h_start = (ny - h_model) // 2
+        w_start = (nx - w_model) // 2
+        pred_out[:, h_start:h_start + h_model, w_start:w_start + w_model] = pred_imgs
+        pred_imgs = pred_out
 
 
     for i in range(len(output_dts)):

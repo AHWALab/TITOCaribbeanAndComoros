@@ -1,10 +1,26 @@
 import os
+import sys
 import glob
 import shutil
 import datetime
 from datetime import datetime
 from datetime import timedelta
 import subprocess
+
+# Force the local nowcasting source tree to load before any installed (possibly
+# stale) package.  The servir/servir_data_utils packages may have been installed
+# with 'pip install .' (non-editable), so edits to the source files won't be
+# picked up automatically.  Inserting the source path here guarantees we always
+# use the version on disk in the TITO tree.
+_local_ncast_dir = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 '../../Nowcast/nowcasting')
+)
+if _local_ncast_dir not in sys.path:
+    sys.path.insert(0, _local_ncast_dir)
+# Invalidate any already-cached stale module entries so the local version wins.
+for _m in [k for k in sys.modules if k.startswith(('servir_data_utils', 'servir_nowcasting_examples', 'servir'))]:
+    del sys.modules[_m]
 
 from servir_nowcasting_examples.m_nowcasting import load_default_params_for_model, nowcast
 from servir_data_utils.m_h5py2tif import h5py2tif
@@ -27,14 +43,29 @@ def run_convlstm(currentTime, precipFolder, nowcast_model_name, xmin, ymin, xmax
         ### Command 3: python m_h5py2tif.py
         # with library implementation
         h5py2tif('Nowcast/servir_nowcasting_examples/temp/output_imerg.h5', 'Nowcast/servir_nowcasting_examples/temp/imerg_geotiff_meta.json', precipFolder)
-        
+
+        # Trim any ML-generated files past the cycle time.  The model always
+        # produces 12 forecast steps (6 h), but the nowcast is only meant to
+        # fill the 4-hour IMERG latency gap (T-4h → T).  Remove every
+        # imerg.qpf.* file whose timestamp is strictly after currentTime.
+        for _fname in glob.glob(os.path.join(precipFolder, "imerg.qpf.*.30minAccum.tif")):
+            try:
+                _dt_str = os.path.basename(_fname).split('.')[2]
+                _dt = datetime.strptime(_dt_str, '%Y%m%d%H%M')
+                if _dt > currentTime:
+                    os.remove(_fname)
+            except Exception:
+                pass
+
     except Exception as e:
         print("    Something failed within ML-nowcast routines with exception {} . Execution has been paused.".format(e))
         print(e)
         
-        #Produce ML qpf from currentTime - 4h till currentime +2h
+        # Fill the 4-hour IMERG latency gap: T-3.5h → T (one step after the
+        # last real IMERG at T-4h, up to current cycle time only).
+        # Previously this generated files up to T+2.5h which was wrong.
         init = currentTime - timedelta(hours = 3.5)
-        final = currentTime + timedelta(hours = 2.5)
+        final = currentTime  # only fill up to cycle time, not beyond
         print('    Duplicating last qpe file')
         date_list = []
         current_date = init

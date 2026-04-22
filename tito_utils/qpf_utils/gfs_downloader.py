@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """
-Herbie-based GFS precipitation downloader and GeoTIFF converter.
+================================================================================
+GFS Precipitation Downloader Module (QPF - Quantitative Precipitation Forecast)
+================================================================================
+
+Description:
+------------
+Downloads NOAA GFS (Global Forecast System) precipitation forecasts using
+Herbie, converts PRATE (precipitation rate) from kg m⁻² s⁻¹ to mm/hour, clips
+to specified domain, and writes EF5-compatible GeoTIFF files. Supports both
+batch downloads for specific forecast windows and continuous auto-polling mode.
 
 Quick usage guide:
 - Activate the conda environment:
@@ -10,23 +19,141 @@ Quick usage guide:
 - Continuous auto mode (polls for latest cycle, uses defaults defined below):  
   `python gfs_downloader.py   cd /home/nammehta/TITOV2Cuba/tito_utils/qpf_utils
   `python gfs_downloader.py --out /home/nammehta/TITOV2Cuba/precip/GFS/GFSData ` or `python gfs_downloader.py --auto-once` for a single pass.
-  `nohup python gfs_downloader.py --auto-out /home/nammehta/TITO_Final_DA_Cuba/precip/GFS > /home/nammehta/TITO_Final_DA_Cuba/data/logs/gfs_downloader.log 2>&1 &` to run in background.
+  `nohup python gfs_downloader.py --auto-out /home/nammehta/TITO_Final_DA_Cuba/precip/GFS > /home/nammehta/TITO_Final_DA_Cuba/data/logs/gfs_downloader.py
 
-This module exposes a single function `download_GFS(systemStartLRTime, systemEndTime, xmin, xmax, ymin, ymax, qpf_store_path)`
-that downloads GFS precipitation rate (PRATE) for a given model run start time and a requested
-time window, converts rate to precipitation amount per time step (rate × Δt), clips to the given
-bounding box, and writes GeoTIFF files suitable for EF5.
+Standalone Usage:
+-----------------
+1. Install Herbie and dependencies (see Required Packages below)
 
-Key details:
-- Uses Herbie to select the best available source for GFS pgrb2.0p25 files.
-- Fetches PRATE (precipitation rate) from GFS.
-- Converts PRATE (kg m-2 s-1) to hourly precipitation rate (mm/hour) by multiplying by 3600.
-- Writes EPSG:4326 GeoTIFFs using rioxarray, clipped to the provided bbox.
-- File naming: gfs.YYYYMMDDHHMM.tif (valid time in UTC).
+2. One-shot batch download (specific time window):
+
+   python gfs_downloader.py \
+       --start "2025-12-01 00" \
+       --end "2025-12-03 00" \
+       --xmin -85 --xmax -74 \
+       --ymin 19 --ymax 26 \
+       --out /path/to/output
+
+3. Single auto-mode execution (one forecast cycle):
+
+   python gfs_downloader.py --auto-once
+
+4. Continuous auto-polling (runs indefinitely, downloads latest cycle):
+
+   python gfs_downloader.py --auto-out /path/to/output
+
+5. Programmatic usage in Python:
+
+   from gfs_downloader import download_GFS
+   
+   written_files = download_GFS(
+       systemStartLRTime="2025-12-01 00",
+       systemEndTime="2025-12-03 00",
+       xmin=-85.0, xmax=-74.0,
+       ymin=19.0, ymax=26.0,
+       qpf_store_path="./gfs_output"
+   )
+   print(f"Downloaded {len(written_files)} forecast files")
+
+6. Background execution (Linux/macOS):
+
+   nohup python gfs_downloader.py \
+       --auto-out /path/to/gfs/output \
+       > /path/to/logs/gfs_downloader.log 2>&1 &
+
+TITO Integration:
+-----------------
+TITO (Threading Inputs to Outputs) uses this module to:
+1. Retrieve global forecast precipitation for the forecast period (+120 hours)
+2. Provide fallback QPF source when high-resolution forecasts (AROME) unavailable
+3. Initialize and update the precipitation boundary conditions for EF5
+
+Called by: TITO orchestrator during forecast phase
+Function: download_GFS() - Main entry point for TITO
+          _auto_mode()   - For continuous operational polling
+
+Parameters expected from TITO:
+  - systemStartLRTime: Forecast start time (str or datetime)
+  - systemEndTime: Forecast end time (str or datetime)
+  - xmin/xmax/ymin/ymax: Domain bounding box in degrees
+  - qpf_store_path: Output directory for GeoTIFFs
+  - max_cycles_back: Retry attempts with older GFS cycles (default 4)
+
+TITO typically calls with:
+  - 120-hour forecast horizon (hourly to +120h, then 3-hourly to +384h)
+  - Automatic cycle fallback if latest cycle unavailable
+
+Required Packages:
+------------------
+- herbie-data: Download GFS GRIB2 files from various sources (NCEP, AWS, etc.)
+  pip install herbie-data
+  Note: Also installs cfgrib for GRIB2 reading
+
+- xarray: Multi-dimensional array handling for weather data
+  pip install xarray
+  OR with conda:
+  conda install -c conda-forge xarray
+
+- rioxarray: Rasterio integration for xarray (spatial operations, GeoTIFF export)
+  pip install rioxarray
+  OR with conda:
+  conda install -c conda-forge rioxarray
+
+- numpy: Numerical operations and array manipulation
+  pip install numpy
+
+- rasterio: Underlying geospatial raster I/O (included with rioxarray)
+  May need: conda install -c conda-forge rasterio
+
+- cfgrib: GRIB2 file reading engine (usually installed with herbie)
+  pip install cfgrib
+  May need eccodes backend:
+  conda install -c conda-forge eccodes
+
+- Internal TITO dependencies: None (self-contained module)
+
+Data Source:
+------------
+NOAA GFS (Global Forecast System) 0.25° Forecast Product
+- Spatial Resolution: 0.25° x 0.25° (~25 km)
+- Temporal Resolution: Hourly to +120h, then 3-hourly to +384h
+- Coverage: Global
+- Format: GRIB2 (downloaded) → GeoTIFF (output)
+- Cycles: 00Z, 06Z, 12Z, 18Z UTC
+- Variable: PRATE (instantaneous precipitation rate at surface)
+- Latency: ~3-4 hours for full run
+
+Output Format:
+--------------
+GeoTIFF files named: gfs.YYYYMMDDHHMM.tif (valid time in UTC)
+- Projection: EPSG:4326 (WGS84)
+- Units: mm/hour (converted from kg m⁻² s⁻¹)
+- Data type: float32
+- NoData value: -9999.0
+
+Auto Mode Configuration:
+------------------------
+Edit these defaults in the script:
+- AUTO_OUT_DIR: Default output directory
+- AUTO_BBOX: Default domain bounds (xmin, xmax, ymin, ymax)
+- AUTO_HOURS: Forecast horizon (default 120 hours)
+- AUTO_POLL_SECONDS: Polling interval (default 3600 = 1 hour)
+- AUTO_CYCLE_GRACE_MINUTES: Grace period before targeting new cycle (default 120)
+
+Retry Logic:
+------------
+If no files written for requested window:
+1. Automatically tries previous GFS cycles (up to max_cycles_back)
+2. Clears partial outputs between attempts
+3. Falls back to older data rather than failing completely
 
 Notes:
-- GFS 0.25° files generally provide hourly output to +120 h and 3-hourly beyond that.
-  We generate the forecast hour list accordingly.
+------
+- Herbie automatically selects best data source (NCEP, AWS, Google Cloud, etc.)
+- Handles longitude wrapping (0-360° to -180-180°)
+- Supports both string and datetime inputs for time parameters
+- Staging directory used in auto-mode to prevent partial data exposure
+================================================================================
 """
 
 from __future__ import annotations

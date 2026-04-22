@@ -60,11 +60,14 @@ qpf_source = "GFS"
 #     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
 # }
 region_forcing_map = {
-    "Antigua":   {"qpe_source": "SCAMPR", "qpf_source": ["GFS", "AROME"]},  # Caribbean — ANTIL domain
-    "Barbados":  {"qpe_source": "SCAMPR", "qpf_source": ["GFS", "AROME"]},
-    "Guatemala": {"qpe_source": "SCAMPR", "qpf_source": "GFS"},              # No AROME (outside domain)
-    "Haiti":     {"qpe_source": "SCAMPR", "qpf_source": ["GFS", "AROME"]},
-    "Comoros":   {"qpe_source": "HSAF",   "qpf_source": ["GFS", "AROME"]},  # Indian Ocean — INDIEN domain
+    "Antigua":   {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},  # Caribbean — ANTIL domain
+    "Barbados":  {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},
+    "Guatemala": {"qpe_source": "IMERG", "qpf_source": "GFS"},              # No AROME (outside domain)
+    "Haiti":     {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},
+    "Comoros":   {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},  # Indian Ocean — INDIEN domain
+    # All regions: IMERG base QPE (up to T−4h) + SCaMPR gap fill (T−4h → T)
+    # controlled by qpe_gap_fill_mode = "IMERG_SCAMPR" below.
+    # Dual QPF: one EF5 run with GFS, one with AROME (where available).
 }
 
 # HSAF credentials/settings (required only when qpe_source == "HSAF")
@@ -111,6 +114,33 @@ run_LR = True
 # In the new flow, LR always starts at each region simulation time.
 # StartLRtime/EndLRTime are only used to infer LR duration when HindCastMode=True.
 StartLRtime = "2024-07-04 11:00" #"%Y-%m-%d %H:%M" UTC.
+
+# ── QPE Gap-Fill Mode ─────────────────────────────────────────────────────────
+# Controls how the IMERG 4-hour latency gap is filled.  Applies to BOTH
+# operational real-time runs AND hindcast experiments.
+#
+#   "IMERG_SCAMPR"  — IMERG base (T−6h → T−4h) + SCaMPR gap fill (T−4h → T).
+#                     Converts SCaMPR 10-min instantaneous rates (mm/h) to
+#                     30-min accumulations (mm) to match IMERG format.
+#                     SCaMPR sourced from NOAA RRQPE S3 bucket (public, no creds).
+#                     States saved at T−4h (last real IMERG boundary).
+#                     NOWCAST (ML) disabled — SCaMPR fills the gap instead.
+#                     Each cycle downloads 2 new IMERG files + fresh SCaMPR.
+#
+#   "IMERG_HSAF"    — IMERG base + HSAF H40B gap fill (Indian Ocean / Africa).
+#                     Requires hsaf_ftp_user/hsaf_ftp_pass credentials.
+#                     States saved at T−4h.
+#
+#   "IMERG_ONLY"    — Only IMERG up to T−4h.  No gap fill.
+#                     States saved at T−4h.
+#
+#   "IMERG_NOWCAST" — IMERG base + ML ConvLSTM nowcast gap fill.
+#                     States saved at T−4h; EF5 outputs extend to T.
+#
+qpe_gap_fill_mode = "IMERG_SCAMPR"
+
+# Backward-compat alias used by hindcast_manager.py.
+hindcast_qpe_experiment = qpe_gap_fill_mode
 EndLRTime = "2024-07-04 18:00" #"%Y-%m-%d %H:%M" UTC.
 
 # Optional explicit LR duration in hours for hindcast (overrides StartLRtime/EndLRTime difference).
@@ -134,6 +164,25 @@ GFS_precip_path = "/Dedicated/Humberto/Naman/TITO_Caribbean_Comoros_VM/TITOCarib
 # AROME tifs are stored per-region under this root as a cache.
 # Domain routing is automatic: ANTIL for Caribbean, INDIEN for Comoros.
 AROME_precip_path = "precip/arome/"                  # persistent AROME tif cache root
+
+# ── ConvLSTM nowcast domains (used only when qpe_gap_fill_mode == "IMERG_NOWCAST") ──
+# Defines per-basin bounding boxes used BOTH for IMERG downloads AND for the
+# ConvLSTM run when qpe_gap_fill_mode == "IMERG_NOWCAST".
+# Each bbox must be ≥ 51.6° wide × 36.0° tall (the model's 516×360 px input).
+# At 0.1°/px those minimums give exactly 516×360 with no centre-crop needed.
+#
+# Has NO effect in IMERG_SCAMPR / IMERG_HSAF / IMERG_ONLY modes since
+# NOWCAST is disabled and IMERG uses the global bbox (xmin/xmax/ymin/ymax).
+nowcast_domains = {
+    "caribbean": {
+        "regions": ["Antigua", "Barbados", "Guatemala", "Haiti"],
+        "xmin": -95.0, "xmax": -43.4, "ymin": -6.0, "ymax": 30.0,
+    },
+    "comoros": {
+        "regions": ["Comoros"],
+        "xmin": 17.0, "xmax": 68.6, "ymin": -12.0, "ymax": 24.0,
+    },
+}
 
 # Email associated to GPM account
 email_gpm = 'vrobledodelgado@uiowa.edu'

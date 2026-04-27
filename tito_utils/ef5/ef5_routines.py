@@ -499,7 +499,9 @@ def write_control_file(
         if LR_run and "PRECIPFORECAST=" in line and not line.lstrip().startswith('#'):
             line = re.sub(r'PRECIPFORECAST=\w+', f'PRECIPFORECAST={qpf_source.upper()}', line)
 
-        if statesFound and "TIME_WARMEND=" in line:
+        # Comment TIME_WARMEND when states exist (normal QPE run) OR for any LR run
+        # (no QPE warm-up in LR runs — the model loads the prior state directly).
+        if (statesFound or LR_run) and "TIME_WARMEND=" in line:
             if not line.lstrip().startswith('#'):
                 line = "#" + line
 

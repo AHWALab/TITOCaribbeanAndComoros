@@ -356,6 +356,12 @@ def main(args):
             r_state_end = region_current_time - _imerg_offset
             r_warm_end = region_current_time - _imerg_offset
 
+        # r_imerg_end / r_scampr_end are used by the IMERG-SCaMPR chained pipeline
+        # (operational IMERG_SCAMPR mode).  For IMERG QPE the IMERG run ends at T-4h
+        # (last available IMERG file), then a separate SCaMPR run covers T-4h → T.
+        _r_imerg_end  = region_current_time - timedelta(hours=4) if _qpe == "IMERG" else region_current_time
+        _r_scampr_end = region_current_time
+
         region_configs[region] = {
             "region_key":           region_key,
             "region_current_time":  region_current_time,
@@ -382,6 +388,9 @@ def main(args):
             "r_system_start":       r_warm_end - timedelta(minutes=30),
             "r_fail_time":          r_warm_end - timedelta(hours=6),
             "cycle_time_key":       region_current_time.strftime("%Y%m%d%H%M"),
+            # Chained pipeline time boundaries (IMERG_SCAMPR operational mode)
+            "r_imerg_end":          _r_imerg_end,   # T-4h: end of IMERG run, save state here
+            "r_scampr_end":         _r_scampr_end,  # T:    end of SCaMPR run, save state here
         }
 
     # ── Per-domain nowcast bbox mapping (built from nowcast_domains_cfg) ────────────────
@@ -537,18 +546,6 @@ def main(args):
             print(f"***_________Downloading shared IMERG for cycle {cycle_key} "
                   f"(shared by {n_imerg} region(s))_________***")
 
-            # Strip stale gap-fill IMERG files before downloading fresh data.
-            _ref_experiment = _ref_cfg.get("qpe_experiment", "IMERG_NOWCAST")
-            if _ref_experiment in ("IMERG_SCAMPR", "IMERG_HSAF"):
-                _prev_end = _ref_cfg["region_current_time"] - timedelta(hours=5)
-                for _fn in list(os.listdir(_ref_folder)):
-                    if _fn.startswith("imerg.qpe.") and _fn.endswith(".30minAccum.tif"):
-                        try:
-                            if datetime.strptime(_fn[10:22], "%Y%m%d%H%M") > _prev_end:
-                                os.remove(os.path.join(_ref_folder, _fn))
-                        except Exception:
-                            pass
-
             try:
                 get_new_precip(
                     _ref_cfg["region_current_time"], server, _ref_folder,
@@ -562,20 +559,8 @@ def main(args):
                     os.path.join(_ref_folder, "imerg.qpe.*.30minAccum.tif")
                 ))
                 for _other in _ir_list[1:]:
-                    _oth_cfg    = region_configs[_other]
-                    _oth_folder = _oth_cfg["region_precip_folder"]
+                    _oth_folder = region_configs[_other]["region_precip_folder"]
                     makedirs(_oth_folder, exist_ok=True)
-                    # Strip stale gap-fill files in the destination folder first.
-                    _oth_experiment = _oth_cfg.get("qpe_experiment", "IMERG_NOWCAST")
-                    if _oth_experiment in ("IMERG_SCAMPR", "IMERG_HSAF"):
-                        _prev_end_oth = _oth_cfg["region_current_time"] - timedelta(hours=5)
-                        for _fn in list(os.listdir(_oth_folder)):
-                            if _fn.startswith("imerg.qpe.") and _fn.endswith(".30minAccum.tif"):
-                                try:
-                                    if datetime.strptime(_fn[10:22], "%Y%m%d%H%M") > _prev_end_oth:
-                                        os.remove(os.path.join(_oth_folder, _fn))
-                                except Exception:
-                                    pass
                     _copied = 0
                     for _src in _imerg_tifs:
                         try:
@@ -593,7 +578,9 @@ def main(args):
     _lock = threading.Lock()
     staged_precip_folders = set()
     region_imerg_folders_used = []
-    ef5_jobs = []
+    ef5_jobs        = []   # used by legacy/hindcast path
+    imerg_ef5_jobs  = []   # IMERG_SCAMPR chain: run 1 (IMERG QPE only, saves state at T-4h)
+    lr_ef5_jobs     = []   # IMERG_SCAMPR chain: run 2 (SCaMPR QPE T-4h→T + GFS/AROME QPF T→T+24h)
 
     # ── Phase 1 worker: QPE cleanup + download only (no nowcast) ───────────────────
     # Nowcast is pulled out of the parallel loop and run once after all IMERG
@@ -720,7 +707,6 @@ def main(args):
         region_arome_archive_path = cfg["region_arome_archive_path"]
         region_states_path  = cfg["region_states_path"]
         region_data_path    = cfg["region_data_path"]
-        region_tmp_output   = cfg["region_tmp_output"]
         region_template     = cfg["region_template"]
         r_start_lr   = cfg["r_start_lr"]
         r_end_lr     = cfg["r_end_lr"]
@@ -807,14 +793,17 @@ def main(args):
         # QPE warm-up always runs but states are saved only once:
         #   • First / only QPF (GFS/WRF): save_states=True
         #   • Additional QPF sources (AROME): save_states=False → no state overwrite
-        # AROME outputs go to tmp_output_<model>_arome/ to keep results separate.
+        # Dynamic output folder naming: tmp_output_{model}_{qpe}_{qpf}
 
         # Build list of (actual_qpf, tmp_output, stage_precip, save_states)
         _qpf_jobs_to_build = []
 
         if not LR_run:
             # QPE-only simulation — single job, no QPF
-            _qpf_jobs_to_build.append(("none", region_tmp_output, True, True))
+            _qpe_only_tmp = os.path.join(
+                region_data_path, f"tmp_output_{systemModel}_{local_qpe_source.lower()}"
+            )
+            _qpf_jobs_to_build.append(("none", _qpe_only_tmp, True, True))
         else:
             for _qpf_item in qpf_source_list:
                 actual_qpf = _qpf_item
@@ -876,15 +865,13 @@ def main(args):
                         print(f"    AROME problem for {region}: {_ae}. Skipping AROME run.")
                         continue
 
-                # AROME outputs to a separate folder; does not overwrite states
-                if actual_qpf == "AROME":
-                    _tmp_out = os.path.join(
-                        region_data_path, f"tmp_output_{systemModel}_arome"
-                    )
-                    _save_states = False
-                else:
-                    _tmp_out = region_tmp_output
-                    _save_states = True
+                # Dynamic output folder: tmp_output_{model}_{qpe}_{qpf}
+                # AROME does not overwrite states (keeps GFS/WRF state intact).
+                _tmp_out = os.path.join(
+                    region_data_path,
+                    f"tmp_output_{systemModel}_{local_qpe_source.lower()}_{actual_qpf.lower()}"
+                )
+                _save_states = actual_qpf != "AROME"
 
                 _qpf_jobs_to_build.append((
                     actual_qpf,
@@ -953,6 +940,232 @@ def main(args):
                     "controlFile":          controlFile,
                     "output_timestamp_str": output_timestamp_str,
                 })
+
+    # ── IMERG_SCAMPR chained pipeline: two preparation functions ────────────────────
+    # Used only when not HindCastMode and _qpe_gap_fill_mode == "IMERG_SCAMPR".
+    # Each function appends to a dedicated job list (imerg_ef5_jobs / lr_ef5_jobs)
+    # that is run sequentially in the execution block below.
+
+    def _prep_imerg_ef5_for_region(region):
+        """Run 1 of 2: IMERG-only EF5 simulation (30-min, T-start → T-4h). Saves state at T-4h."""
+        cfg = region_configs[region]
+        region_key          = cfg["region_key"]
+        region_current_time = cfg["region_current_time"]
+        output_timestamp_str = cfg["output_timestamp_str"]
+        region_precip_folder   = cfg["region_precip_folder"]
+        region_qpf_store_path  = cfg["region_qpf_store_path"]
+        region_states_path  = cfg["region_states_path"]
+        region_data_path    = cfg["region_data_path"]
+        region_template     = cfg["region_template"]
+        r_imerg_end = cfg["r_imerg_end"]  # T-4h
+
+        _tmp_out = os.path.join(region_data_path, f"tmp_output_{systemModel}_imerg")
+        region_precip_ef5_folder = os.path.join(precipEF5Folder, region_key, "imerg_none")
+        makedirs(region_precip_ef5_folder, exist_ok=True)
+        makedirs(_tmp_out, exist_ok=True)
+
+        try:
+            realSystemStartTime, controlFile, run_output_path = prepare_ef5(
+                region_precip_ef5_folder,
+                region_precip_folder,
+                _with_sep(region_states_path),
+                modelStates,
+                r_imerg_end - timedelta(minutes=30),  # systemStartTime: look for state here
+                r_imerg_end - timedelta(hours=6),      # failTime: oldest state to accept
+                region_current_time,
+                systemName,
+                SEND_ALERTS,
+                alert_recipients,
+                smtp_config,
+                _with_sep(_tmp_out),
+                _with_sep(region_data_path),
+                region,
+                systemModel,
+                templatePath,
+                region_template,
+                r_imerg_end,   # systemStartLRTime (TIMEBEGINLR — unused, LR_run=False)
+                r_imerg_end,   # systemWarmEndTime  (TIMEWARMEND = T-4h)
+                r_imerg_end,   # systemStateEndTime (TIMESTATE   = T-4h)
+                r_imerg_end,   # systemEndTime      (TIMEEND     = T-4h)
+                LR_TimeStep,
+                False,         # LR_run
+                region,
+                model_resolution,
+                basicPath,
+                parametersPath,
+                "IMERG",       # qpe_source
+                "none",        # qpf_source
+                stage_precip=True,
+                output_timestamp_str=output_timestamp_str,
+                qpf_store_forcing_path=region_qpf_store_path,
+                save_states=True,
+            )
+            print(f"    {region} [IMERG run]: start {realSystemStartTime.strftime('%Y%m%d_%H%M')}"
+                  f" → end {r_imerg_end.strftime('%Y%m%d_%H%M')}, control {controlFile}")
+            with _lock:
+                staged_precip_folders.add(region_precip_ef5_folder)
+                imerg_ef5_jobs.append({
+                    "region":               region,
+                    "ef5Path":              ef5Path,
+                    "tmpOutput":            run_output_path + "/",
+                    "controlFile":          controlFile,
+                    "output_timestamp_str": output_timestamp_str,
+                })
+        except Exception as _exc:
+            print(f"    !!! {region} IMERG EF5 prep failed: {_exc}")
+
+    def _prep_lr_ef5_for_region(region):
+        """Run 2 of 2: LR EF5 simulations — SCaMPR QPE warm-up (T-4h → T) + GFS/AROME QPF (T → T+24h).
+
+        Both GFS and AROME runs start from the IMERG-saved state at T-4h, run the
+        SCaMPR QPE phase (10-min) to advance to T, then branch into their respective
+        LR QPF forecasts (60-min) out to T+24h.  This avoids a separate SCaMPR-only
+        run and saves states independently for each QPF branch.
+
+        Output folders follow the pattern  tmp_output_{model}_scampr_{qpf}  so they
+        are always self-descriptive regardless of the active forcing configuration.
+        """
+        cfg = region_configs[region]
+        region_key          = cfg["region_key"]
+        region_current_time = cfg["region_current_time"]
+        output_timestamp_str = cfg["output_timestamp_str"]
+        qpf_source_list     = cfg["qpf_source"]
+        region_qpf_store_path  = cfg["region_qpf_store_path"]
+        region_gfs_archive_path = cfg["region_gfs_archive_path"]
+        region_arome_archive_path = cfg["region_arome_archive_path"]
+        region_states_path  = cfg["region_states_path"]
+        region_data_path    = cfg["region_data_path"]
+        region_template     = cfg["region_template"]
+        cycle_time_key      = cfg["cycle_time_key"]
+        r_imerg_end  = cfg["r_imerg_end"]   # T-4h: load IMERG state from here
+        r_scampr_end = cfg["r_scampr_end"]  # T:    end of SCaMPR QPE warm-up / start of QPF
+        r_lr_end     = cfg["r_end_lr"]       # T+24h: end of LR forecast
+
+        _scampr_precip = _with_sep(
+            scampr_shared_folder if scampr_shared_folder
+            else os.path.join(scampr_precip_root, "_shared")
+        )
+
+        for _qpf_item in qpf_source_list:
+            actual_qpf = _qpf_item
+
+            # ── WRF with GFS fallback ────────────────────────────────────────────
+            if _qpf_item == "WRF":
+                wrf_ok = False
+                if WRF_archive_path:
+                    try:
+                        wrf_ok = WRF_searcher(
+                            WRF_archive_path, region_qpf_store_path,
+                            r_scampr_end, r_lr_end,
+                            LR_TimeStep, WRF_var_name, WRF_filename_template,
+                        )
+                    except Exception as _we:
+                        print(f"    WRF processing failed for {region}: {_we}")
+                actual_qpf = "WRF" if wrf_ok else "GFS"
+                if not wrf_ok and WRF_archive_path:
+                    print(f"    {region}: WRF not available — falling back to GFS")
+
+            # ── GFS ─────────────────────────────────────────────────────────────
+            if actual_qpf == "GFS":
+                if cycle_time_key in gfs_shared_data_folders:
+                    _copy_shared_gfs_to_region(
+                        gfs_shared_data_folders[cycle_time_key],
+                        region_qpf_store_path,
+                    )
+                else:
+                    try:
+                        GFS_searcher(
+                            region_gfs_archive_path, region_qpf_store_path,
+                            r_scampr_end, r_lr_end,
+                            xmin, xmax, ymin, ymax,
+                        )
+                    except Exception as _ge:
+                        print(f"    GFS problem for {region}: {_ge}. Continuing.")
+
+            # ── AROME ────────────────────────────────────────────────────────────
+            elif actual_qpf == "AROME":
+                try:
+                    arome_domain = get_arome_domain_for_region(region)
+                    arome_key = (cycle_time_key, arome_domain)
+                    if arome_key in arome_shared_data_folders:
+                        _copy_shared_arome_to_region(
+                            arome_shared_data_folders[arome_key],
+                            region_qpf_store_path,
+                        )
+                    else:
+                        AROME_searcher(
+                            region_arome_archive_path, region_qpf_store_path,
+                            r_scampr_end, r_lr_end,
+                            xmin, xmax, ymin, ymax,
+                            arome_domain,
+                        )
+                except Exception as _ae:
+                    print(f"    AROME problem for {region}: {_ae}. Skipping AROME run.")
+                    continue
+
+            # Dynamic output folder: tmp_output_{model}_scampr_{qpf}
+            # LR runs never save states — only the IMERG run saves states (at T-4h).
+            _tmp_out = os.path.join(
+                region_data_path,
+                f"tmp_output_{systemModel}_scampr_{actual_qpf.lower()}"
+            )
+            _save_states = False
+
+            forcing_folder = f"scampr_{actual_qpf.lower()}"
+            region_precip_ef5_folder = os.path.join(precipEF5Folder, region_key, forcing_folder)
+            makedirs(region_precip_ef5_folder, exist_ok=True)
+
+            try:
+                realSystemStartTime, controlFile, run_output_path = prepare_ef5(
+                    region_precip_ef5_folder,
+                    _scampr_precip,      # precipFolder: SCaMPR 10-min files for QPE warm-up
+                    _with_sep(region_states_path),
+                    modelStates,
+                    r_imerg_end,         # systemStartTime: find IMERG state at T-4h
+                    r_imerg_end,         # failTime: do not search beyond T-4h
+                    region_current_time,
+                    systemName,
+                    SEND_ALERTS,
+                    alert_recipients,
+                    smtp_config,
+                    _with_sep(_tmp_out),
+                    _with_sep(region_data_path),
+                    region,
+                    systemModel,
+                    templatePath,
+                    region_template,
+                    r_scampr_end,   # systemStartLRTime (TIMEBEGINLR = T)
+                    r_scampr_end,   # systemWarmEndTime  (TIMEWARMEND = T, SCaMPR QPE T-4h → T)
+                    r_lr_end,       # systemStateEndTime (TIMESTATE   = T+24h)
+                    r_lr_end,       # systemEndTime      (TIMEEND     = T+24h)
+                    LR_TimeStep,
+                    True,           # LR_run
+                    region,
+                    model_resolution,
+                    basicPath,
+                    parametersPath,
+                    "SCAMPR",       # qpe_source → _apply_scampr_control_overrides → TIMESTEP=10u
+                    actual_qpf,     # qpf_source (GFS / WRF / AROME)
+                    stage_precip=True,
+                    output_timestamp_str=output_timestamp_str,
+                    qpf_store_forcing_path=region_qpf_store_path,
+                    save_states=_save_states,
+                )
+                print(f"    {region} [SCaMPR+{actual_qpf}]: "
+                      f"start {realSystemStartTime.strftime('%Y%m%d_%H%M')} "
+                      f"(IMERG state T-4h) → QPE→T → QPF→{r_lr_end.strftime('%Y%m%d_%H%M')}, "
+                      f"control {controlFile}")
+                with _lock:
+                    staged_precip_folders.add(region_precip_ef5_folder)
+                    lr_ef5_jobs.append({
+                        "region":               region,
+                        "ef5Path":              ef5Path,
+                        "tmpOutput":            run_output_path + "/",
+                        "controlFile":          controlFile,
+                        "output_timestamp_str": output_timestamp_str,
+                    })
+            except Exception as _exc:
+                print(f"    !!! {region} LR ({actual_qpf}) EF5 prep failed: {_exc}")
 
     try:
         # ── Phase 1: parallel QPE downloads ─────────────────────────────────────────
@@ -1075,10 +1288,11 @@ def main(args):
                 except Exception as _ne:
                     print(f"    Shared nowcast [{_dname}] failed: {_ne}. Continuing without nowcast gap fill.")
 
-        # ── Shared SCaMPR gap-fill download (serial, used by all IMERG_SCAMPR regions) ─
-        # SCaMPR covers the same global bbox for every region. Download once to a shared
-        # folder and pass that path into each region's gap-fill call, eliminating the
-        # 5× redundant S3 fetches that were happening inside _prep_qpf_ef5_for_region.
+        # ── Shared SCaMPR download (serial, used by all IMERG_SCAMPR regions) ─────────
+        # In the chained pipeline (operational IMERG_SCAMPR) this is the QPE source
+        # for Run 2 (10-min SCaMPR EF5).  In hindcast IMERG_SCAMPR mode the same
+        # folder is used by the legacy gap-fill path in _prep_qpf_ef5_for_region.
+        # SCaMPR covers the same global bbox for all regions so we download once.
         scampr_shared_folder = None   # path to shared SCaMPR TIF folder, or None
 
         if _qpe_gap_fill_mode == "IMERG_SCAMPR" and imerg_needed:
@@ -1094,7 +1308,7 @@ def main(args):
                 _n_scampr = sum(
                     1 for r in regions_to_run if region_configs[r]["qpe_source"] == "IMERG"
                 )
-                print(f"***_________Downloading shared SCaMPR gap fill "
+                print(f"***_________Downloading shared SCaMPR "
                       f"(used by {_n_scampr} region(s))_________***")
 
                 # Remove SCaMPR files older than 6.5 h from the shared folder.
@@ -1121,23 +1335,78 @@ def main(args):
                     print(f"    Shared SCaMPR download failed: {_sc_e}. "
                           f"Regions will attempt individual downloads.")
 
-        # ── Phase 2: parallel QPF retrieval + EF5 control file prep ─────────────────
-        with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:
-            futures = {executor.submit(_prep_qpf_ef5_for_region, r): r for r in regions_to_run}
-            for future in _as_completed(futures):
-                r = futures[future]
-                try:
-                    future.result()
-                except Exception as exc:
-                    print(f"    !!! Region {r} forcing prep raised an exception: {exc}")
+        # ── Phase 2: EF5 simulation chain ────────────────────────────────────────────
+        # Operational IMERG_SCAMPR mode: two sequential EF5 batches
+        #   2a  IMERG run      (30-min, T-start → T-4h, saves state at T-4h)
+        #   2b  LR GFS+AROME   each starts from IMERG state at T-4h, runs SCaMPR QPE
+        #                      warm-up (10-min, T-4h → T) then QPF forecast (60-min, T → T+24h)
+        # All other modes (hindcast / IMERG_NOWCAST / IMERG_ONLY): single legacy batch.
+        if not HindCastMode and _qpe_gap_fill_mode == "IMERG_SCAMPR" and imerg_needed:
 
-        if ef5_jobs:
-            print("***_________Running EF5 in parallel for all regions_________***")
-            run_ef5_simulations_parallel(ef5_jobs, max_workers=len(ef5_jobs))
-            newline(2)
-            print("******** EF5 Outputs are ready!!! ********")
+            # ── Phase 2a: IMERG EF5 prep (parallel) + run ────────────────────────
+            print("***_________Phase 2a: Preparing IMERG EF5 control files_________***")
+            with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:
+                futures = {executor.submit(_prep_imerg_ef5_for_region, r): r for r in regions_to_run}
+                for future in _as_completed(futures):
+                    r = futures[future]
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        print(f"    !!! Region {r} IMERG EF5 prep raised: {exc}")
+
+            if imerg_ef5_jobs:
+                print("***_________Running IMERG EF5 simulations for all regions_________***")
+                run_ef5_simulations_parallel(imerg_ef5_jobs, max_workers=len(imerg_ef5_jobs))
+                newline(1)
+                print("    IMERG EF5 runs complete — states saved at T-4h")
+            else:
+                print("    No IMERG EF5 jobs prepared.")
+
+            # ── Phase 2b: LR EF5 prep (parallel) + run ───────────────────────────
+            # Each LR job starts from the IMERG state at T-4h, runs SCaMPR QPE
+            # (10-min) to T, then branches into its QPF forecast to T+24h.
+            if LR_run:
+                print("***_________Phase 2b: Preparing LR (SCaMPR+GFS/AROME) EF5 control files_________***")
+                with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:
+                    futures = {executor.submit(_prep_lr_ef5_for_region, r): r for r in regions_to_run}
+                    for future in _as_completed(futures):
+                        r = futures[future]
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            print(f"    !!! Region {r} LR EF5 prep raised: {exc}")
+
+                if lr_ef5_jobs:
+                    print("***_________Running LR EF5 simulations for all regions_________***")
+                    run_ef5_simulations_parallel(lr_ef5_jobs, max_workers=len(lr_ef5_jobs))
+                else:
+                    print("    No LR EF5 jobs prepared.")
+
+            if imerg_ef5_jobs or lr_ef5_jobs:
+                newline(2)
+                print("******** EF5 Outputs are ready!!! ********")
+            else:
+                print("No EF5 jobs were prepared.")
+
         else:
-            print("No EF5 jobs were prepared.")
+            # ── Legacy single-batch path (hindcast or non-SCAMPR modes) ──────────
+            print("***_________Phase 2: Preparing QPF/EF5 control files (legacy path)_________***")
+            with _ThreadPoolExecutor(max_workers=len(regions_to_run)) as executor:
+                futures = {executor.submit(_prep_qpf_ef5_for_region, r): r for r in regions_to_run}
+                for future in _as_completed(futures):
+                    r = futures[future]
+                    try:
+                        future.result()
+                    except Exception as exc:
+                        print(f"    !!! Region {r} forcing prep raised an exception: {exc}")
+
+            if ef5_jobs:
+                print("***_________Running EF5 in parallel for all regions_________***")
+                run_ef5_simulations_parallel(ef5_jobs, max_workers=len(ef5_jobs))
+                newline(2)
+                print("******** EF5 Outputs are ready!!! ********")
+            else:
+                print("No EF5 jobs were prepared.")
     finally:
         if NOWCAST and imerg_needed and region_imerg_folders_used:
             print("***_________Cleaning end-of-run IMERG nowcast/duplicated files_________***")

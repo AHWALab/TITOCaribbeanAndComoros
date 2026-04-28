@@ -620,7 +620,7 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
     systemWarmEndTime, systemStateEndTime, systemEndTime, LR_TimeStep, LR_run,
     region_name, model_resolution, basicPath, parametersPath, qpe_source="IMERG", qpf_source="GFS",
     stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="qpf_store/",
-    save_states=True):
+    save_states=True, cold_start_begin_time=None, cold_start_warm_end_time=None):
 
     # Copy precipitation files into staging folder only once when requested.
     if stage_precip:
@@ -637,6 +637,14 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
     send_state_alerts(foundAllStates, realSystemStartTime, systemStartTime,
                       currentTime, systemName, SEND_ALERTS,
                       alert_recipients, smtp_config)
+
+    control_start_time = realSystemStartTime
+    control_warm_end_time = systemWarmEndTime
+    if not foundAllStates:
+        if cold_start_begin_time is not None:
+            control_start_time = cold_start_begin_time
+        if cold_start_warm_end_time is not None:
+            control_warm_end_time = cold_start_warm_end_time
                      
     print(" ")
     print("    Writting control file.")
@@ -653,9 +661,9 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
         templatePath,
         template,
         statesPath,
-        realSystemStartTime,
+        control_start_time,
         systemStartLRTime,
-        systemWarmEndTime,
+        control_warm_end_time,
         systemStateEndTime,
         systemEndTime,
         LR_TimeStep,
@@ -681,4 +689,4 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
             if is_non_zero_file(assimilationPath + log) == True:
                 remove(assimilationPath + log)
     """
-    return realSystemStartTime, controlFile, run_output_path
+    return control_start_time, controlFile, run_output_path

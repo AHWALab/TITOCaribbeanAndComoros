@@ -141,6 +141,27 @@ qpe_gap_fill_mode = "IMERG_SCAMPR"
 
 # Backward-compat alias used by hindcast_manager.py.
 hindcast_qpe_experiment = qpe_gap_fill_mode
+
+# IMERG-only warmup controls.
+# These apply only to IMERG-only EF5 runs:
+#   - standalone IMERG_ONLY mode
+#   - the IMERG state-building phase inside IMERG_SCAMPR operations
+#
+# If no usable states are found, TITO falls back to an IMERG-only cold start with:
+#   TIME_BEGIN   = simulation_end - post_warmup_duration - warmup_duration
+#   TIME_WARMEND = simulation_end - post_warmup_duration
+#   TIME_END     = simulation_end
+#
+# Default example for a 16:00 cycle (IMERG end = 12:00):
+#   TIME_BEGIN=04:00, TIME_WARMEND=10:00, TIME_END=12:00
+#
+# For first-time setup you can enable a longer warmup, e.g. "1month" or "3months".
+# That longer warmup is used only when no states are found.
+imerg_cold_start_warmup = "6h"
+imerg_post_warmup_duration = "2h"
+initial_imerg_warmup_enabled = False
+initial_imerg_warmup_duration = "1month"
+
 EndLRTime = "2024-07-04 18:00" #"%Y-%m-%d %H:%M" UTC.
 
 # Optional explicit LR duration in hours for hindcast (overrides StartLRtime/EndLRTime difference).

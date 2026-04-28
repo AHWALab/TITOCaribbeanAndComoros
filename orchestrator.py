@@ -166,6 +166,90 @@ def main(args):
         except Exception as exc:
             raise ValueError(f"Invalid datetime for {label}: {date_text}. Expected format YYYY-MM-DD HH:MM") from exc
 
+    def _parse_duration(value, label, default_unit="hours"):
+        if isinstance(value, timedelta):
+            return value
+        if isinstance(value, (int, float)):
+            if default_unit == "hours":
+                return timedelta(hours=float(value))
+            if default_unit == "days":
+                return timedelta(days=float(value))
+            if default_unit == "minutes":
+                return timedelta(minutes=float(value))
+            raise ValueError(f"Unsupported default unit '{default_unit}' for {label}")
+
+        text = str(value).strip().lower()
+        if not text:
+            raise ValueError(f"Duration for {label} cannot be empty")
+
+        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([a-z]+)?", text)
+        if not match:
+            raise ValueError(
+                f"Invalid duration for {label}: {value}. Use values like '6h', '2d', '1month', or 6"
+            )
+
+        amount = float(match.group(1))
+        unit = match.group(2) or {
+            "hours": "h",
+            "days": "d",
+            "minutes": "min",
+        }.get(default_unit, "h")
+
+        if unit in {"m", "min", "mins", "minute", "minutes"}:
+            return timedelta(minutes=amount)
+        if unit in {"h", "hr", "hrs", "hour", "hours"}:
+            return timedelta(hours=amount)
+        if unit in {"d", "day", "days"}:
+            return timedelta(days=amount)
+        if unit in {"w", "wk", "wks", "week", "weeks"}:
+            return timedelta(weeks=amount)
+        if unit in {"mo", "mon", "mons", "month", "months"}:
+            return timedelta(days=30 * amount)
+
+        raise ValueError(
+            f"Unsupported duration unit for {label}: {value}. Supported units are minutes, hours, days, weeks, months"
+        )
+
+    imerg_cold_start_warmup = _parse_duration(
+        getattr(config_file, "imerg_cold_start_warmup", "6h"),
+        "imerg_cold_start_warmup",
+    )
+    imerg_post_warmup_duration = _parse_duration(
+        getattr(config_file, "imerg_post_warmup_duration", "2h"),
+        "imerg_post_warmup_duration",
+    )
+    initial_imerg_warmup_enabled = bool(
+        getattr(config_file, "initial_imerg_warmup_enabled", False)
+    )
+    initial_imerg_warmup_duration = _parse_duration(
+        getattr(config_file, "initial_imerg_warmup_duration", "1month"),
+        "initial_imerg_warmup_duration",
+    )
+    if imerg_cold_start_warmup <= timedelta(0):
+        raise ValueError("imerg_cold_start_warmup must be greater than zero")
+    if imerg_post_warmup_duration <= timedelta(0):
+        raise ValueError("imerg_post_warmup_duration must be greater than zero")
+    if initial_imerg_warmup_duration <= timedelta(0):
+        raise ValueError("initial_imerg_warmup_duration must be greater than zero")
+
+    def _resolve_imerg_only_cold_start_window(simulation_end_time):
+        warmup_duration = (
+            initial_imerg_warmup_duration
+            if initial_imerg_warmup_enabled
+            else imerg_cold_start_warmup
+        )
+        warm_end_time = simulation_end_time - imerg_post_warmup_duration
+        start_time = warm_end_time - warmup_duration
+        if warm_end_time >= simulation_end_time:
+            raise ValueError(
+                "IMERG-only warmup requires imerg_post_warmup_duration to end before the simulation end time"
+            )
+        if start_time >= warm_end_time:
+            raise ValueError(
+                "IMERG-only warmup requires a positive warmup window before TIME_WARMEND"
+            )
+        return start_time, warm_end_time, warmup_duration
+
     def _round_cycle_time(input_time):
         if systemTimestep == 30:
             minutes = int(np.floor(input_time.minute / 30.0) * 30)
@@ -716,6 +800,8 @@ def main(args):
         r_system_start = cfg["r_system_start"]
         r_fail_time    = cfg["r_fail_time"]
         cycle_time_key  = cfg["cycle_time_key"]
+        cold_start_begin_time = None
+        cold_start_warm_end_time = None
 
         # ── IMERG gap fills (SCAMPR / HSAF) — operational and hindcast ───────────
         # Nowcast (IMERG_NOWCAST) is handled in the shared step between phases.
@@ -803,6 +889,14 @@ def main(args):
             _qpe_only_tmp = os.path.join(
                 region_data_path, f"tmp_output_{systemModel}_{local_qpe_source.lower()}"
             )
+            if local_qpe_source == "IMERG" and local_qpe_experiment == "IMERG_ONLY":
+                cold_start_begin_time, cold_start_warm_end_time, _ = _resolve_imerg_only_cold_start_window(
+                    r_state_end
+                )
+                r_system_start = r_state_end - timedelta(minutes=30)
+                r_fail_time = r_state_end - timedelta(hours=6)
+                r_warm_end = cold_start_warm_end_time
+                r_end_time = r_state_end
             _qpf_jobs_to_build.append(("none", _qpe_only_tmp, True, True))
         else:
             for _qpf_item in qpf_source_list:
@@ -922,6 +1016,8 @@ def main(args):
                 output_timestamp_str=output_timestamp_str,
                 qpf_store_forcing_path=region_qpf_store_path,
                 save_states=_do_save_states,
+                cold_start_begin_time=cold_start_begin_time,
+                cold_start_warm_end_time=cold_start_warm_end_time,
             )
 
             print(
@@ -958,6 +1054,9 @@ def main(args):
         region_data_path    = cfg["region_data_path"]
         region_template     = cfg["region_template"]
         r_imerg_end = cfg["r_imerg_end"]  # T-4h
+        cold_start_begin_time, cold_start_warm_end_time, _ = _resolve_imerg_only_cold_start_window(
+            r_imerg_end
+        )
 
         _tmp_out = os.path.join(region_data_path, f"tmp_output_{systemModel}_imerg")
         region_precip_ef5_folder = os.path.join(precipEF5Folder, region_key, "imerg_none")
@@ -984,7 +1083,7 @@ def main(args):
                 templatePath,
                 region_template,
                 r_imerg_end,   # systemStartLRTime (TIMEBEGINLR — unused, LR_run=False)
-                r_imerg_end,   # systemWarmEndTime  (TIMEWARMEND = T-4h)
+                cold_start_warm_end_time,
                 r_imerg_end,   # systemStateEndTime (TIMESTATE   = T-4h)
                 r_imerg_end,   # systemEndTime      (TIMEEND     = T-4h)
                 LR_TimeStep,
@@ -999,6 +1098,8 @@ def main(args):
                 output_timestamp_str=output_timestamp_str,
                 qpf_store_forcing_path=region_qpf_store_path,
                 save_states=True,
+                cold_start_begin_time=cold_start_begin_time,
+                cold_start_warm_end_time=cold_start_warm_end_time,
             )
             print(f"    {region} [IMERG run]: start {realSystemStartTime.strftime('%Y%m%d_%H%M')}"
                   f" → end {r_imerg_end.strftime('%Y%m%d_%H%M')}, control {controlFile}")

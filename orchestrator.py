@@ -1058,6 +1058,27 @@ def main(args):
             r_imerg_end
         )
 
+        # Determine the IMERG download bounding box for this region.
+        # In IMERG_NOWCAST mode (hindcast) use the per-domain bbox; otherwise
+        # the global bbox applies.
+        _imerg_dl_xmin, _imerg_dl_ymin, _imerg_dl_xmax, _imerg_dl_ymax = (
+            _region_nowcast_bbox.get(region, (xmin, ymin, xmax, ymax))
+            if NOWCAST else (xmin, ymin, xmax, ymax)
+        )
+        # Parameters needed by prepare_ef5 to backfill IMERG if an older state is found.
+        # initial_imerg_end is r_imerg_end (T-4h) — the end of the IMERG window that was
+        # already downloaded before EF5 preparation started.
+        _imerg_download_params = {
+            "precipFolder":   region_precip_folder,
+            "initial_imerg_end": r_imerg_end,   # T-4h: end of already-downloaded IMERG
+            "server":         server,
+            "email_gpm":      email_gpm,
+            "xmin":           _imerg_dl_xmin,
+            "ymin":           _imerg_dl_ymin,
+            "xmax":           _imerg_dl_xmax,
+            "ymax":           _imerg_dl_ymax,
+        }
+
         _tmp_out = os.path.join(region_data_path, f"tmp_output_{systemModel}_imerg")
         region_precip_ef5_folder = os.path.join(precipEF5Folder, region_key, "imerg_none")
         makedirs(region_precip_ef5_folder, exist_ok=True)
@@ -1070,7 +1091,7 @@ def main(args):
                 _with_sep(region_states_path),
                 modelStates,
                 r_imerg_end - timedelta(minutes=30),  # systemStartTime: look for state here
-                r_imerg_end - timedelta(hours=6),      # failTime: oldest state to accept
+                r_imerg_end - timedelta(days=7),     # failTime: look back up to 7 days
                 region_current_time,
                 systemName,
                 SEND_ALERTS,
@@ -1100,6 +1121,7 @@ def main(args):
                 save_states=True,
                 cold_start_begin_time=cold_start_begin_time,
                 cold_start_warm_end_time=cold_start_warm_end_time,
+                imerg_download_params=_imerg_download_params,
             )
             print(f"    {region} [IMERG run]: start {realSystemStartTime.strftime('%Y%m%d_%H%M')}"
                   f" → end {r_imerg_end.strftime('%Y%m%d_%H%M')}, control {controlFile}")

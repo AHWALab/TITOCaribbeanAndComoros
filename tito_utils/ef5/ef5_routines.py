@@ -330,24 +330,35 @@ def rename_ef5_precip(precipEF5Folder, precipFolder, qpe_source="IMERG"):
                 print(f"PermissionError: {e}")
 
 
+def _imerg_files_present(precipFolder, start, end):
+    """Return True if IMERG 30-min TIF files exist locally for the full [start, end] range."""
+    delta = timedelta(minutes=30)
+    current = start
+    while current <= end:
+        fname = f"imerg.qpe.{current.strftime('%Y%m%d%H%M')}.30minAccum.tif"
+        if not os.path.isfile(os.path.join(precipFolder, fname)):
+            return False
+        current += delta
+    return True
+
+
 def find_available_states(statesPath, modelStates, systemStartTime, failTime):
     """
     Look for the set of most recent states available.
-    
+
+    Searches backward from systemStartTime down to failTime (default: 7 days).
+    Returns the newest timestamp for which all required state files exist.
     """
     foundAllStates = False
     realSystemStartTime = systemStartTime
 
-    print("    Looking for states.")
-
     # Iterate over all necessary states and check if they're available for the current run
-    # Only go back up to 6 hours, in 30min decrements
+    # Go back up to failTime (7 days), in 30min decrements
     while not foundAllStates and realSystemStartTime > failTime:
         foundAllStates = True
         for state in modelStates:
             state_path = f"{statesPath}{state}_{realSystemStartTime.strftime('%Y%m%d_%H%M')}.tif"
             if not is_non_zero_file(state_path):
-                print(f"    Missing start state: {state_path}")
                 foundAllStates = False
         if not foundAllStates:
             realSystemStartTime -= timedelta(minutes=30)
@@ -613,27 +624,27 @@ def run_ef5_simulations_parallel(simulation_jobs, max_workers=None):
         raise RuntimeError(f"One or more EF5 runs failed: {details}")
 
  
-def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates, 
-    systemStartTime, failTime, currentTime, systemName, SEND_ALERTS, 
+def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
+    systemStartTime, failTime, currentTime, systemName, SEND_ALERTS,
     alert_recipients, smtp_config, tmpOutput, dataPath,
     subdomain, systemModel, templatePath, template, systemStartLRTime,
     systemWarmEndTime, systemStateEndTime, systemEndTime, LR_TimeStep, LR_run,
     region_name, model_resolution, basicPath, parametersPath, qpe_source="IMERG", qpf_source="GFS",
     stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="qpf_store/",
-    save_states=True, cold_start_begin_time=None, cold_start_warm_end_time=None):
-
-    # Copy precipitation files into staging folder only once when requested.
-    if stage_precip:
-        rename_ef5_precip(precipEF5Folder, precipFolder, qpe_source)
-    else:
-        print(f"    Reusing staged precip folder: {precipEF5Folder}")
+    save_states=True, cold_start_begin_time=None, cold_start_warm_end_time=None,
+    imerg_download_params=None):
 
     # Check to see if all the states for the current time step are available: ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"]
     # If not then search for previous ones
 
     foundAllStates, realSystemStartTime = find_available_states(statesPath, modelStates, systemStartTime, failTime)
 
-    # send alerts if needed 
+    if foundAllStates:
+        print(f"    States found at {realSystemStartTime.strftime('%Y%m%d_%H%M')}")
+    else:
+        print("    No active states found within last 7 days — cold start")
+
+    # send alerts if needed
     send_state_alerts(foundAllStates, realSystemStartTime, systemStartTime,
                       currentTime, systemName, SEND_ALERTS,
                       alert_recipients, smtp_config)
@@ -645,7 +656,55 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
             control_start_time = cold_start_begin_time
         if cold_start_warm_end_time is not None:
             control_warm_end_time = cold_start_warm_end_time
-                     
+
+    # ── IMERG backfill when simulation start is older than pre-downloaded window ─────
+    # Determine the effective simulation start time:
+    #   - If states were found: realSystemStartTime (the state timestamp)
+    #   - If cold start: cold_start_begin_time (user-specified start)
+    # Then, if this start is older than the initial IMERG window, fetch the missing
+    # IMERG files so EF5 always has forcing from its actual start time.
+    if imerg_download_params is not None:
+        _init_imerg_end = imerg_download_params["initial_imerg_end"]
+        if foundAllStates:
+            _sim_start_for_backfill = realSystemStartTime
+        elif cold_start_begin_time is not None:
+            _sim_start_for_backfill = cold_start_begin_time
+        else:
+            _sim_start_for_backfill = None
+
+        if _sim_start_for_backfill is not None and _sim_start_for_backfill < _init_imerg_end - timedelta(minutes=30):
+            _dl_start = _sim_start_for_backfill - timedelta(minutes=30)
+            _dl_end   = _init_imerg_end - timedelta(minutes=30)
+            # Skip download if all required files already exist locally (e.g., from Phase 1 shared pre-download)
+            if _imerg_files_present(imerg_download_params["precipFolder"], _dl_start, _dl_end):
+                print(f"    IMERG already present for {_dl_start.strftime('%Y%m%d_%H%M')} → "
+                      f"{_dl_end.strftime('%Y%m%d_%H%M')} UTC, skipping backfill")
+            else:
+                print(f"    Backfilling IMERG files from {_dl_start.strftime('%Y%m%d_%H%M')} "
+                      f"to {_dl_end.strftime('%Y%m%d_%H%M')} UTC "
+                      f"(simulation starts at {_sim_start_for_backfill.strftime('%Y%m%d_%H%M')})")
+                from tito_utils.qpe_utils import get_gpm_files
+                try:
+                    get_gpm_files(
+                        imerg_download_params["precipFolder"],
+                        _dl_start, _dl_end,
+                        imerg_download_params["server"],
+                        imerg_download_params["email_gpm"],
+                        imerg_download_params["xmin"],
+                        imerg_download_params["ymin"],
+                        imerg_download_params["xmax"],
+                        imerg_download_params["ymax"],
+                    )
+                except Exception as _dl_exc:
+                    print(f"    Warning: IMERG backfill failed ({_dl_exc}). "
+                          f"EF5 may fail or produce degraded results.")
+
+    # Copy precipitation files into staging folder only once when requested.
+    if stage_precip:
+        rename_ef5_precip(precipEF5Folder, precipFolder, qpe_source)
+    else:
+        print(f"    Reusing staged precip folder: {precipEF5Folder}")
+
     print(" ")
     print("    Writting control file.")
 

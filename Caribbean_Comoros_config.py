@@ -11,10 +11,10 @@ systemTimestep = 60 #in minutes
 # tightest box that covers ALL regions you are running.
 # For Caribbean-only runs (Antigua, Barbados, Guatemala, Haiti):
 #   xmin=-95.0, xmax=-58.0, ymin=9.0, ymax=24.0
-# For Caribbean + Comoros combined, extend to include Comoros (-12 to 45 E, -12 to 13 N):
+# For Caribbean + Comoros combined, extend to include Comoros (-12.5 to 45 E, -12.5 to 13 N):
 xmin = -95.0
 xmax = 45.0
-ymin = -12.0
+ymin = -12.5
 ymax = 24.0
 nowcast_model_name = "convlstm" 
 systemName = systemModel.upper() + " " + domain.upper() + " " + subdomain.upper()

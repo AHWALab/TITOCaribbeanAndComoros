@@ -31,10 +31,14 @@ Thumbs.db
 *.log
 temp/
 
-# Raster/binary data files — never commit these
+# Raster/binary data files — never commit these (except basic/ and parameters/)
 *.tif
 *.tiff
 *.aux.xml
+!basic/*.tif
+!basic/*.tiff
+!parameters/**/*.tif
+!parameters/**/*.tiff
 
 # Runtime data folders (precip downloads, EF5 staging, model states, outputs)
 # These are populated at run-time and can be very large.

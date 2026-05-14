@@ -18,7 +18,8 @@ ymin = -12.5
 ymax = 24.0
 nowcast_model_name = "convlstm" 
 systemName = systemModel.upper() + " " + domain.upper() + " " + subdomain.upper()
-ef5Path = "/home/nammehta/EF5Master/EF5/bin/ef5" 
+ef5Path = "/Dedicated/Humberto/EF5Binary/EF5V1.2.7/EF5/bin/ef5" 
+# ef5Path = "/home/nammehta/EF5Master/EF5/bin/ef5"
 statesPath = "states/"
 # Legacy combined precip folder (kept for backward compatibility).
 precipFolder = "precip/"
@@ -60,26 +61,89 @@ qpf_source = "GFS"
 #     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
 # }
 region_forcing_map = {
-    "Antigua":   {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},  # Caribbean — ANTIL domain
-    "Barbados":  {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},
-    "Guatemala": {"qpe_source": "IMERG", "qpf_source": "GFS"},              # No AROME (outside domain)
-    "Haiti":     {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},
-    "Comoros":   {"qpe_source": "IMERG", "qpf_source": ["GFS", "AROME"]},  # Indian Ocean — INDIEN domain
+    "Antigua":   {"qpe_source": "STREAM_SAT", "qpf_source": ["GFS", "AROME"]},  # Caribbean — ANTIL domain
+    "Barbados":  {"qpe_source": "STREAM_SAT", "qpf_source": ["GFS", "AROME"]},
+    "Guatemala": {"qpe_source": "STREAM_SAT", "qpf_source": "GFS"},              # No AROME (outside domain)
+    "Haiti":     {"qpe_source": "STREAM_SAT", "qpf_source": ["GFS", "AROME"]},
+    "Comoros":   {"qpe_source": "STREAM_SAT", "qpf_source": ["GFS", "AROME"]},  # Indian Ocean — INDIEN domain
     # All regions: IMERG base QPE (up to T−4h) + SCaMPR gap fill (T−4h → T)
     # controlled by qpe_gap_fill_mode = "IMERG_SCAMPR" below.
     # Dual QPF: one EF5 run with GFS, one with AROME (where available).
+    #
+    # ── STREAM-Sat ensemble mode ──────────────────────────────────────────
+    # To use STREAM-Sat ensemble QPE, set qpe_source to "STREAM_SAT":
+    #   "Antigua": {"qpe_source": "STREAM_SAT", "qpf_source": ["GFS", "AROME"]},
+    # This will:
+    #   1. Run STREAM-Sat pipeline → ensemble NetCDF precip files
+    #   2. Convert each member to GeoTIFFs in precip/stream_sat/ensP1..ensPN
+    #   3. Run EF5 for each ensemble member (STREAM-Sat QPE → SCaMPR+QPF gap fill)
+    #   4. Save states at end of STREAM-Sat window (T−4h) per ensemble member
+    # See stream_sat_ensemble_size below for the number of members.
 }
 
 # HSAF credentials/settings (required only when qpe_source == "HSAF")
 hsaf_ftp_user = "naman-mehta@uiowa.edu"
 hsaf_ftp_pass = "change_me1234"
-hsaf_latency_minutes = 20
+hsaf_latency_minutes = 10
 
 # SCaMPR settings (required only when qpe_source == "SCAMPR")
 # No credentials needed — data is fetched from the public AWS S3 bucket:
 #   s3://noaa-enterprise-rainrate-pds/BLEND/RainRate-Blend-INST/
 # pip install boto3 botocore xarray rasterio  (once per environment)
 scampr_latency_minutes = 20  # expected product delay in minutes
+
+# ── STREAM-Sat ensemble configuration ──────────────────────────────────────
+# Used when qpe_source == "STREAM_SAT" in region_forcing_map.
+# STREAM-Sat repo lives inside the TITO directory:
+#   TITO_Stream_Sat/STREAM-Sat-realtime/
+# The orchestrator auto-resolves paths relative to its own location.
+stream_sat_ensemble_size = 10       # number of ensemble members (reduce for testing)
+stream_sat_window_hours = 48        # operational window (h) passed to run_pipeline
+stream_sat_warmup_hours = 12        # AR(1) warm-up (h) passed to run_pipeline
+
+# Where STREAM-Sat GeoTIFFs (one folder per member) are written.
+# The orchestrator appends the domain name automatically:
+#   precip/stream_sat/caribbean/ensP1/, ensP2/, ...  (Caribbean regions)
+#   precip/stream_sat/comoros/ensP1/, ensP2/, ...    (Comoros)
+# This keeps Caribbean and Comoros precip isolated.
+stream_sat_precip_folder = "precip/stream_sat/"
+
+# Where STREAM-Sat ensemble outputs are written.
+# Each member gets: outputs/stream_sat/ensOut1/<region>/
+stream_sat_output_folder = "outputs/stream_sat/"
+
+# Where STREAM-Sat ensemble states are saved per member.
+# Each member gets: states/stream_sat/ensS1/<region>/
+stream_sat_state_folder = "states/stream_sat/"
+
+# STREAM-Sat GeoTIFF naming convention (EF5 forcing name pattern).
+# Files are named: streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif
+stream_sat_tif_naming = "streamsat"
+
+# Unit conversion factor for STREAM-Sat netCDF → GeoTIFF.
+# 1.0 → keep mm/h (EF5 supports mm/h natively).
+# 2.0 → convert mm/h to mm/30min (legacy EF5 format).
+stream_sat_divide_by = 1.0
+
+# Max parallel workers for STREAM-Sat NC→TIF conversion.
+# None → auto-detect (CPU count).
+stream_sat_max_workers = None
+
+# Timeout (seconds) for the STREAM-Sat pipeline subprocess.
+stream_sat_pipeline_timeout = 7200  # 2 hours
+
+# ── STREAM-Sat gap-fill mode ───────────────────────────────────────────
+# When qpe_source == "STREAM_SAT", this controls what happens after the
+# STREAM-Sat window ends (T−4h due to IMERG latency):
+#
+#   "SCAMPR_QPF"   — SCaMPR fills T−4h→T, then QPF (GFS/AROME) T→T+24h
+#                    States NOT saved for this phase.
+#
+#   "SCAMPR_ONLY"  — SCaMPR only (no QPF). States NOT saved.
+#
+#   "NONE"         — No gap fill. Only STREAM-Sat window is simulated.
+#
+stream_sat_gap_fill_mode = "SCAMPR_QPF"
 
 #Alerts configuration
 SEND_ALERTS = False

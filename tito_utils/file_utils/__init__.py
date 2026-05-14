@@ -6,6 +6,7 @@ from .datetime_utils import (
     to_naive_utc,
 )
 from .file_handling import (is_non_zero_file, mkdir_p, newline)
+from .prepare_precip import prepare_all_precip
 
 __all__ = [
     'cleanup_precip',
@@ -17,5 +18,6 @@ __all__ = [
     'to_naive_utc',
     'is_non_zero_file',
     'mkdir_p',
-    'newline'
+    'newline',
+    'prepare_all_precip',
 ]

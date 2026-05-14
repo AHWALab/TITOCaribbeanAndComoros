@@ -67,7 +67,7 @@ alpha0=1.0
 beta=1.0
 under=0.001
 leaki=0.03
-th=12.0
+th=150.0
 isu=0.0
 
 [Task Simulation_QPE]

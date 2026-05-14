@@ -528,11 +528,79 @@ def write_control_file(
         rendered_lines = _apply_hsaf_control_overrides(rendered_lines, precip_loc)
     elif str(qpe_source).upper() == "SCAMPR":
         rendered_lines = _apply_scampr_control_overrides(rendered_lines, precip_loc)
+    elif str(qpe_source).upper() == "STREAM_SAT":
+        rendered_lines = _apply_streamsat_control_overrides(rendered_lines, precip_loc)
 
     with open(controlFile, "w") as out_fh:
         out_fh.writelines(rendered_lines)
 
     return controlFile
+
+
+def _apply_streamsat_control_overrides(lines, precip_forcing_loc):
+    """Adjust generated EF5 control lines for STREAM-Sat forcing.
+
+    - Comment the full IMERG forcing block.
+    - Insert STREAM-Sat forcing block right after IMERG block.
+    - In Task Simulation_QPE and Task Simulation_QPF, switch PRECIP to STREAM_SAT
+      and TIMESTEP to 30u (half-hourly, mm/h).
+    - STREAM-Sat files are named: streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif
+    """
+    out = []
+    i = 0
+    inserted_block = False
+    in_qpe_task = False
+    in_qpf_task = False
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped == "[Task Simulation_QPE]":
+            in_qpe_task = True
+            in_qpf_task = False
+        elif stripped == "[Task Simulation_QPF]":
+            in_qpf_task = True
+            in_qpe_task = False
+        elif stripped.startswith("[") and stripped not in ("[Task Simulation_QPE]", "[Task Simulation_QPF]"):
+            in_qpe_task = False
+            in_qpf_task = False
+
+        if stripped == "[PrecipForcing IMERG]":
+            while i < len(lines):
+                block_line = lines[i]
+                block_stripped = block_line.strip()
+                if i > 0 and block_stripped.startswith("[") and block_stripped != "[PrecipForcing IMERG]":
+                    break
+                out.append(block_line if block_line.lstrip().startswith("#") else "#" + block_line)
+                i += 1
+            if not inserted_block:
+                out.extend([
+                    "[PrecipForcing STREAM_SAT]\n",
+                    "TYPE=TIF\n",
+                    "UNIT=mm/h\n",
+                    "FREQ=30u\n",
+                    f"LOC={precip_forcing_loc}\n",
+                    "NAME=streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif\n",
+                    "\n",
+                ])
+                inserted_block = True
+            continue
+
+        if (in_qpe_task or in_qpf_task) and stripped.startswith("PRECIP="):
+            out.append("PRECIP=STREAM_SAT\n")
+            i += 1
+            continue
+
+        if (in_qpe_task or in_qpf_task) and stripped.startswith("TIMESTEP="):
+            out.append("TIMESTEP=30u\n")
+            i += 1
+            continue
+
+        out.append(line)
+        i += 1
+
+    return out
 
 def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
     """
@@ -632,17 +700,31 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
     region_name, model_resolution, basicPath, parametersPath, qpe_source="IMERG", qpf_source="GFS",
     stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="qpf_store/",
     save_states=True, cold_start_begin_time=None, cold_start_warm_end_time=None,
-    imerg_download_params=None):
+    imerg_download_params=None, verbose=True, run_log=None):
+    """Prepare EF5 control file and stage precipitation.
 
-    # Check to see if all the states for the current time step are available: ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"]
-    # If not then search for previous ones
+    Parameters
+    ----------
+    verbose : bool
+        If False, suppress terminal output (state search, control file writing).
+    run_log : logging.Logger or None
+        If provided, detailed diagnostics are written here instead of print().
+    """
 
+    def _say(msg):
+        """Write to run_log if available, else print (when verbose)."""
+        if run_log:
+            run_log.info(msg)
+        elif verbose:
+            print(msg)
+
+    # Check to see if all the states for the current time step are available
     foundAllStates, realSystemStartTime = find_available_states(statesPath, modelStates, systemStartTime, failTime)
 
     if foundAllStates:
-        print(f"    States found at {realSystemStartTime.strftime('%Y%m%d_%H%M')}")
+        _say(f"    States found at {realSystemStartTime.strftime('%Y%m%d_%H%M')}")
     else:
-        print("    No active states found within last 7 days — cold start")
+        _say("    No active states found within last 7 days — cold start")
 
     # send alerts if needed
     send_state_alerts(foundAllStates, realSystemStartTime, systemStartTime,
@@ -680,7 +762,7 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
                 print(f"    IMERG already present for {_dl_start.strftime('%Y%m%d_%H%M')} → "
                       f"{_dl_end.strftime('%Y%m%d_%H%M')} UTC, skipping backfill")
             else:
-                print(f"    Backfilling IMERG files from {_dl_start.strftime('%Y%m%d_%H%M')} "
+                _say(f"    Backfilling IMERG files from {_dl_start.strftime('%Y%m%d_%H%M')} "
                       f"to {_dl_end.strftime('%Y%m%d_%H%M')} UTC "
                       f"(simulation starts at {_sim_start_for_backfill.strftime('%Y%m%d_%H%M')})")
                 from tito_utils.qpe_utils import get_gpm_files
@@ -696,17 +778,16 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
                         imerg_download_params["ymax"],
                     )
                 except Exception as _dl_exc:
-                    print(f"    Warning: IMERG backfill failed ({_dl_exc}). "
+                    _say(f"    Warning: IMERG backfill failed ({_dl_exc}). "
                           f"EF5 may fail or produce degraded results.")
 
     # Copy precipitation files into staging folder only once when requested.
     if stage_precip:
         rename_ef5_precip(precipEF5Folder, precipFolder, qpe_source)
     else:
-        print(f"    Reusing staged precip folder: {precipEF5Folder}")
+        _say(f"    Reusing staged precip folder: {precipEF5Folder}")
 
-    print(" ")
-    print("    Writting control file.")
+    _say("    Writing control file.")
 
     # Keep each run in a timestamped subfolder based on the orchestrator trigger time.
     if not output_timestamp_str:

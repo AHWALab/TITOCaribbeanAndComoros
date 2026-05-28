@@ -269,39 +269,43 @@ def prepare_all_precip(
     # ═══════════════════════════════════════════════════════════════════
     # 3. Shared AROME download (one per cycle × domain)
     # ═══════════════════════════════════════════════════════════════════
+    # Hindcast with STREAM_SAT: only GFS QPF is needed, skip AROME.
 
-    for (ck, domain), rlist in arome_regions_by_cycle_domain.items():
-        ct = imerg_cycle_times.get(ck, region_cycle_times[rlist[0]])
-        shared_store = _with_sep(
-            os.path.join(qpf_store_root, "_shared_arome", ck, domain))
-        mkdir_p(shared_store)
-        print(f"***_________Shared AROME ({domain}) cycle {ck} "
-              f"({len(set(rlist))} region(s))_________***")
-        try:
-            AROME_searcher(
-                getattr(config, "AROME_precip_path", "precip/arome/"),
-                shared_store,
-                ct,
-                ct + timedelta(hours=24),
-                config.xmin, config.xmax, config.ymin, config.ymax,
-                domain,
-            )
-            result.arome_cache[(ck, domain)] = os.path.join(shared_store, "arome_data")
-        except Exception as exc:
-            print(f"    Shared AROME failed for ({ck}, {domain}): {exc}")
+    hindcast = getattr(config, "HindCastMode", False)
+    if not hindcast:
+        for (ck, domain), rlist in arome_regions_by_cycle_domain.items():
+            ct = imerg_cycle_times.get(ck, region_cycle_times[rlist[0]])
+            shared_store = _with_sep(
+                os.path.join(qpf_store_root, "_shared_arome", ck, domain))
+            mkdir_p(shared_store)
+            print(f"***_________Shared AROME ({domain}) cycle {ck} "
+                  f"({len(set(rlist))} region(s))_________***")
+            try:
+                AROME_searcher(
+                    getattr(config, "AROME_precip_path", "precip/arome/"),
+                    shared_store,
+                    ct,
+                    ct + timedelta(hours=24),
+                    config.xmin, config.xmax, config.ymin, config.ymax,
+                    domain,
+                )
+                result.arome_cache[(ck, domain)] = os.path.join(shared_store, "arome_data")
+            except Exception as exc:
+                print(f"    Shared AROME failed for ({ck}, {domain}): {exc}")
 
     # ═══════════════════════════════════════════════════════════════════
     # 4. Shared SCaMPR download
     # ═══════════════════════════════════════════════════════════════════
 
+    hindcast = getattr(config, "HindCastMode", False)
     if gap_mode == "IMERG_SCAMPR" or any(
         region_qpe_sources.get(r, "").upper() == "SCAMPR" for r in regions_to_run
-    ) or any(
-        # Also download SCaMPR if STREAM_SAT regions need it for gap fill
+    ) or (not hindcast and any(
+        # STREAM_SAT gap fill only in realtime (hindcast uses QPF-only)
         region_qpe_sources.get(r, "").upper() == "STREAM_SAT"
-        and getattr(config, "stream_sat_gap_fill_mode", "SCAMPR_QPF").strip().upper() in ("SCAMPR_QPF", "SCAMPR_ONLY")
+        and getattr(config, "stream_sat_gap_fill_mode", "SCAMPR_QPE").strip().upper() in ("SCAMPR_QPE", "SCAMPR_ONLY")
         for r in regions_to_run
-    ):
+    )):
         scampr_root = getattr(config, "scampr_precip_folder", "precip/scampr/")
         result.scampr_folder = _with_sep(os.path.join(scampr_root, "_shared"))
         mkdir_p(result.scampr_folder)
@@ -402,7 +406,6 @@ def prepare_all_precip(
         ens_size = int(getattr(config, "stream_sat_ensemble_size", 10))
         win_hours = int(getattr(config, "stream_sat_window_hours", 48))
         warm_hours = int(getattr(config, "stream_sat_warmup_hours", 12))
-        divide_by = float(getattr(config, "stream_sat_divide_by", 1.0))
         max_w = getattr(config, "stream_sat_max_workers", None)
         timeout_s = int(getattr(config, "stream_sat_pipeline_timeout", 7200))
         tif_root_base = getattr(config, "stream_sat_precip_folder", "precip/stream_sat/")
@@ -419,6 +422,12 @@ def prepare_all_precip(
             representative = domains_regions[0]
             ck = streamsat_regions[representative]
 
+            # Hindcast mode: pass cycle time as --end (no IMERG latency subtraction).
+            # STREAM-Sat's half-hourly grid rounds down, so add +30 min to get
+            # output covering up to the actual cycle time.
+            hindcast = getattr(config, "HindCastMode", False)
+            ss_end_dt = (region_cycle_times.get(representative) + timedelta(minutes=30)) if hindcast else None
+
             # Domain-specific precip folder:
             #   precip/stream_sat/caribbean/ensP1/...  (Caribbean regions)
             #   precip/stream_sat/comoros/ensP1/...    (Comoros)
@@ -434,9 +443,8 @@ def prepare_all_precip(
                     ensemble_size=ens_size,
                     window_hours=win_hours,
                     warmup_hours=warm_hours,
-                    end_dt=None,
+                    end_dt=ss_end_dt,
                     tif_root=domain_tif_root,
-                    divide_by=divide_by,
                     max_workers=max_w,
                     keep_scratch=False,
                     tif_naming=tif_naming,

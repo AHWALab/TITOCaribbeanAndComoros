@@ -161,6 +161,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Iterable, List, Optional, Tuple, Union
 
@@ -401,6 +402,112 @@ def _parse_valid_time_from_filename(name: str) -> Optional[datetime]:
         return None
 
 
+def _download_one_fxx(
+    fxx: int,
+    init_time: datetime,
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+    qpf_store_path: str,
+) -> Tuple[int, Optional[str], Optional[str]]:
+    """Download and process a single GFS forecast hour (PRATE → GeoTIFF).
+
+    Designed to be called from a thread pool — each *fxx* is fully independent.
+
+    Returns
+    -------
+    (fxx, out_path, error_msg)
+        *out_path* is the written GeoTIFF path on success, or None.
+        *error_msg* is a description of the failure, or None.
+    """
+    valid_time = init_time + timedelta(hours=fxx)
+
+    # retrieve PRATE via Herbie for this forecast hour
+    H = Herbie(init_time, model="gfs", product="pgrb2.0p25", fxx=fxx)
+
+    ds: Optional[Union[xr.Dataset, List[xr.Dataset]]] = None
+    last_err: Optional[Exception] = None
+    for query in (":PRATE:surface", ":PRATE:", "PRATE:surface", "PRATE"):
+        try:
+            ds = H.xarray(query)
+            break
+        except Exception as e:
+            last_err = e
+            ds = None
+    if ds is None:
+        err = f"Could not retrieve PRATE for f{fxx:03d} (valid {valid_time:%Y-%m-%d %H:%M} UTC) from cycle {init_time:%Y-%m-%d %H}"
+        if last_err:
+            err += f" — {last_err}"
+        return (fxx, None, err)
+
+    # Herbie/cfgrib may return a list of datasets (multiple hypercubes).
+    try:
+        if isinstance(ds, list):
+            if len(ds) == 0:
+                raise KeyError("Empty hypercube list returned for PRATE")
+            ds0 = ds[0]
+            ds = ds0
+            if "prate" in ds.data_vars:
+                var_name = "prate"
+            elif "PRATE" in ds.data_vars:
+                var_name = "PRATE"
+            else:
+                data_vars = list(ds.data_vars)
+                if not data_vars:
+                    raise KeyError("PRATE variable not present in first hypercube")
+                var_name = data_vars[0]
+        else:
+            if "prate" in ds.data_vars:
+                var_name = "prate"
+            elif "PRATE" in ds.data_vars:
+                var_name = "PRATE"
+            else:
+                raise KeyError("PRATE variable not present in dataset")
+
+        prate_da = ds[var_name]
+    except Exception as e:
+        return (fxx, None, f"PRATE variable not found for f{fxx:03d}: {e}")
+
+    # Standardize spatial dims and CRS
+    prate_da = _standardize_latlon(prate_da)
+    prate_da = _wrap_longitudes_to_180(prate_da)
+
+    # Convert rate (kg m-2 s-1 == mm/s) to mm/hour
+    rate = prate_da.data.astype(np.float32)
+    if rate.ndim == 3:
+        rate = np.squeeze(rate, axis=0)
+    rate_mm_per_hour = rate * 3600.0
+
+    # Build DataArray with mm/hour precipitation rate
+    step_da = xr.DataArray(
+        data=rate_mm_per_hour,
+        dims=("lat", "lon"),
+        coords={"lat": prate_da.coords["lat"], "lon": prate_da.coords["lon"]},
+        name="PRATE_mm_per_hour",
+        attrs={"units": "mm/hour"},
+    )
+
+    # Attach spatial metadata for rioxarray
+    step_da = step_da.rio.write_crs("EPSG:4326", inplace=False)
+    step_da = step_da.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=False)
+
+    # Clip to bounding box
+    try:
+        clipped_da = step_da.rio.clip_box(
+            minx=float(xmin), miny=float(ymin), maxx=float(xmax), maxy=float(ymax)
+        )
+    except Exception:
+        clipped_da = step_da
+
+    # Build output path and write
+    out_name = f"gfs.{valid_time:%Y%m%d%H%M}.tif"
+    out_path = os.path.join(qpf_store_path, out_name)
+    os.makedirs(qpf_store_path, exist_ok=True)
+    _safe_to_raster(clipped_da, out_path)
+    return (fxx, out_path, None)
+
+
 def download_GFS(
     systemStartLRTime: Union[str, datetime],
     systemEndTime: Union[str, datetime],
@@ -411,6 +518,7 @@ def download_GFS(
     qpf_store_path: str,
     *,
     max_cycles_back: int = 4,
+    max_workers: int = 6,
     force_cycle_start: Optional[datetime] = None,
     allow_previous_cycle_fallback: bool = True,
     clear_between_attempts: bool = True,
@@ -426,6 +534,7 @@ def download_GFS(
         xmin/xmax/ymin/ymax: Bounding box in lon/lat for clipping.
         qpf_store_path: Output directory to store GeoTIFFs.
         max_cycles_back: How many previous 6-hour GFS cycles to attempt if none written.
+        max_workers: Number of parallel download threads (default 4).
 
     Returns:
         List of output GeoTIFF file paths written.
@@ -472,102 +581,31 @@ def download_GFS(
         outputs: List[str] = []
         failures = 0
 
-        for fxx in fxx_list:
-            valid_time = init_time + timedelta(hours=fxx)
-
-            # retrieve PRATE via Herbie for this forecast hour
-            H = Herbie(init_time, model="gfs", product="pgrb2.0p25", fxx=fxx)
-
-            ds: Optional[Union[xr.Dataset, List[xr.Dataset]]] = None
-            last_err: Optional[Exception] = None
-            for query in (":PRATE:surface", ":PRATE:", "PRATE:surface", "PRATE"):
+        # --- Parallel download of all forecast hours ---
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(
+                    _download_one_fxx,
+                    fxx, init_time, xmin, xmax, ymin, ymax, qpf_store_path,
+                ): fxx
+                for fxx in fxx_list
+            }
+            for future in as_completed(future_map):
+                fxx = future_map[future]
                 try:
-                    ds = H.xarray(query)
-                    break
-                except Exception as e:  # pragma: no cover - remote data nuances
-                    last_err = e
-                    ds = None
-            if ds is None:
-                # If PRATE is missing for this hour, skip
-                sys.stderr.write(
-                    f"Warning: Could not retrieve PRATE for f{fxx:03d} (valid {valid_time:%Y-%m-%d %H:%M} UTC) from cycle {init_time:%Y-%m-%d %H}.\n"
-                )
-                if last_err:
-                    sys.stderr.write(f"  Reason: {last_err}\n")
-                failures += 1
-                continue
+                    _, out_path, err_msg = future.result()
+                except Exception as e:
+                    sys.stderr.write(
+                        f"Error: unhandled exception for f{fxx:03d}: {e}\n"
+                    )
+                    failures += 1
+                    continue
 
-            # Herbie/cfgrib may return a list of datasets (multiple hypercubes).
-            # Use the first hypercube when multiple are returned.
-            try:
-                if isinstance(ds, list):
-                    if len(ds) == 0:
-                        raise KeyError("Empty hypercube list returned for PRATE")
-                    ds0 = ds[0]
-                    ds = ds0
-                    if "prate" in ds.data_vars:
-                        var_name = "prate"
-                    elif "PRATE" in ds.data_vars:
-                        var_name = "PRATE"
-                    else:
-                        data_vars = list(ds.data_vars)
-                        if not data_vars:
-                            raise KeyError("PRATE variable not present in first hypercube")
-                        var_name = data_vars[0]
+                if out_path is not None:
+                    outputs.append(out_path)
                 else:
-                    if "prate" in ds.data_vars:
-                        var_name = "prate"
-                    elif "PRATE" in ds.data_vars:
-                        var_name = "PRATE"
-                    else:
-                        raise KeyError("PRATE variable not present in dataset")
-
-                prate_da = ds[var_name]
-            except Exception as e:  # pragma: no cover
-                sys.stderr.write(
-                    f"Warning: PRATE variable not found for f{fxx:03d}. Reason: {e}\n"
-                )
-                failures += 1
-                continue
-
-            # Standardize spatial dims and CRS
-            prate_da = _standardize_latlon(prate_da)
-            prate_da = _wrap_longitudes_to_180(prate_da)
-
-            # Convert rate (kg m-2 s-1 == mm/s) to mm/hour
-            rate = prate_da.data.astype(np.float32)
-            if rate.ndim == 3:
-                rate = np.squeeze(rate, axis=0)
-            rate_mm_per_hour = rate * 3600.0
-
-            # Build DataArray with mm/hour precipitation rate
-            step_da = xr.DataArray(
-                data=rate_mm_per_hour,
-                dims=("lat", "lon"),
-                coords={"lat": prate_da.coords["lat"], "lon": prate_da.coords["lon"]},
-                name="PRATE_mm_per_hour",
-                attrs={"units": "mm/hour"},
-            )
-
-            # Attach spatial metadata for rioxarray
-            step_da = step_da.rio.write_crs("EPSG:4326", inplace=False)
-            step_da = step_da.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=False)
-
-            # Clip to bounding box
-            try:
-                clipped_da = step_da.rio.clip_box(
-                    minx=float(xmin), miny=float(ymin), maxx=float(xmax), maxy=float(ymax)
-                )
-            except Exception:
-                # If clip fails (e.g., bbox outside domain), fall back to un-clipped writing
-                clipped_da = step_da
-
-            # Build output path and write
-            out_name = f"gfs.{valid_time:%Y%m%d%H%M}.tif"
-            out_path = os.path.join(qpf_store_path, out_name)
-            os.makedirs(qpf_store_path, exist_ok=True)
-            _safe_to_raster(clipped_da, out_path)
-            outputs.append(out_path)
+                    sys.stderr.write(f"Warning: {err_msg}\n")
+                    failures += 1
 
         # Success criteria: at least one file successfully written for this cycle
         if len(outputs) > 0:

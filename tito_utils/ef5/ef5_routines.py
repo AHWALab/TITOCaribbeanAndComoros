@@ -59,7 +59,7 @@ def _resolve_region_paths(region_name, model_resolution, basicPath, parametersPa
     wm_file = _select_file(crest_abs, ["crest_Wm*.tif", "crest_wm*.tif"], fallback="crest_Wm.tif")
     b_file = _select_file(crest_abs, ["crest_b*.tif"], fallback="crest_b.tif")
     fc_file = _select_file(crest_abs, ["crest_Fc*.tif", "crest_fc*.tif"], fallback="crest_Fc_Ksat.tif")
-    im_file = _select_file(crest_abs, ["crest_im*.tif", "crest_Im*.tif", "crest_IM*.tif"], fallback=fc_file)
+    im_file = _select_file(crest_abs, ["crest_im*.tif", "crest_Im*.tif", "crest_IM*.tif", "*_IM_final.tif", "*_IM*.tif"], fallback=None)
 
     alpha_file = _select_file(
         kw_abs,
@@ -84,7 +84,9 @@ def _resolve_region_paths(region_name, model_resolution, basicPath, parametersPa
     if not fc_file or not os.path.isfile(fc_path):
         raise FileNotFoundError(f"Missing CREST fc file in: {crest_abs}")
     if not im_file or not os.path.isfile(im_path):
-        raise FileNotFoundError(f"Missing CREST im file in: {crest_abs}")
+        print(f"    Warning: Missing CREST im file in: {crest_abs} (impervious layer not available)")
+        im_file = ""
+        im_path = ""
     if not alpha_file or not os.path.isfile(alpha_path):
         raise FileNotFoundError(f"Missing KW alpha file in: {kw_abs}")
     if not beta_file or not os.path.isfile(beta_path):
@@ -98,7 +100,7 @@ def _resolve_region_paths(region_name, model_resolution, basicPath, parametersPa
         "fam": fam,
         "wm_crest": f"{crest_folder}/{wm_file}",
         "b_crest": f"{crest_folder}/{b_file}",
-        "im_crest": f"{crest_folder}/{im_file}",
+        "im_crest": f"{crest_folder}/{im_file}" if im_file else "",
         "fc_crest": f"{crest_folder}/{fc_file}",
         "alpha_kw": f"{kw_folder}/{alpha_file}",
         "beta_kw": f"{kw_folder}/{beta_file}",

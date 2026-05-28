@@ -46,7 +46,7 @@ TYPE=TIF
 [CrestParamSet MyCRESTPAR]
 wm_grid=parameters/{wm_crest}
 b_grid=parameters/{b_crest}
-im_grid=parameters/{im_crest}
+# im_grid=parameters/{im_crest}
 fc_grid=parameters/{fc_crest}
 gauge=0
 wm=1.00

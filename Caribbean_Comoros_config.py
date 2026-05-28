@@ -118,12 +118,8 @@ stream_sat_state_folder = "states/stream_sat/"
 
 # STREAM-Sat GeoTIFF naming convention (EF5 forcing name pattern).
 # Files are named: streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif
+# Unit: mm/h (native, no conversion needed — EF5 supports mm/h)
 stream_sat_tif_naming = "streamsat"
-
-# Unit conversion factor for STREAM-Sat netCDF → GeoTIFF.
-# 1.0 → keep mm/h (EF5 supports mm/h natively).
-# 2.0 → convert mm/h to mm/30min (legacy EF5 format).
-stream_sat_divide_by = 1.0
 
 # Max parallel workers for STREAM-Sat NC→TIF conversion.
 # None → auto-detect (CPU count).
@@ -133,17 +129,16 @@ stream_sat_max_workers = None
 stream_sat_pipeline_timeout = 7200  # 2 hours
 
 # ── STREAM-Sat gap-fill mode ───────────────────────────────────────────
-# When qpe_source == "STREAM_SAT", this controls what happens after the
-# STREAM-Sat window ends (T−4h due to IMERG latency):
+# When qpe_source == "STREAM_SAT", controls post-STREAM-Sat behavior:
 #
-#   "SCAMPR_QPF"   — SCaMPR fills T−4h→T, then QPF (GFS/AROME) T→T+24h
+#   "SCAMPR_QPE"   — SCaMPR QPE fills ss_end→T, then QPF (GFS/AROME) T→T+24h
 #                    States NOT saved for this phase.
 #
-#   "SCAMPR_ONLY"  — SCaMPR only (no QPF). States NOT saved.
+#   "SCAMPR_ONLY"  — SCaMPR QPE only (no QPF). States NOT saved.
 #
 #   "NONE"         — No gap fill. Only STREAM-Sat window is simulated.
 #
-stream_sat_gap_fill_mode = "SCAMPR_QPF"
+stream_sat_gap_fill_mode = "SCAMPR_QPE"
 
 #Alerts configuration
 SEND_ALERTS = False
@@ -160,76 +155,15 @@ copyToWeb = False
 If Hindcast and LR_mode is True, user MUST define StartLRtime, EndLRTime, LR_timestep,GFS_archive_path
 If running in operational mode (Hindcast False) and LR_mode = True, user only have to define LR_timestep, GFS_archive_path
 """
-HindCastMode = False 
-# Default hindcast run time for regions not listed in region_hindcast_dates.
-HindCastDate = "2024-07-04 09:00" #"%Y-%m-%d %H:%M" UTC
+HindCastMode = False
+# Hindcast start time (used when HindCastMode=True)
+HindCastDate = "2025-11-16 20:00"  # "%Y-%m-%d %H:%M" UTC
 
-# Optional per-region hindcast run time (independent regional pipelines).
-# Format: "%Y-%m-%d %H:%M" UTC
-region_hindcast_dates = {
-	"Antigua": "2024-07-04 09:00",
-	"Barbados": "2024-07-04 09:00",
-	"Comoros": "2024-07-04 09:00",
-	"Guatemala": "2024-07-04 09:00",
-	"Haiti": "2024-07-04 09:00",
-}
+# Hindcast end time (optional; if set, runs hourly from HindCastDate → HindCastEndDate)
+# Leave as empty string "" for single-cycle hindcast.
+HindCastEndDate = "2025-11-17 23:00"  # "%Y-%m-%d %H:%M" UTC
 
 run_LR = True
-# In the new flow, LR always starts at each region simulation time.
-# StartLRtime/EndLRTime are only used to infer LR duration when HindCastMode=True.
-StartLRtime = "2024-07-04 11:00" #"%Y-%m-%d %H:%M" UTC.
-
-# ── QPE Gap-Fill Mode ─────────────────────────────────────────────────────────
-# Controls how the IMERG 4-hour latency gap is filled.  Applies to BOTH
-# operational real-time runs AND hindcast experiments.
-#
-#   "IMERG_SCAMPR"  — IMERG base (T−6h → T−4h) + SCaMPR gap fill (T−4h → T).
-#                     Converts SCaMPR 10-min instantaneous rates (mm/h) to
-#                     30-min accumulations (mm) to match IMERG format.
-#                     SCaMPR sourced from NOAA RRQPE S3 bucket (public, no creds).
-#                     States saved at T−4h (last real IMERG boundary).
-#                     NOWCAST (ML) disabled — SCaMPR fills the gap instead.
-#                     Each cycle downloads 2 new IMERG files + fresh SCaMPR.
-#
-#   "IMERG_HSAF"    — IMERG base + HSAF H40B gap fill (Indian Ocean / Africa).
-#                     Requires hsaf_ftp_user/hsaf_ftp_pass credentials.
-#                     States saved at T−4h.
-#
-#   "IMERG_ONLY"    — Only IMERG up to T−4h.  No gap fill.
-#                     States saved at T−4h.
-#
-#   "IMERG_NOWCAST" — IMERG base + ML ConvLSTM nowcast gap fill.
-#                     States saved at T−4h; EF5 outputs extend to T.
-#
-qpe_gap_fill_mode = "IMERG_SCAMPR"
-
-# Backward-compat alias used by hindcast_manager.py.
-hindcast_qpe_experiment = qpe_gap_fill_mode
-
-# IMERG-only warmup controls.
-# These apply only to IMERG-only EF5 runs:
-#   - standalone IMERG_ONLY mode
-#   - the IMERG state-building phase inside IMERG_SCAMPR operations
-#
-# If no usable states are found, TITO falls back to an IMERG-only cold start with:
-#   TIME_BEGIN   = simulation_end - post_warmup_duration - warmup_duration
-#   TIME_WARMEND = simulation_end - post_warmup_duration
-#   TIME_END     = simulation_end
-#
-# Default example for a 16:00 cycle (IMERG end = 12:00):
-#   TIME_BEGIN=04:00, TIME_WARMEND=10:00, TIME_END=12:00
-#
-# For first-time setup you can enable a longer warmup, e.g. "1month" or "3months".
-# That longer warmup is used only when no states are found.
-imerg_cold_start_warmup = "6h"
-imerg_post_warmup_duration = "2h"
-initial_imerg_warmup_enabled = False
-initial_imerg_warmup_duration = "1month"
-
-EndLRTime = "2024-07-04 18:00" #"%Y-%m-%d %H:%M" UTC.
-
-# Optional explicit LR duration in hours for hindcast (overrides StartLRtime/EndLRTime difference).
-# hindcast_lr_duration_hours = 7
 LR_timestep = "60u"
 QPF_archive_path = "qpf_store/archive/"  # legacy; kept for back-compat
 

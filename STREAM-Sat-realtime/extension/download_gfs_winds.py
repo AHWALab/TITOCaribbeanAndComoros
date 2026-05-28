@@ -12,6 +12,7 @@ import sys
 import argparse
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
@@ -277,7 +278,7 @@ def interpolate_temporal(data_hourly, times_hourly, dt_target=30):
 
     return data_hh, times_hh
 
-def process_event(event_key, event_cfg):
+def process_event(event_key, event_cfg, max_workers=6):
 
     name = event_cfg["name"]
     dt_start = event_cfg["start"]
@@ -331,14 +332,22 @@ def process_event(event_key, event_cfg):
     download_list = sorted(seen_times.values(), key=lambda x: x["valid_time"])
     log.info(f"Files to download: {len(download_list)}")
 
-    # ---- Step 2: Download GRIB files ----
-    log.info(f"\nDownloading GFS 850 hPa U/V wind data...")
+    # ---- Step 2: Download GRIB files (parallel) ----
+    log.info(f"\nDownloading GFS 850 hPa U/V wind data ({max_workers} workers)...")
     failed = []
-    for item in download_list:
+
+    def _download_item(item):
+        """Download a single GRIB file — thread-safe worker."""
         outpath = TEMP_DIR / item["filename"]
         ok = download_gfs_grib(item["date"], item["cycle"], item["fxx"], outpath)
-        if not ok:
-            failed.append(item)
+        return item, ok
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_download_item, item): item for item in download_list}
+        for future in as_completed(futures):
+            item, ok = future.result()
+            if not ok:
+                failed.append(item)
 
     if failed:
         log.warning(f"\n{len(failed)} files failed to download.")
@@ -515,6 +524,8 @@ def main():
                         help="Override output directory")
     parser.add_argument("--skip-download", action="store_true",
                         help="Skip download, process existing GRIB files only")
+    parser.add_argument("--workers", type=int, default=6,
+                        help="Number of parallel download threads (default: 6)")
     args = parser.parse_args()
 
     if args.output_dir:
@@ -524,6 +535,7 @@ def main():
 
     log.info("GFS 850 hPa Wind Download for STREAM-Sat")
     log.info(f"Output directory: {OUTPUT_DIR}")
+    log.info(f"Parallel workers: {args.workers}")
 
     events_to_process = (
         EVENTS.keys() if args.event == "all"
@@ -533,7 +545,7 @@ def main():
     results = {}
     for key in events_to_process:
         try:
-            result = process_event(key, EVENTS[key])
+            result = process_event(key, EVENTS[key], max_workers=args.workers)
             results[key] = result
         except Exception as e:
             log.error(f"Error processing {EVENTS[key]['name']}: {e}")

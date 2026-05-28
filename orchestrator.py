@@ -180,10 +180,75 @@ def main(args):
         region_qpf_requested[region] = _normalize_qpf(
             rc.get("qpf_source", rc.get("qpf", qpf_source_default)), qpf_source_default)
 
-    # ── cycle times (operational real-time only) ─────────────────────────
-    cycle_time = _round_cycle_time(
-        datetime.now(timezone.utc).replace(tzinfo=None), systemTimestep)
-    region_cycle_times = {r: cycle_time for r in regions_to_run}
+    # ── cycle times ────────────────────────────────────────────────────
+    HindCastMode = getattr(config, "HindCastMode", False)
+    if HindCastMode:
+        region_cycle_times = {}
+        # Single cycle or loop
+        hc_dates = []
+        hc_start = datetime.strptime(str(getattr(config, "HindCastDate", "2024-07-04 09:00")), "%Y-%m-%d %H:%M")
+        hc_end_str = str(getattr(config, "HindCastEndDate", "") or "").strip()
+        if hc_end_str:
+            hc_end = datetime.strptime(hc_end_str, "%Y-%m-%d %H:%M")
+            t = hc_start
+            while t <= hc_end:
+                hc_dates.append(t)
+                t += timedelta(hours=1)
+            console.info("[bold]HINDCAST LOOP[/] %s → %s (%d cycles)",
+                         hc_start.strftime("%Y-%m-%d %H:%M"),
+                         hc_end.strftime("%Y-%m-%d %H:%M"), len(hc_dates))
+        else:
+            hc_dates = [hc_start]
+            console.info("[bold]HINDCAST MODE[/] — single cycle: %s", hc_start.strftime("%Y-%m-%d %H:%M"))
+
+        for cycle_idx, cycle_time in enumerate(hc_dates):
+            if len(hc_dates) > 1:
+                console.rule(f"[bold]Hindcast cycle {cycle_idx+1}/{len(hc_dates)}: {cycle_time.strftime('%Y-%m-%d %H:%M')} UTC[/]")
+            for r in regions_to_run:
+                region_cycle_times[r] = cycle_time
+            _run_single_cycle(cycle_time, region_cycle_times, config, regions_to_run,
+                              systemTimestep, LR_run, region_qpe_sources, region_qpf_requested,
+                              qpe_gap_fill_mode, HindCastMode)
+    else:
+        cycle_time = _round_cycle_time(
+            datetime.now(timezone.utc).replace(tzinfo=None), systemTimestep)
+        region_cycle_times = {r: cycle_time for r in regions_to_run}
+        _run_single_cycle(cycle_time, region_cycle_times, config, regions_to_run,
+                          systemTimestep, LR_run, region_qpe_sources, region_qpf_requested,
+                          qpe_gap_fill_mode, HindCastMode)
+
+
+def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
+                      systemTimestep, LR_run, region_qpe_sources, region_qpf_requested,
+                      qpe_gap_fill_mode, HindCastMode):
+    """Single-cycle pipeline body. Reads all needed variables from config."""
+    config = _config
+
+    # ── Config-derived variables (mirrors main()'s setup) ────────────
+    systemModel      = config.systemModel
+    ef5Path          = config.ef5Path
+    statesPath       = config.statesPath
+    precipEF5Folder  = config.precipEF5Folder
+    modelStates      = config.modelStates
+    templatePath     = config.templatePath
+    default_template = config.templates
+    region_template_map = getattr(config, "region_template_map", {})
+    basicPath        = getattr(config, "basicPath", "basic/")
+    parametersPath   = getattr(config, "parametersPath", "parameters/")
+    dataPath         = config.dataPath
+    qpf_store_path   = config.qpf_store_path
+    SEND_ALERTS      = config.SEND_ALERTS
+    alert_recipients  = config.alert_recipients
+    smtp_config = {
+        "smtp_server":      config.smtp_server,
+        "smtp_port":        config.smtp_port,
+        "account_address":  config.account_address,
+        "account_password": config.account_password,
+        "alert_sender":     config.alert_sender,
+    }
+    model_resolution = getattr(config, "model_resolution", "90m")
+    systemName       = config.systemName
+    LR_TimeStep      = config.LR_timestep
 
     # ── Master pipeline log ──────────────────────────────────────────────
     ss_out_root = getattr(config, "stream_sat_output_folder", "outputs/stream_sat/")
@@ -523,7 +588,12 @@ def main(args):
     if has_streamsat:
         stream_sat_state_root = getattr(config, "stream_sat_state_folder", "states/stream_sat/")
         stream_sat_output_root = getattr(config, "stream_sat_output_folder", "outputs/stream_sat/")
-        stream_sat_gap_mode = getattr(config, "stream_sat_gap_fill_mode", "SCAMPR_QPF").strip().upper()
+        stream_sat_gap_mode = getattr(config, "stream_sat_gap_fill_mode", "SCAMPR_QPE").strip().upper()
+
+        # Hindcast mode: no SCaMPR gap fill, QPF-only from STREAM-Sat states
+        if HindCastMode:
+            stream_sat_gap_mode = "NONE"
+            console.info("[bold]HINDCAST:[/] STREAM-Sat gap fill disabled — QPF-only from states")
 
         def _build_streamsat_ensemble_jobs(region: str):
             """Build EF5 jobs for ALL ensemble members of one STREAM_SAT region."""
@@ -584,7 +654,7 @@ def main(args):
 
             # SCaMPR for gap fill
             scampr_folder = getattr(shared, "scampr_folder", None)
-            do_gap_fill = stream_sat_gap_mode in ("SCAMPR_QPF", "SCAMPR_ONLY") and scampr_folder
+            do_gap_fill = stream_sat_gap_mode in ("SCAMPR_QPE", "SCAMPR_ONLY") and scampr_folder
 
             for member_idx in range(1, ens_size + 1):
                 # ── Per-member paths ──────────────────────────────────
@@ -656,9 +726,14 @@ def main(args):
                         verbose=is_first,
                         run_log=run_log,
                     )
-                    print(f"    {region} [SS ens{member_idx:02d}]: "
-                          f"{eff_start.strftime('%Y%m%d_%H%M')} → "
-                          f"{ss_end.strftime('%Y%m%d_%H%M')}, ctrl={ctrl_file}")
+                    master_log.info("    %s [SS ens%02d]: %s → %s, ctrl=%s",
+                                   region, member_idx,
+                                   eff_start.strftime('%Y%m%d_%H%M'),
+                                   ss_end.strftime('%Y%m%d_%H%M'), ctrl_file)
+                    if is_first:
+                        print(f"    {region} [SS ens{member_idx:02d}]: "
+                              f"{eff_start.strftime('%Y%m%d_%H%M')} → "
+                              f"{ss_end.strftime('%Y%m%d_%H%M')}")
                     with _lock:
                         staged_precip_folders.add(staging_a)
                         streamsat_ef5_jobs.append({
@@ -673,81 +748,145 @@ def main(args):
                     print(f"    !!! {region} [SS ens{member_idx:02d}] EF5 prep failed: {exc}")
                     continue
 
-                # ── Phase B: SCaMPR + QPF gap fill (optional) ────────
-                # Loads state from the STREAM-Sat ensemble folder
-                # (member_states), NOT from the IMERG states/<region>/ folder.
-                # No state saving — avoids overwriting the STREAM-Sat state.
-                #
-                # Gap fill is dynamic: SCaMPR covers ss_end → ct, QPF covers ct → ct+24h.
-                # If STREAM-Sat ended at T−5h (IMERG delayed), SCaMPR fills T−5h→T.
-                # If STREAM-Sat ended at T−4h (normal), SCaMPR fills T−4h→T.
-                # No hardcoded latency assumption anywhere.
-                if not do_gap_fill:
-                    continue
-
-                for qpf_src in cfg["qpf_sources"]:
-                    actual_qpf = qpf_src
-                    if qpf_src == "WRF":
-                        actual_qpf = "GFS"  # WRF fallback
-
-                    staging_b = os.path.join(
-                        precipEF5Folder, rkey,
-                        f"streamsat_ens{member_idx:02d}_scampr_{actual_qpf.lower()}"
-                    )
-                    mkdir_p(staging_b)
-                    member_tmp_b = os.path.join(
-                        member_output,
-                        f"tmp_output_{systemModel}_scampr_{actual_qpf.lower()}"
-                    )
-                    mkdir_p(member_tmp_b)
-
-                    try:
-                        eff_start_b, ctrl_file_b, run_path_b = prepare_ef5(
-                            staging_b,                 # precipEF5Folder
-                            scampr_folder,             # precipFolder (SCaMPR)
-                            _with_sep(member_states),
-                            modelStates,
-                            ss_end,                    # find state at STREAM-Sat end
-                            ss_end,                    # don't search beyond
-                            ct,
-                            systemName,
-                            SEND_ALERTS, alert_recipients, smtp_config,
-                            _with_sep(member_tmp_b),
-                            _with_sep(member_output),
-                            region, systemModel,
-                            templatePath, cfg["region_template"],
-                            ct,                        # systemStartLRTime (T)
-                            ct,                        # systemWarmEndTime (T)
-                            cfg["r_end_lr"],           # systemStateEndTime
-                            cfg["r_end_lr"],           # systemEndTime
-                            LR_TimeStep,
-                            True,                      # LR_run
-                            region, model_resolution,
-                            basicPath, parametersPath,
-                            "SCAMPR", actual_qpf,
-                            stage_precip=True,
-                            output_timestamp_str=cfg["output_timestamp_str"],
-                            qpf_store_forcing_path=cfg["region_qpf_store"],
-                            save_states=False,
-                            verbose=is_first,
-                            run_log=run_log,
+                # ── Phase B: SCaMPR + QPF gap fill (realtime) / Phase H: QPF-only (hindcast) ──
+                # Realtime: SCaMPR fills ss_end→ct, then GFS/AROME ct→ct+24h
+                # Hindcast:  QPF-only from STREAM-Sat state, no SCaMPR gap fill
+                if HindCastMode:
+                    # ── Phase H: Hindcast QPF-only (GFS only, skip AROME) ──
+                    hindcast_qpf = [s for s in cfg["qpf_sources"] if s.upper() == "GFS"]
+                    for qpf_src in hindcast_qpf:
+                        actual_qpf = qpf_src
+                        if qpf_src == "WRF":
+                            actual_qpf = "GFS"
+                        staging_h = os.path.join(
+                            precipEF5Folder, rkey,
+                            f"streamsat_ens{member_idx:02d}_qpf_{actual_qpf.lower()}"
                         )
-                        print(f"    {region} [SS ens{member_idx:02d} SCaMPR+{actual_qpf}]: "
-                              f"state@SS_end → QPE→T → QPF→"
-                              f"{cfg['r_end_lr'].strftime('%Y%m%d_%H%M')}, ctrl={ctrl_file_b}")
-                        with _lock:
-                            staged_precip_folders.add(staging_b)
-                            streamsat_lr_ef5_jobs.append({
-                                "region":               region,
-                                "member":               member_idx,
-                                "ef5Path":              ef5Path,
-                                "tmpOutput":            run_path_b + "/",
-                                "controlFile":          ctrl_file_b,
-                                "output_timestamp_str": cfg["output_timestamp_str"],
-                            })
-                    except Exception as exc:
-                        print(f"    !!! {region} [SS ens{member_idx:02d}] LR ({actual_qpf}) "
-                              f"EF5 prep failed: {exc}")
+                        mkdir_p(staging_h)
+                        member_tmp_h = os.path.join(
+                            member_output,
+                            f"tmp_output_{systemModel}_qpf_{actual_qpf.lower()}"
+                        )
+                        mkdir_p(member_tmp_h)
+                        try:
+                            # QPF run: start from STREAM-Sat state, no SCaMPR prep
+                            eff_start_h, ctrl_file_h, run_path_h = prepare_ef5(
+                                staging_h,
+                                member_precip,          # reuse STREAM-Sat precip folder (for QPE=None, not used)
+                                _with_sep(member_states),
+                                modelStates,
+                                ss_end,
+                                ss_end,
+                                ct,
+                                systemName,
+                                SEND_ALERTS, alert_recipients, smtp_config,
+                                _with_sep(member_tmp_h),
+                                _with_sep(member_output),
+                                region, systemModel,
+                                templatePath, cfg["region_template"],
+                                ct,                    # systemStartLRTime = cycle time
+                                ct,                    # systemWarmEndTime
+                                cfg["r_end_lr"],       # systemStateEndTime
+                                cfg["r_end_lr"],       # systemEndTime
+                                LR_TimeStep,
+                                True,                  # LR_run
+                                region, model_resolution,
+                                basicPath, parametersPath,
+                                "STREAM_SAT", actual_qpf,
+                                stage_precip=False,    # precip already staged in Phase A
+                                output_timestamp_str=cfg["output_timestamp_str"],
+                                qpf_store_forcing_path=cfg["region_qpf_store"],
+                                save_states=False,
+                                verbose=is_first,
+                                run_log=run_log,
+                            )
+                            print(f"    {region} [SS ens{member_idx:02d} QPF+{actual_qpf}]: "
+                                  f"state@SS_end → QPF→"
+                                  f"{cfg['r_end_lr'].strftime('%Y%m%d_%H%M')}")
+                            master_log.info("    %s [SS ens%02d QPF+%s]: state@SS_end → QPF→%s, ctrl=%s",
+                                           region, member_idx, actual_qpf,
+                                           cfg['r_end_lr'].strftime('%Y%m%d_%H%M'), ctrl_file_h)
+                            with _lock:
+                                staged_precip_folders.add(staging_h)
+                                streamsat_lr_ef5_jobs.append({
+                                    "region":               region,
+                                    "member":               member_idx,
+                                    "ef5Path":              ef5Path,
+                                    "tmpOutput":            run_path_h + "/",
+                                    "controlFile":          ctrl_file_h,
+                                    "output_timestamp_str": cfg["output_timestamp_str"],
+                                })
+                        except Exception as exc:
+                            print(f"    !!! {region} [SS ens{member_idx:02d}] QPF ({actual_qpf}) "
+                                  f"EF5 prep failed: {exc}")
+
+                elif do_gap_fill:
+                    for qpf_src in cfg["qpf_sources"]:
+                        actual_qpf = qpf_src
+                        if qpf_src == "WRF":
+                            actual_qpf = "GFS"  # WRF fallback
+
+                        staging_b = os.path.join(
+                            precipEF5Folder, rkey,
+                            f"streamsat_ens{member_idx:02d}_scampr_{actual_qpf.lower()}"
+                        )
+                        mkdir_p(staging_b)
+                        member_tmp_b = os.path.join(
+                            member_output,
+                            f"tmp_output_{systemModel}_scampr_{actual_qpf.lower()}"
+                        )
+                        mkdir_p(member_tmp_b)
+
+                        try:
+                            eff_start_b, ctrl_file_b, run_path_b = prepare_ef5(
+                                staging_b,                 # precipEF5Folder
+                                scampr_folder,             # precipFolder (SCaMPR)
+                                _with_sep(member_states),
+                                modelStates,
+                                ss_end,                    # find state at STREAM-Sat end
+                                ss_end,                    # don't search beyond
+                                ct,
+                                systemName,
+                                SEND_ALERTS, alert_recipients, smtp_config,
+                                _with_sep(member_tmp_b),
+                                _with_sep(member_output),
+                                region, systemModel,
+                                templatePath, cfg["region_template"],
+                                ct,                        # systemStartLRTime (T)
+                                ct,                        # systemWarmEndTime (T)
+                                cfg["r_end_lr"],           # systemStateEndTime
+                                cfg["r_end_lr"],           # systemEndTime
+                                LR_TimeStep,
+                                True,                      # LR_run
+                                region, model_resolution,
+                                basicPath, parametersPath,
+                                "SCAMPR", actual_qpf,
+                                stage_precip=True,
+                                output_timestamp_str=cfg["output_timestamp_str"],
+                                qpf_store_forcing_path=cfg["region_qpf_store"],
+                                save_states=False,
+                                verbose=is_first,
+                                run_log=run_log,
+                            )
+                            print(f"    {region} [SS ens{member_idx:02d} SCaMPR+{actual_qpf}]: "
+                                  f"state@SS_end → QPE→T → QPF→"
+                                  f"{cfg['r_end_lr'].strftime('%Y%m%d_%H%M')}")
+                            master_log.info("    %s [SS ens%02d SCaMPR+%s]: state@SS_end → QPF→%s, ctrl=%s",
+                                           region, member_idx, actual_qpf,
+                                           cfg['r_end_lr'].strftime('%Y%m%d_%H%M'), ctrl_file_b)
+                            with _lock:
+                                staged_precip_folders.add(staging_b)
+                                streamsat_lr_ef5_jobs.append({
+                                    "region":               region,
+                                    "member":               member_idx,
+                                    "ef5Path":              ef5Path,
+                                    "tmpOutput":            run_path_b + "/",
+                                    "controlFile":          ctrl_file_b,
+                                    "output_timestamp_str": cfg["output_timestamp_str"],
+                                })
+                        except Exception as exc:
+                            print(f"    !!! {region} [SS ens{member_idx:02d}] LR ({actual_qpf}) "
+                                  f"EF5 prep failed: {exc}")
 
         # ── Dispatch STREAM-Sat ensemble jobs for all STREAM_SAT regions ──
         ss_regions = [
@@ -791,6 +930,28 @@ def main(args):
         if streamsat_ef5_jobs or streamsat_lr_ef5_jobs:
             newline(2)
             print("******** STREAM-Sat EF5 Outputs are ready!!! ********")
+
+            # ── Simulation summary ────────────────────────────────────
+            summary = []
+            summary.append("=" * 60)
+            summary.append("  SIMULATION SUMMARY")
+            summary.append("=" * 60)
+            summary.append(f"  Cycle:  {cycle_time.strftime('%Y-%m-%d %H:%M')} UTC")
+            # Per-region STREAM-Sat info
+            for region in regions_to_run:
+                ss_info = shared.streamsat_info.get(region, {})
+                if ss_info and "error" not in ss_info:
+                    summary.append(f"  {region}:")
+                    summary.append(f"    STREAM-Sat members: {ss_info.get('ensemble_size', '?')}")
+                    summary.append(f"    GeoTIFFs root:     {ss_info.get('tif_root', '?')}")
+            summary.append(f"  Phase SS-A jobs: {len(streamsat_ef5_jobs)}  (STREAM-Sat only, save states)")
+            summary.append(f"  Phase SS-B jobs: {len(streamsat_lr_ef5_jobs)}  (SCaMPR + QPF)")
+            summary.append(f"  IMERG EF5 jobs:  {len(imerg_ef5_jobs)}")
+            summary.append(f"  LR EF5 jobs:     {len(lr_ef5_jobs)}")
+            summary.append("=" * 60)
+            for line in summary:
+                print(line)
+                master_log.info(line)
 
         # ── Original IMERG/SCaMPR flow ────────────────────────────────
         # Filter out STREAM_SAT regions (they are handled separately above)
@@ -889,19 +1050,21 @@ def main(args):
                         print(f"    Warning: could not remove {sp}: {exc}")
 
         # ── Clean STREAM-Sat GeoTIFFs ─────────────────────────────────
-        # Remove precip/stream_sat/<domain>/ folders so next cycle starts
-        # with fresh GeoTIFFs (STREAM-Sat pipeline already produces fresh
-        # NCs, and these are just intermediate EF5 inputs).
-        ss_precip_root = getattr(config, "stream_sat_precip_folder", "precip/stream_sat/")
-        if os.path.isdir(ss_precip_root):
-            for domain_dir in os.listdir(ss_precip_root):
-                dp = os.path.join(ss_precip_root, domain_dir)
-                if os.path.isdir(dp):
-                    try:
-                        shutil.rmtree(dp)
-                        print(f"    Removed STREAM-Sat precip: {dp}")
-                    except Exception as exc:
-                        print(f"    Warning: could not remove {dp}: {exc}")
+        # PAUSED: clearing prevents the skip-existing logic from working.
+        # Each cycle only produces ~2 new timesteps; keeping old GeoTIFFs
+        # lets the converter skip 98% of files, saving significant time.
+        # To re-enable, uncomment the block below.
+        #
+        # ss_precip_root = getattr(config, "stream_sat_precip_folder", "precip/stream_sat/")
+        # if os.path.isdir(ss_precip_root):
+        #     for domain_dir in os.listdir(ss_precip_root):
+        #         dp = os.path.join(ss_precip_root, domain_dir)
+        #         if os.path.isdir(dp):
+        #             try:
+        #                 shutil.rmtree(dp)
+        #                 print(f"    Removed STREAM-Sat precip: {dp}")
+        #             except Exception as exc:
+        #                 print(f"    Warning: could not remove {dp}: {exc}")
 
         # Prune shared caches
         for cache_name in ["_shared", "_shared_arome"]:

@@ -1,6 +1,9 @@
 domain = "Caribbean_Comoros"
 subdomain = "Regional"
 model_resolution = "90m"
+# Per-region resolution overrides.
+# Barbados uses 30m (higher-res DEM, FAC, FDIR, CREST, KW parameter sets).
+region_resolution_map = {"Barbados": "30m"}
 regions_to_run = ["Antigua", "Barbados", "Comoros", "Guatemala", "Haiti"]
 systemModel = "crest"
 systemTimestep = 60 #in minutes
@@ -152,16 +155,16 @@ copyToWeb = False
 
 #Simulation times 
 """
-If Hindcast and LR_mode is True, user MUST define StartLRtime, EndLRTime, LR_timestep,GFS_archive_path
+If Hindcast and LR_mode is True LR_timestep,GFS_archive_path
 If running in operational mode (Hindcast False) and LR_mode = True, user only have to define LR_timestep, GFS_archive_path
 """
-HindCastMode = False
+HindCastMode = True
 # Hindcast start time (used when HindCastMode=True)
-HindCastDate = "2025-11-16 20:00"  # "%Y-%m-%d %H:%M" UTC
-
+HindCastDate = "2025-11-16 00:00"  # "%Y-%m-%d %H:%M" UTC
+        
 # Hindcast end time (optional; if set, runs hourly from HindCastDate → HindCastEndDate)
 # Leave as empty string "" for single-cycle hindcast.
-HindCastEndDate = "2025-11-17 23:00"  # "%Y-%m-%d %H:%M" UTC
+HindCastEndDate = "2025-11-17 20:00"  # "%Y-%m-%d %H:%M" UTC
 
 run_LR = True
 LR_timestep = "60u"

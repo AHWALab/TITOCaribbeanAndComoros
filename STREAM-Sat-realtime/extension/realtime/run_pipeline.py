@@ -108,19 +108,87 @@ def _run(cmd, label, check=True):
 
 
 def stage_fetch_imerg(cfg, end, scratch, hours):
+    """Download IMERG Early and assemble into STREAM-Sat NetCDF.
+
+    Source selection (set ``imerg_source`` in config.yaml):
+
+    * ``"pps"`` (default, recommended) — NASA PPS GeoTIFFs
+      (fetch_imerg_early_pps.py).  Simpler auth, faster, more reliable.
+    * ``"gesdisc"`` — NASA GES DISC HDF5 (fetch_imerg_early.py).
+      Legacy; requires .netrc + URS cookies.
+    """
+    source = (cfg.get("imerg_source") or "pps").lower()
     out = scratch / "IMERG_latest.nc"
     domain_str = "{lat_min},{lat_max},{lon_min},{lon_max}".format(**cfg["domain"])
-    cmd = [sys.executable, str(RT_DIR / "fetch_imerg_early.py"),
-           "--end", end.strftime("%Y-%m-%dT%H:%M"),
-           "--hours", str(int(hours)),
-           "--out", str(out),
-           "--tmp-dir", str(scratch / "imerg_raw"),
-           f"--domain={domain_str}"]
-    _run(cmd, "IMERG")
+
+    if source == "pps":
+        script = RT_DIR / "fetch_imerg_early_pps.py"
+        email = (cfg.get("imerg_pps_email") or
+                 os.environ.get("IMERG_PPS_EMAIL", ""))
+        if not email:
+            raise RuntimeError(
+                "config.yaml: 'imerg_pps_email' is required when imerg_source='pps',\n"
+                "  or set IMERG_PPS_EMAIL in the environment."
+            )
+        cmd = [sys.executable, str(script),
+               "--end", end.strftime("%Y-%m-%dT%H:%M"),
+               "--hours", str(int(hours)),
+               "--out", str(out),
+               "--tmp-dir", str(scratch / "imerg_raw"),
+               f"--domain={domain_str}",
+               "--email", email]
+        _run(cmd, "IMERG(PPS)")
+    else:  # gesdisc or any other value
+        cmd = [sys.executable, str(RT_DIR / "fetch_imerg_early.py"),
+               "--end", end.strftime("%Y-%m-%dT%H:%M"),
+               "--hours", str(int(hours)),
+               "--out", str(out),
+               "--tmp-dir", str(scratch / "imerg_raw"),
+               f"--domain={domain_str}"]
+        _run(cmd, "IMERG(GESDISC)")
     return out
 
 
 def stage_fetch_gfs(cfg, start, end, scratch):
+    """Obtain a GFS 850 hPa wind NetCDF for *start*..*end*.
+
+    Strategy:
+    1. If ``gfs_wind_archive_path`` is set in config, use the archive-first
+       approach via ``GFS_wind_searcher`` (zero network if archive current).
+    2. Otherwise, fall back to ``download_gfs_winds`` standalone script.
+    """
+    domain = cfg["gfs_domain"]
+    lat_min = float(domain["lat_min"])
+    lat_max = float(domain["lat_max"])
+    lon_min = float(domain["lon_min"])
+    lon_max = float(domain["lon_max"])
+
+    archive_path = (cfg.get("gfs_wind_archive_path") or "").strip()
+    if archive_path:
+        try:
+            _tito_root = str(REPO_ROOT.parent)
+            if _tito_root not in sys.path:
+                sys.path.insert(0, _tito_root)
+            from tito_utils.qpf_utils.gfs_manager import GFS_wind_searcher
+
+            start_naive = start.replace(tzinfo=None) if start.tzinfo else start
+            end_naive = end.replace(tzinfo=None) if end.tzinfo else end
+
+            out_nc = GFS_wind_searcher(
+                archive_dir=archive_path,
+                output_dir=str(scratch),
+                start_time=start_naive,
+                end_time=end_naive,
+                lat_min=lat_min, lat_max=lat_max,
+                lon_min=lon_min, lon_max=lon_max,
+                out_res=0.1,
+            )
+            log.info("[GFS winds] archive/Herbie: %s", out_nc)
+            return Path(out_nc)
+        except Exception as e:
+            log.warning("[GFS winds] archive approach failed (%s) — falling back.", e)
+
+    # Fallback: standalone download_gfs_winds
     sys.path.insert(0, str(TOOLS_DIR))
     import download_gfs_winds as dgw
     dgw.EVENTS = {"realtime": {"name": "Realtime window",
@@ -128,7 +196,7 @@ def stage_fetch_gfs(cfg, start, end, scratch):
                                 "end": end.date()}}
     dgw.OUTPUT_DIR = scratch / "gfs_out"
     dgw.TEMP_DIR = scratch / "gfs_raw"
-    dgw.DOMAIN = cfg["gfs_domain"]
+    dgw.DOMAIN = domain
     out = dgw.process_event("realtime", dgw.EVENTS["realtime"])
     if out is None:
         raise RuntimeError("GFS download returned None (see logs).")

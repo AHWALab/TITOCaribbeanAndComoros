@@ -56,3 +56,12 @@ gfs_domain:
   lat_max: -5.0
   lon_min: 37.0
   lon_max: 55.0
+
+# Optional: shared archive for GFS 850 hPa wind NetCDFs.
+# When set, run_pipeline checks this folder for pre-downloaded per-hour
+# gfs_wind.*.nc files before attempting any network download.
+# Populate with: python tito_utils/qpf_utils/gfs_wind_downloader.py --auto-out <path>
+gfs_wind_archive_path: "/Dedicated/Humberto/Naman/TITO_Caribbean_Comoros_VM/TITOCaribbeanAndComoros/precip/gfs_winds"
+
+imerg_source: "pps" # switch to PPS (default already)
+imerg_pps_email: "vrobledodelgado@uiowa.edu" # same email as in Caribbean_Comoros_config.py

@@ -26,6 +26,7 @@ import re
 import shutil
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
@@ -147,6 +148,13 @@ def main(args):
         "alert_sender":     config.alert_sender,
     }
     model_resolution = getattr(config, "model_resolution", "90m")
+    region_resolution_map = getattr(config, "region_resolution_map", {})
+    def _resolve_region_resolution(region_name: str) -> str:
+        """Return the model resolution for a specific region."""
+        if isinstance(region_resolution_map, dict):
+            return region_resolution_map.get(region_name, model_resolution)
+        return model_resolution
+
     systemName       = config.systemName
     LR_run           = config.run_LR
     LR_TimeStep      = config.LR_timestep
@@ -247,6 +255,13 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
         "alert_sender":     config.alert_sender,
     }
     model_resolution = getattr(config, "model_resolution", "90m")
+    region_resolution_map = getattr(config, "region_resolution_map", {})
+    def _resolve_region_resolution(region_name: str) -> str:
+        """Return the model resolution for a specific region."""
+        if isinstance(region_resolution_map, dict):
+            return region_resolution_map.get(region_name, model_resolution)
+        return model_resolution
+
     systemName       = config.systemName
     LR_TimeStep      = config.LR_timestep
 
@@ -262,6 +277,7 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
 
     console.rule(f"[bold]TITO Cycle {cycle_time.strftime('%Y-%m-%d %H:%M')} UTC[/]")
     print(f"  Regions: {', '.join(regions_to_run)}")
+    t_start = time.time()
 
     # ── Pre-clean: wipe precipEF5 so stale files from a crashed previous
     #    cycle never mix with the current run's precipitation.
@@ -278,6 +294,22 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
             except OSError:
                 pass
     master_log.info("Pre-clean: wiped precipEF5 (%s)", precipEF5Folder)
+
+    # ── Pre-clean: wipe precip/stream_sat/ so stale operational TIFFs
+    #    never contaminate a hindcast run with future-dated files.
+    ss_precip_root = getattr(config, "stream_sat_precip_folder", "precip/stream_sat/")
+    if os.path.isdir(ss_precip_root):
+        for entry in os.listdir(ss_precip_root):
+            ep = os.path.join(ss_precip_root, entry)
+            try:
+                if os.path.isdir(ep):
+                    shutil.rmtree(ep)
+                else:
+                    os.remove(ep)
+            except OSError:
+                pass
+        console.info("[bold]Pre-clean:[/] wiped stream_sat precip (%s)", ss_precip_root)
+        master_log.info("Pre-clean: wiped stream_sat precip (%s)", ss_precip_root)
 
     lr_duration = timedelta(hours=24) if LR_run else timedelta(0)
 
@@ -446,7 +478,7 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
                 r_imerg_end,                    # systemEndTime (T−4h)
                 LR_TimeStep,
                 False,                          # LR_run
-                region, model_resolution,
+                region, _resolve_region_resolution(region),
                 basicPath, parametersPath,
                 "IMERG", "none",
                 stage_precip=True,
@@ -546,7 +578,7 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
                     r_lr_end,                       # systemEndTime
                     LR_TimeStep,
                     True,                           # LR_run
-                    region, model_resolution,
+                    region, _resolve_region_resolution(region),
                     basicPath, parametersPath,
                     "SCAMPR", actual_qpf,
                     stage_precip=True,
@@ -681,11 +713,9 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
                 mkdir_p(staging_a)
 
                 try:
-                    # Cold start: if no states, use STREAM-Sat window bounds
+                    # No warmup — if no states found, start from first STREAM-Sat precip
                     cold_begin = ss_start
-                    cold_warm_end = ss_start + timedelta(hours=6)
-                    if cold_warm_end > ss_end:
-                        cold_warm_end = ss_end
+                    cold_warm_end = ss_end
 
                     # Quiet logging for ensemble members 2+ (first member stays verbose)
                     is_first = (member_idx == 1)
@@ -700,7 +730,7 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
                         _with_sep(member_states),
                         modelStates,
                         ss_end - timedelta(minutes=30),
-                        ss_end - timedelta(days=7),
+                        ss_end - timedelta(hours=48),
                         ct,
                         systemName,
                         SEND_ALERTS, alert_recipients, smtp_config,
@@ -714,7 +744,7 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
                         ss_end,
                         LR_TimeStep,
                         False,                       # LR_run
-                        region, model_resolution,
+                        region, _resolve_region_resolution(region),
                         basicPath, parametersPath,
                         "STREAM_SAT", "none",
                         stage_precip=True,
@@ -790,7 +820,7 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
                                 cfg["r_end_lr"],       # systemEndTime
                                 LR_TimeStep,
                                 True,                  # LR_run
-                                region, model_resolution,
+                                region, _resolve_region_resolution(region),
                                 basicPath, parametersPath,
                                 "STREAM_SAT", actual_qpf,
                                 stage_precip=False,    # precip already staged in Phase A
@@ -858,7 +888,7 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
                                 cfg["r_end_lr"],           # systemEndTime
                                 LR_TimeStep,
                                 True,                      # LR_run
-                                region, model_resolution,
+                                region, _resolve_region_resolution(region),
                                 basicPath, parametersPath,
                                 "SCAMPR", actual_qpf,
                                 stage_precip=True,
@@ -948,6 +978,8 @@ def _run_single_cycle(cycle_time, region_cycle_times, _config, regions_to_run,
             summary.append(f"  Phase SS-B jobs: {len(streamsat_lr_ef5_jobs)}  (SCaMPR + QPF)")
             summary.append(f"  IMERG EF5 jobs:  {len(imerg_ef5_jobs)}")
             summary.append(f"  LR EF5 jobs:     {len(lr_ef5_jobs)}")
+            elapsed = time.time() - t_start
+            summary.append(f"  Total time:      {elapsed:.1f}s ({elapsed/60:.1f} min)")
             summary.append("=" * 60)
             for line in summary:
                 print(line)

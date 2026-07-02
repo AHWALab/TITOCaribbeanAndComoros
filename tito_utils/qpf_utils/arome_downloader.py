@@ -49,10 +49,10 @@ Standalone Usage:
    # AROME cycle time (00, 06, 12, 18 UTC)
    run_time = "2024-01-15T00:00:00"
    domain = "ANTIL"
-   lead = 6  # Hours (1 to 42)
+   lead = 6  # Hours (1 to 48)
    
    url = (
-       "https://object.files.data.gouv.fr/meteofrance-pnt/pnt/"
+       "https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/"
        f"{run_time}Z/arome-om/{domain}/0025/SP2/"
        f"arome-om-{domain}__0025__SP2__{lead:03d}H__{run_time}Z.grib2"
    )
@@ -63,7 +63,7 @@ TITO Integration:
 TITO (Threading Inputs to Outputs) uses this module to:
 1. Provide primary high-resolution QPF for Caribbean (ANTIL) and Indian Ocean (INDIEN)
    regions as the main precipitation forcing for EF5
-2. Supply 42-hour forecast at 2.8km resolution for accurate flood forecasting
+2. Supply 48-hour forecast at 2.8km resolution for accurate flood forecasting
 3. Automatically determine appropriate AROME domain based on region name
 
 Called by: TITO orchestrator during forecast phase
@@ -79,7 +79,7 @@ Parameters expected from TITO:
   - max_cycles_back: Retry attempts with older AROME cycles (default 4)
 
 TITO typically calls with:
-  - 42-hour forecast horizon (maximum available from AROME)
+  - 48-hour forecast horizon (maximum available from AROME)
   - Region-mapped domain via get_arome_domain_for_region()
   - Automatic cycle fallback if latest run unavailable
 
@@ -116,10 +116,10 @@ Required Packages:
 Data Source:
 ------------
 Météo-France AROME Outre-Mer (Overseas) SP2 Package
-- URL: https://object.files.data.gouv.fr/meteofrance-pnt/pnt/
+- URL: https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/
 - Licence: Météo-France Licence Ouverte 2.0 (open data)
 - Spatial Resolution: 0.025° x 0.025° (~2.8 km)
-- Temporal Resolution: Hourly (42 steps per run)
+- Temporal Resolution: Hourly (48 forecast steps per run + 1 analysis)
 - Coverage: Regional domains:
   * ANTIL: Caribbean (Antilles) - covers Antigua, Barbados, Haiti, etc.
   * INDIEN: Indian Ocean - covers Réunion, Mayotte, Comoros
@@ -194,7 +194,7 @@ except ImportError as exc:
 # ---------------------------------------------------------------------------
 
 BASE_URL = (
-    "https://object.files.data.gouv.fr/meteofrance-pnt/pnt/"
+    "https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/"
     "{run_time}Z/arome-om/{domain}/0025/SP2/"
     "arome-om-{domain}__0025__SP2__{lead:03d}H__{run_time}Z.grib2"
 )
@@ -202,8 +202,8 @@ BASE_URL = (
 # Valid AROME run hours (UTC)
 AROME_CYCLE_HOURS = (0, 6, 12, 18)
 
-# Maximum lead time available from AROME
-AROME_MAX_LEAD = 42
+# Maximum lead time available from AROME (SP2 package: 0–48 h)
+AROME_MAX_LEAD = 48
 
 # Minimum age (hours) of a cycle before files are considered available on the server
 AROME_GRACE_HOURS = 2
@@ -464,7 +464,7 @@ def download_AROME(
 ) -> List[str]:
     """Download AROME QPF and write hourly GeoTIFFs suitable for EF5.
 
-    For each valid hour H in [start_time, end_time] coverable by AROME (≤42
+    For each valid hour H in [start_time, end_time] coverable by AROME (≤48
     lead hours from the run), this function:
       1. Downloads the SP2 GRIB2 file for the required lead time.
       2. Extracts the cumulative 'tirf' DataArray.
@@ -537,7 +537,7 @@ def download_AROME(
 
         if not coverable:
             print(
-                f"    AROME: window [{t_start}, {t_end}] is outside the 42-h "
+                f"    AROME: window [{t_start}, {t_end}] is outside the 48-h "
                 f"horizon of run {run_time_str}Z. Trying previous cycle."
             )
             continue

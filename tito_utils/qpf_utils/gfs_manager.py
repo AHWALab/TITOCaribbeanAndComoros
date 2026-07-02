@@ -2,7 +2,11 @@ import os
 import shutil
 from datetime import datetime as dt
 from datetime import timedelta
-from .gfs_downloader import download_GFS
+from .gfs_downloader_v2 import download_cycle, _gfs_cycle, PARALLEL_WORKERS, MAX_CYCLES_BACK
+from .gfs_wind_downloader import (
+    assemble_winds_from_archive,
+    download_wind_cycle,
+)
 import glob
 
 
@@ -79,13 +83,118 @@ def GFS_searcher(path_gfs, qpf_store_path, start_time, end_time, xmin, xmax, ymi
                 print(f"    Warning: could not copy GFS file {name}: {e}")
         return
 
-    # Step 3: daemon folder is incomplete — fallback one-shot download.
+    # Step 3: daemon folder is incomplete — fallback one-shot download via V2.
     print(f"    GFS: {len(missing)} of {len(expected)} file(s) missing from shared folder "
-          f"(daemon may not have run yet) — downloading directly.")
-    result = download_GFS(start_time, end_time, xmin, xmax, ymin, ymax, download_folder)
-    num_written = len(result) if result else 0
-    print(f"    GFS: fallback download complete — {num_written} file(s) written.")
+          f"(daemon may not have run yet) — downloading via V2 parallel downloader.")
+
+    # Compute the GFS cycle and forecast window
+    cycle = _gfs_cycle(start_time)
+    hours = max(1, int((end_time - cycle).total_seconds() / 3600.0))
+
+    num_written = 0
+    for back in range(MAX_CYCLES_BACK + 1):
+        trial_cycle = cycle - timedelta(hours=6 * back)
+        results = download_cycle(
+            trial_cycle, hours,
+            xmin, xmax, ymin, ymax,
+            download_folder,
+            workers=PARALLEL_WORKERS,
+        )
+        num_written = len(results) if results else 0
+        if num_written > 0:
+            print(f"    GFS: V2 fallback — cycle {trial_cycle:%Y-%m-%d %H}z wrote {num_written} files.")
+            break
+        print(f"    GFS: V2 fallback — cycle {trial_cycle:%Y-%m-%d %H}z returned 0 files, "
+              f"trying previous cycle...")
 
     if num_written == 0:
-        raise RuntimeError("No GFS data available after downloader fallback attempts.")
+        raise RuntimeError(
+            f"No GFS data available after {MAX_CYCLES_BACK + 1} cycle attempts "
+            f"via V2 downloader."
+        )
+
+
+# ---------------------------------------------------------------------------
+# GFS Wind (U/V 850 hPa) archive-first searcher
+# ---------------------------------------------------------------------------
+
+def _expected_wind_filenames(start_time, end_time):
+    """Return the set of gfs_wind.*.nc basenames covering start_time..end_time."""
+    names = set()
+    t = start_time.replace(minute=0, second=0, microsecond=0)
+    while t <= end_time:
+        names.add(f"gfs_wind.{t:%Y%m%d%H%M}.nc")
+        t += timedelta(hours=1)
+    return names
+
+
+def GFS_wind_searcher(archive_dir: str, output_dir: str,
+                      start_time, end_time,
+                      lat_min: float, lat_max: float,
+                      lon_min: float, lon_max: float,
+                      *,
+                      out_res: float = 0.1,
+                      workers: int = PARALLEL_WORKERS) -> str:
+    """Obtain a GFS 850 hPa wind NetCDF covering *start_time*..*end_time*.
+
+    Strategy (archive-first, Herbie-fallback):
+    1. Check *archive_dir* for per-hour ``gfs_wind.YYYYMMDDHHMM.nc`` files.
+       - **All present** → assemble into event NetCDF via
+         ``assemble_winds_from_archive`` (zero network usage).
+       - **Any missing** → call ``download_wind_cycle`` (Herbie) for the
+         missing cycles, saving per-hour files back to the archive, then
+         assemble.
+
+    Parameters
+    ----------
+    archive_dir : str
+        Shared archive populated by ``gfs_wind_downloader.py`` daemon.
+    output_dir : str
+        Working directory; the assembled event NetCDF lands here.
+    start_time, end_time : datetime
+        Valid-time window to cover.
+    lat_min, lat_max, lon_min, lon_max : float
+        Domain bounding box in degrees.
+    out_res : float
+        Output grid resolution (default 0.1°).
+    workers : int
+        Parallel download threads.
+
+    Returns
+    -------
+    str
+        Path to the assembled event NetCDF in *output_dir*.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(archive_dir, exist_ok=True)
+
+    out_name = (f"GFS_UV850_{out_res}deg_"
+                f"{start_time:%Y%m%d_%H}_{end_time:%Y%m%d_%H}.nc")
+    out_path = os.path.join(output_dir, out_name)
+
+    # Already cached?
+    if os.path.isfile(out_path) and os.path.getsize(out_path) > 1000:
+        print(f"    GFS winds: already present — {out_name}")
+        return out_path
+
+    # Step 1: check archive
+    expected = _expected_wind_filenames(start_time, end_time)
+    archive_files = {os.path.basename(f)
+                     for f in glob.glob(os.path.join(archive_dir, "gfs_wind.*.nc"))}
+    missing = expected - archive_files
+
+    if not missing:
+        print(f"    GFS winds: all {len(expected)} files in archive — assembling.")
+        result = assemble_winds_from_archive(archive_dir, start_time, end_time, out_path)
+        if result is not None:
+            return result
+        print(f"    GFS winds: assembly failed, falling back to download.")
+
+    # Step 2: archive incomplete — fail fast, let caller fall back to
+    #   download_gfs_winds (which handles multi-cycle windows efficiently).
+    raise RuntimeError(
+        f"Archive incomplete: {len(missing)} of {len(expected)} wind files "
+        f"missing ({start_time} → {end_time}). "
+        f"Use download_gfs_winds fallback."
+    )
         

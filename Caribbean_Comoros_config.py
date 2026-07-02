@@ -155,6 +155,10 @@ copyToWeb = False
 
 #Simulation times 
 """
+- **HindCastMode:** If you are running an event that happened in the PAST, set `HindCastMode = True` and write the date of interest in `HindCastDate`, use the format "YYYY-MM-DD HH:MM". If you want to run it in Nowcast Mode (meaning TITO will start running in the present time) set `HindCastMode = False`.
+
+- **HindCastEndDate:** When `HindCastMode = True`, set `HindCastEndDate` to run multiple hourly cycles from `HindCastDate` → `HindCastEndDate`. Leave as empty string "" for a single-cycle hindcast.
+
 If Hindcast and LR_mode is True LR_timestep,GFS_archive_path
 If running in operational mode (Hindcast False) and LR_mode = True, user only have to define LR_timestep, GFS_archive_path
 """

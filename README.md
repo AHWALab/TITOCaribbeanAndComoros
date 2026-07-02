@@ -34,14 +34,21 @@ After installation, ensure that your TITO folder contains the following subdirec
 
 ## Repository structure
 
-This repository is desiged to run EF5 operational over West Africa.
-Users must populate the required folders with topographic and parameter grids for their region of interest, and modify the EF5 control file (`templates/ef5_control_template.txt`) accordingly. A guide step-by-step to create the needed layers can be found in: [EF5-builder-toolkit](https://github.com/AHWALab/EF5-builder-toolkit).
+This repository is configured to run EF5 operationally over the Caribbean (Antigua, Barbados, Guatemala, Haiti) and Comoros.
+Region-specific EF5 control file templates are provided under `templates/`:
+- `templates/ef5_Antigua_control_template.txt`
+- `templates/ef5_Barbados_control_template.txt`
+- `templates/ef5_Comoros_control_template.txt`
+- `templates/ef5_Guatemala_control_template.txt`
+- `templates/ef5_Haiti_control_template.txt`
+
+Users must populate the required folders with topographic and parameter grids for their region of interest and modify the corresponding control file. A step-by-step guide to create the needed layers can be found at: [EF5-builder-toolkit](https://github.com/AHWALab/EF5-builder-toolkit).
 
 ### Key Files & Folders
 
-- **`westafrica1km_config.py`** – Configuration file to set up your operational run.
+- **`Caribbean_Comoros_config.py`** – Configuration file to set up your operational run.
 - **`orchestrator.py`** – Main Python script that manages the entire workflow.
-- **`pipeline.sh`** – Bash script that activates the `tito_env` Conda environment and executes `orchestrator.py` using settings from `westafrica1km_config.py`.
+- **`pipeline.sh`** – Bash script that activates the `tito_env` Conda environment and executes `orchestrator.py` using settings from `Caribbean_Comoros_config.py`.
 
 ### Input / Output Directories
 
@@ -57,13 +64,45 @@ Users must populate the required folders with topographic and parameter grids fo
 - **`Nowcast/`** – Contains machine learning routines used to generate QPF forecasts.
 - **`tito_utils/`** – Collection of utility modules and helper scripts used internally by TITO.
 
+### STREAM-Sat Ensemble QPE
+
+TITO integrates **STREAM-Sat** as an ensemble QPE source for real-time precipitation estimation. STREAM-Sat (Satellite Rainfall Estimation with Advection via Motion vectors) is a deep-learning-based satellite precipitation model that generates half-hourly rainfall estimates at 0.04° resolution using IR satellite imagery and GFS 850 hPa wind fields for motion vectors.
+
+#### How TITO communicates with STREAM-Sat
+
+The orchestrator (`orchestrator.py`) uses `tito_utils/stream_sat_utils.py` to manage the full STREAM-Sat pipeline:
+
+1. **Trigger STREAM-Sat pipeline** — calls the upstream `STREAM-Sat-realtime` code at `STREAM-Sat-realtime/extension/realtime/` to generate ensemble NetCDF precipitation files.
+2. **Convert NetCDF → GeoTIFF** — each ensemble member's NetCDF is converted to per-timestep GeoTIFFs stored under `precip/stream_sat/<domain>/ensP1/`, `ensP2/`, etc.
+3. **Run EF5 per ensemble member** — the orchestrator launches one EF5 simulation per ensemble member, each ingesting its own STREAM-Sat QPE (with SCaMPR gap-fill and QPF extension), and writes outputs to `outputs/stream_sat/ensOut1/<region>/`, `ensOut2/<region>/`, etc.
+4. **Save ensemble states** — model states at the end of the STREAM-Sat window are saved under `states/stream_sat/ensS1/<region>/`, etc., enabling warm-start for subsequent cycles.
+
+STREAM-Sat references:
+- Li et al. (2023) [doi:10.1109/tgrs.2023.3235270](https://doi.org/10.1109/tgrs.2023.3235270)
+- Hartke et al. (2022) [doi:10.1029/2021WR031650](https://doi.org/10.1029/2021WR031650)
+- Peng et al. (2025) [doi:10.1029/2023WR036756](https://doi.org/10.1029/2023WR036756)
+
+#### Configuration
+
+Set `qpe_source = "STREAM_SAT"` in the per-region `region_forcing_map` inside `Caribbean_Comoros_config.py` to enable STREAM-Sat. Key settings:
+
+| Config variable | Description | Default |
+|---|---|---|
+| `stream_sat_ensemble_size` | Number of ensemble members | `10` |
+| `stream_sat_window_hours` | Operational window in hours | `48` |
+| `stream_sat_warmup_hours` | AR(1) warm-up hours | `12` |
+| `stream_sat_gap_fill_mode` | Post–STREAM-Sat gap-fill behavior (`"SCAMPR_QPE"`, `"SCAMPR_ONLY"`, or `"NONE"`) | `"SCAMPR_QPE"` |
+| `stream_sat_pipeline_timeout` | Timeout for the STREAM-Sat subprocess (seconds) | `7200` |
+
+STREAM-Sat configuration files live inside `STREAM-Sat-realtime/extension/realtime/` and control the model domain, data paths, and GFS wind field ingestion.
+
 ## How to run?
 
 **1. Edit the config file:**
-After completing the installation of the required environment and populating the corresponding EF5 folders, open `westafrica1km_config.py` file. There are few lines users need to change in this config file to run TITO successfully:
+After completing the installation of the required environment and populating the corresponding EF5 folders, open `Caribbean_Comoros_config.py` file. There are few lines users need to change in this config file to run TITO successfully:
 
 - **ef5Path:** Update this path to the corresponding ef5's binary path in your system.
-- **HindCastMode:** If you are running an event happened in the PAST, set `HindCastMode = True` and write the date of interest in `HindCastDate`, use the format "YYYY-MM-DD HH:MM". If you want to run it in Nowcast Mode (meaning TITO will start running in the present time) set `HindCastMode = False`
+- **HindCastMode:** If you are running an event happened in the PAST, set `HindCastMode = True` and write the date of interest in `HindCastDate`, use the format "YYYY-MM-DD HH:MM". If you want to run it in Nowcast Mode (meaning TITO will start running in the present time) set `HindCastMode = False`. To run multiple hourly cycles for a past event, also set `HindCastEndDate` to your desired end date (same format); leave it as an empty string `""` for a single-cycle hindcast.
 - **run_LR:** To include QPF in the simulation (options are GFS or WRF), set `run_L = True`.
   - If the simulation is for a **past event** (`HindCastMode = True`), you must provide:
     - QPF start date (`StartLRtime`)

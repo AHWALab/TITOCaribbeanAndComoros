@@ -604,16 +604,110 @@ def _apply_streamsat_control_overrides(lines, precip_forcing_loc):
 
     return out
 
+def _detect_container_runtime():
+    """Detect which container runtime is available.
+
+    Returns ``"apptainer"``, ``"singularity"``, or ``"docker"``.
+    Preference: Apptainer > Singularity > Docker.
+    Can be overridden with the env var ``EF5_RUNTIME``.
+    """
+    forced = os.environ.get("EF5_RUNTIME", "").strip().lower()
+    if forced in ("apptainer", "singularity", "docker"):
+        return forced
+
+    for cmd in ("apptainer", "singularity"):
+        if shutil.which(cmd):
+            return cmd
+    if shutil.which("docker"):
+        return "docker"
+    raise RuntimeError(
+        "No container runtime found. Install Docker or Apptainer/Singularity."
+    )
+
+
 def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
     """
-    Run EF5 as a subprocess call
+    Run EF5 inside a container (Docker or Apptainer/Singularity).
+
+    The container mounts the current working directory (TITO_Stream_Sat/)
+    as ``/data`` and executes ``/ef5/bin/ef5`` with the supplied control
+    file.  All paths in the control file must be relative to
+    TITO_Stream_Sat/ so they resolve correctly under ``/data/``.
+
+    Auto-detects Docker vs Apptainer/Singularity unless ``EF5_RUNTIME``
+    is set in the environment.
+
     Arguments:
-        ef5Path {str} -- Path to EF5 binary
-        hot_folder_path {str} -- Path to the current run's "hot" foler
-        control_file {str} -- path to the control file fir the simulation
-        log_file {str} -- path to the log file for this run
+        ef5Path {str} -- Docker image name (e.g. "ef5-container:latest"),
+                         SIF path ("EF5/ef5-container.sif"), or URI
+                         ("docker-archive://EF5/ef5-container.tar").
+        hot_folder_path {str} -- Path to the current run's "hot" folder
+        control_file {str} -- Path to the EF5 control file
+        log_file {str} -- Log file name (created inside hot_folder_path)
     """
-    return subprocess.call(ef5Path + " " + control_file + " > " + hot_folder_path + log_file, shell=True)
+    cwd = os.path.abspath(os.getcwd())
+
+    control_abs = os.path.abspath(control_file)
+    log_abs = os.path.abspath(os.path.join(hot_folder_path, log_file))
+
+    try:
+        control_rel = os.path.relpath(control_abs, cwd)
+    except ValueError:
+        control_rel = control_abs.lstrip(os.sep)
+
+    total_cpus = os.cpu_count() or 1
+    os.makedirs(os.path.dirname(log_abs), exist_ok=True)
+
+    runtime = _detect_container_runtime()
+
+    # ── OMP_NUM_THREADS: only for Docker; Apptainer skips it entirely ──
+    # Setting OMP_NUM_THREADS triggers libgomp thread creation which fails
+    # under high concurrency (50+ parallel Apptainer containers).
+    # Docker still benefits from explicit control via EF5_OMP_NUM_THREADS.
+    omp_threads = int(os.environ.get("EF5_OMP_NUM_THREADS", "1"))
+
+    if runtime == "docker":
+        cmd = (
+            f"docker run --rm "
+            f"--network host "
+            f"--ipc host "
+            f"--shm-size=32g "
+            f"--ulimit nofile=1048576:1048576 "
+            f"--ulimit nproc=65535:65535 "
+            f"--ulimit memlock=-1:-1 "
+            f"--security-opt seccomp=unconfined "
+            f'-v "{cwd}:/data:rw" '
+            f'-u "$(id -u):$(id -g)" '
+            f"-e OMP_NUM_THREADS={omp_threads} "
+            f"-e OMP_PROC_BIND=true "
+            f"-e OMP_PLACES=cores "
+            f"-w /data "
+            f'"{ef5Path}" '
+            f'/ef5/bin/ef5 "/data/{control_rel}" '
+            f'> "{log_abs}"'
+        )
+    else:
+        # Apptainer / Singularity — --cleanenv wipes the host environment,
+        # which means ANY env VAR=val prefix on the command line is also
+        # stripped.  Without OMP_NUM_THREADS, libgomp defaults to ALL
+        # CPUs → 50 parallel containers × N cores = thread storm → crash.
+        #
+        # Fix: use --env (Apptainer-native) which survives --cleanenv.
+        # This forces exactly 1 OpenMP thread per EF5 invocation.
+        image = ef5Path
+        if "://" not in ef5Path and not os.path.isabs(ef5Path):
+            image = os.path.abspath(ef5Path)
+        cmd = (
+            f"{runtime} run --cleanenv "
+            f'--env "OMP_NUM_THREADS=1,OMP_DYNAMIC=false,OMP_NESTED=false,OMP_THREAD_LIMIT=1" '
+            f'--bind "{cwd}:/data" '
+            f"--pwd /data "
+            f'"{image}" '
+            f'/ef5/bin/ef5 "/data/{control_rel}" '
+            f'> "{log_abs}"'
+        )
+
+    return subprocess.call(cmd, shell=True)
 
 
 def _rename_outputs_with_timestamp(hot_folder_path: str, timestamp_str: str) -> None:

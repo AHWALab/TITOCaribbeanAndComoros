@@ -1,0 +1,51 @@
+@startuml TITO_STREAMSat_Component
+!include <C4/C4_Component>
+
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+title STREAM-Sat — Component Diagram (C4 Level 3)
+
+' ── External ────────────────────────────────────────────────────────────
+ContainerDb(imerg_store, "IMERG Early Store", "netCDF", "Hourly 0.1° QPE\n(NASA GPM server)")
+ContainerDb(merra2_store, "MERRA2 Wind Store", "netCDF", "U850/V850, 0.1° hourly\n(NASA MDISC)")
+ContainerDb(csgd_model, "CSGD Error Model", "netCDF", "Pre-trained per-pixel\nerror distribution params\n(GPM DPR reference)")
+ContainerDb(gfs_winds, "GFS Wind Forecasts", "GRIB2 → netCDF", "Operational 850 hPa winds\nfor real-time motion vectors")
+
+' ── STREAM-Sat Boundary ─────────────────────────────────────────────────
+Container_Boundary(ss_boundary, "STREAM-Sat Engine (STREAM-Sat-realtime/)") {
+
+    ' ── Noise Generation ────────────────────────────────────────────────
+    Component(noise_gen, "Noise Generator", "STREAM_NoiseGeneration.py", "Generates ensemble of spatially\ncorrelated noise fields.\nNon-stationary, anisotropic\nautocorrelation model.\nInput: IMERG + wind motion vectors.\nOutput: noise_YYYYMMDD_YYYYMMDD.nc")
+
+    ' ── Precipitation Simulation ────────────────────────────────────────
+    Component(precip_sim, "Precipitation Simulator", "STREAM_PrecipSimulation.py", "Applies CSGD error model to\nIMERG observations, conditioned\non generated noise fields.\nProduces N-member ensemble of\nprecipitation realizations.\nOutput: STREAM_YYYYMMDD_YYYYMMDD.nc")
+
+    ' ── Real-time Pipeline ──────────────────────────────────────────────
+    Component(rt_pipeline, "Real-time Pipeline", "extension/realtime/run_pipeline.py", "Operational wrapper:\n1. Fetches latest IMERG Early\n2. Downloads GFS 850 hPa winds\n3. Adapts GFS→motion vectors\n4. Runs noise + precip simulation\n5. Writes 50-member NetCDF ensemble")
+
+    ' ── State Persistence ───────────────────────────────────────────────
+    Component(state_persist, "State Persistence", "extension/realtime/state_persistence.py", "Saves/loads pipeline state\nbetween hourly cycles.\nTracks last successful timestamp,\navoids redundant downloads,\nenables incremental updates.")
+
+    ' ── NetCDF → GeoTIFF Converter ──────────────────────────────────────
+    Component(nc2tif, "NetCDF → GeoTIFF Converter", "RainyDay scripts", "Converts ensemble NetCDF to\nper-member GeoTIFF stacks.\nOne file per timestep per member.\nNaming: streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif\nOrganized: ensP1/, ensP2/, ...")
+
+    ' ── Wind Adapter ────────────────────────────────────────────────────
+    Component(wind_adapter, "GFS Wind Adapter", "extension/tools/gfs_to_mv_adapter.py", "Downloads GFS 0.25° wind forecasts\nfrom NOAA NOMADS.\nInterpolates to 0.1° grid.\nConverts U/V components to\nspeed/direction motion vectors.")
+}
+
+' ── Relationships ───────────────────────────────────────────────────────
+Rel(rt_pipeline, imerg_store, "Fetches latest IMERG Early", "HTTPS download")
+Rel(rt_pipeline, gfs_winds, "Downloads GFS 850 hPa winds", "HTTPS (NOMADS)")
+Rel(rt_pipeline, wind_adapter, "Adapts winds → motion vectors", "function call")
+Rel(rt_pipeline, state_persist, "Checks/saves pipeline state", "JSON file")
+Rel(rt_pipeline, noise_gen, "Runs noise generation", "function call")
+Rel(rt_pipeline, precip_sim, "Runs precipitation simulation", "function call")
+Rel(rt_pipeline, nc2tif, "Converts NetCDF → GeoTIFFs", "subprocess")
+
+Rel(noise_gen, merra2_store, "Reads wind motion vectors\n(offline mode)", "netCDF read")
+Rel(noise_gen, gfs_winds, "Reads GFS-derived motion\nvectors (realtime mode)", "netCDF read")
+Rel(precip_sim, csgd_model, "Reads CSGD error parameters", "netCDF read")
+Rel(precip_sim, imerg_store, "Reads IMERG observations", "netCDF read")
+
+@enduml

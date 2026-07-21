@@ -47,3 +47,5 @@ precipEF5/
 qpf_store/
 states/
 outputs/
+EF5/*.sif
+EF5/*.tar

@@ -1,0 +1,91 @@
+@startuml TITO_ContainerDiagram
+!include <C4/C4_Container>
+
+LAYOUT_TOP_DOWN()
+LAYOUT_WITH_LEGEND()
+
+title TITO — Container Diagram (C4 Level 2)
+
+' ── People ──────────────────────────────────────────────────────────────
+Person(forecaster, "Operational Forecaster", "")
+Person(hydrologist, "Hydrologist", "")
+
+' ── External Systems ────────────────────────────────────────────────────
+System_Ext(nasa_gpm, "NASA GPM IMERG", "30-min QPE")
+System_Ext(noaa_gfs, "NOAA GFS", "NWP QPF + winds")
+System_Ext(arome, "Meteo-France AROME", "Regional QPF")
+System_Ext(scampr, "NOAA SCaMPR", "IR gap-fill QPE")
+System_Ext(merra2, "NASA MERRA2", "Wind fields")
+System_Ext(email_svr, "SMTP Server", "Email alerts")
+
+' ── TITO System Boundary ────────────────────────────────────────────────
+System_Boundary(tito_boundary, "TITO — Operational Hydrologic Forecasting") {
+
+    ' ── Orchestrator ────────────────────────────────────────────────────
+    Container(orchestrator, "TITO Orchestrator", "Python 3", "Master workflow engine.\nHourly cycle: download precip →\nbuild EF5 jobs → run simulations →\nsave states → send alerts.\n\nModes: Nowcast / Hindcast /\nSTREAM-Sat ensemble")
+
+    ' ── Precipitation Pipeline ──────────────────────────────────────────
+    Container(precip_pipeline, "Precipitation Pipeline", "Python", "Downloads & stages all forcing data.\nShared across regions & QPE sources.\n\nIMERG · HSAF · SCaMPR · STREAM-Sat\nGFS · AROME · WRF")
+
+    ' ── STREAM-Sat Engine ───────────────────────────────────────────────
+    Container(stream_sat, "STREAM-Sat Engine", "Python + netCDF4", "Ensemble precipitation generator.\nCSGD error model + anisotropic\nnoise → N-member QPE ensembles.\n\nInputs: IMERG Early + GFS winds\n+ MERRA2 motion vectors")
+
+    ' ── EF5 Job Builder ─────────────────────────────────────────────────
+    Container(ef5_builder, "EF5 Job Builder", "Python", "Generates EF5 control files\nfrom templates per region/QPE/QPF.\nStages precip GeoTIFFs.\nManages state file detection\n& cold-start fallback logic.")
+
+    ' ── EF5 Runner ──────────────────────────────────────────────────────
+    Container(ef5_runner, "EF5 Simulation Runner", "Python subprocess", "Parallel EF5 executor.\nThreadPool across regions,\nensemble members & QPF sources.\nInvokes EF5 C++ binary.\nRenames outputs with timestamps.")
+
+    ' ── State Manager ───────────────────────────────────────────────────
+    Container(state_mgr, "State Manager", "File-based", "Persists & retrieves EF5 model\nstates (SM, IR, pCQ, pOQ).\n7-day lookback for warm starts.\nPer-member isolation for ensembles.")
+
+    ' ── Hindcast Manager ────────────────────────────────────────────────
+    Container(hindcast_mgr, "Hindcast Manager", "Python CLI", "Steps through hourly hindcast\ncycles, chaining EF5 states.\nIndependent of cron — used for\nhistorical event reconstruction.")
+
+    ' ── Alert Dispatcher ────────────────────────────────────────────────
+    Container(alert_mgr, "Alert Dispatcher", "Python SMTP", "Monitors EF5 outputs for\nthreshold exceedances.\nDispatches email alerts to\nregistered recipients.")
+
+    ' ── Config Store ────────────────────────────────────────────────────
+    ContainerDb(config_store, "Configuration", "Python module", "Per-domain config:\nregions, QPE/QPF sources,\npaths, resolution, timestep,\nalert settings, email creds.")
+
+    ' ── File Stores ─────────────────────────────────────────────────────
+    ContainerDb(precip_store, "Precipitation Store", "GeoTIFF files", "precip/ — IMERG, HSAF, SCaMPR\nprecipEF5/ — staged for EF5\nqpf_store/ — GFS, AROME, WRF\nprecip/stream_sat/ — STREAM-Sat ensembles")
+    ContainerDb(state_store, "State Store", "GeoTIFF files", "states/<region>/ — IMERG states\nstates/stream_sat/ensS{N}/ —\nper-member ensemble states")
+    ContainerDb(output_store, "Output Store", "GeoTIFF + CSV", "outputs/<region>/ — maxq, maxunitq,\nqpeaccum, qpfaccum, timeseries\noutputs/stream_sat/ — ensemble outputs")
+    ContainerDb(template_store, "EF5 Templates", "Text files", "templates/ — EF5 control file\ntemplates per region +\nbasin list definitions")
+}
+
+' ── Internal Relationships ──────────────────────────────────────────────
+Rel(orchestrator, precip_pipeline, "1. Triggers download & staging", "Python function call")
+Rel(orchestrator, stream_sat, "2a. Triggers STREAM-Sat ensemble generation", "Python subprocess")
+Rel(orchestrator, ef5_builder, "2b. Builds per-region EF5 jobs", "Python function call")
+Rel(orchestrator, ef5_runner, "3. Dispatches parallel EF5 runs", "ThreadPoolExecutor")
+Rel(orchestrator, alert_mgr, "4. Checks thresholds, sends alerts", "Python function call")
+Rel(orchestrator, config_store, "Reads configuration at startup", "importlib")
+Rel(orchestrator, state_mgr, "Manages state lifecycle", "Python function call")
+
+Rel(precip_pipeline, precip_store, "Writes staged forcing files", "File I/O")
+Rel(stream_sat, precip_store, "Writes ensemble NetCDF + GeoTIFFs", "File I/O")
+Rel(ef5_builder, template_store, "Reads control file templates", "File I/O")
+Rel(ef5_builder, state_mgr, "Checks available states", "File scan")
+Rel(ef5_builder, precip_store, "Reads staged precip for EF5", "File I/O")
+
+Rel(ef5_runner, state_store, "Saves states at cycle end", "File I/O")
+Rel(ef5_runner, output_store, "Writes simulation outputs", "File I/O")
+
+Rel(hindcast_mgr, orchestrator, "Calls orchestrator in\nhindcast mode per hour", "subprocess")
+
+' ── External Relationships ──────────────────────────────────────────────
+Rel(precip_pipeline, nasa_gpm, "Downloads IMERG Early", "HTTPS")
+Rel(precip_pipeline, noaa_gfs, "Downloads GFS QPF", "HTTPS")
+Rel(precip_pipeline, arome, "Downloads AROME QPF", "HTTPS")
+Rel(precip_pipeline, scampr, "Downloads SCaMPR QPE", "HTTPS (S3)")
+Rel(stream_sat, merra2, "Reads wind motion vectors", "HTTPS")
+Rel(alert_mgr, email_svr, "Sends alert emails", "SMTP")
+
+' ── Human Interactions ──────────────────────────────────────────────────
+Rel(forecaster, alert_mgr, "Receives flood alerts", "email")
+Rel(hydrologist, hindcast_mgr, "Runs hindcast experiments", "CLI")
+Rel(hydrologist, config_store, "Edits config for experiments", "text editor")
+
+@enduml

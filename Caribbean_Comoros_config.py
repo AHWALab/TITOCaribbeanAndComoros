@@ -21,7 +21,16 @@ ymin = -12.5
 ymax = 24.0
 nowcast_model_name = "convlstm" 
 systemName = systemModel.upper() + " " + domain.upper() + " " + subdomain.upper()
-ef5Path = "/Dedicated/Humberto/EF5Binary/EF5V1.2.7/EF5/bin/ef5" 
+# ── EF5 Docker configuration ────────────────────────────────────────────────
+# EF5 is now run via Docker container (see EF5/docker/ for Dockerfile).
+# The container mounts the TITO_Stream_Sat/ directory as /data and runs
+# /ef5/bin/ef5 inside the container.  All paths in control files are
+# relative to TITO_Stream_Sat/ (states/, outputs/, precipEF5/, etc.)
+# and resolve to /data/... inside the container.
+ef5Path = "EF5/ef5-container.sif"
+
+# Legacy binary paths (no longer used):
+# ef5Path = "/Dedicated/Humberto/EF5Binary/EF5V1.2.7/EF5/bin/ef5"
 # ef5Path = "/home/nammehta/EF5Master/EF5/bin/ef5"
 statesPath = "states/"
 # Legacy combined precip folder (kept for backward compatibility).
@@ -84,16 +93,58 @@ region_forcing_map = {
     # See stream_sat_ensemble_size below for the number of members.
 }
 
-# HSAF credentials/settings (required only when qpe_source == "HSAF")
-hsaf_ftp_user = "naman-mehta@uiowa.edu"
-hsaf_ftp_pass = "change_me1234"
-hsaf_latency_minutes = 10
+# ── STREAM-Sat gap-fill mode ───────────────────────────────────────────
+# When qpe_source == "STREAM_SAT", controls post-STREAM-Sat behavior:
+#
+#   "SCAMPR_QPE"   — SCaMPR QPE fills ss_end→T, then QPF (GFS/AROME) T→T+24h
+#                    States NOT saved for this phase.
+#
+#   "SCAMPR_ONLY"  — SCaMPR QPE only (no QPF). States NOT saved.
+#
+#   "NONE"         — No gap fill. Only STREAM-Sat window is simulated.
+#
+stream_sat_gap_fill_mode = "SCAMPR_QPE"
 
 # SCaMPR settings (required only when qpe_source == "SCAMPR")
 # No credentials needed — data is fetched from the public AWS S3 bucket:
 #   s3://noaa-enterprise-rainrate-pds/BLEND/RainRate-Blend-INST/
 # pip install boto3 botocore xarray rasterio  (once per environment)
 scampr_latency_minutes = 20  # expected product delay in minutes
+
+# ── Warmup configuration ───────────────────────────────────────────────────
+# When enabled, if no EF5 states exist within 48 hours of the current cycle
+# time, a warmup EF5 run is triggered BEFORE the normal operational cycle.
+# The warmup simulates from (cycle_time - warmup_days days) to
+# (cycle_time - 40 hours), saving states at the end.
+# From the next cycle onward, states should exist and warmup will be skipped.
+# This applies to BOTH hindcast and operational modes.
+
+warmup_enabled = True              # set to True to enable warmup
+
+# Duration of the warmup simulation in days.
+# The simulation starts at (cycle_time - warmup_days days) and ends at
+# (cycle_time - 40 hours), saving states at (cycle_time - 40 hours).
+# Default: 10 days if not specified.
+warmup_days = 5
+
+# Per-region precipitation source for warmup runs.
+# Options: "IMERG" (default if region not listed), "HSAF"
+# Warmup precip is downloaded only for missing files (skip-existing logic).
+# Example:
+# warmup_precip_source_map = {
+#     "Antigua":   "HSAF",
+#     "Barbados":  "IMERG",
+#     "Comoros":   "HSAF",
+#     "Guatemala": "IMERG",
+#     "Haiti":     "IMERG",
+# }
+warmup_precip_source_map = {
+    "Antigua":   "IMERG",
+    "Barbados":  "IMERG",
+    "Comoros":   "IMERG",
+    "Guatemala": "IMERG",
+    "Haiti":     "IMERG",
+}
 
 # ── STREAM-Sat ensemble configuration ──────────────────────────────────────
 # Used when qpe_source == "STREAM_SAT" in region_forcing_map.
@@ -131,18 +182,6 @@ stream_sat_max_workers = None
 # Timeout (seconds) for the STREAM-Sat pipeline subprocess.
 stream_sat_pipeline_timeout = 7200  # 2 hours
 
-# ── STREAM-Sat gap-fill mode ───────────────────────────────────────────
-# When qpe_source == "STREAM_SAT", controls post-STREAM-Sat behavior:
-#
-#   "SCAMPR_QPE"   — SCaMPR QPE fills ss_end→T, then QPF (GFS/AROME) T→T+24h
-#                    States NOT saved for this phase.
-#
-#   "SCAMPR_ONLY"  — SCaMPR QPE only (no QPF). States NOT saved.
-#
-#   "NONE"         — No gap fill. Only STREAM-Sat window is simulated.
-#
-stream_sat_gap_fill_mode = "SCAMPR_QPE"
-
 #Alerts configuration
 SEND_ALERTS = False
 smtp_server = "smtp.gmail.com"
@@ -162,7 +201,7 @@ copyToWeb = False
 If Hindcast and LR_mode is True LR_timestep,GFS_archive_path
 If running in operational mode (Hindcast False) and LR_mode = True, user only have to define LR_timestep, GFS_archive_path
 """
-HindCastMode = True
+HindCastMode = False
 # Hindcast start time (used when HindCastMode=True)
 HindCastDate = "2025-11-16 00:00"  # "%Y-%m-%d %H:%M" UTC
         
@@ -213,3 +252,8 @@ nowcast_domains = {
 # Email associated to GPM account
 email_gpm = 'vrobledodelgado@uiowa.edu'
 server = 'https://jsimpsonhttps.pps.eosdis.nasa.gov/imerg/gis/early/'
+
+# HSAF credentials/settings (required only when qpe_source == "HSAF")
+hsaf_ftp_user = "naman-mehta@uiowa.edu"
+hsaf_ftp_pass = "change_me1234"
+hsaf_latency_minutes = 10

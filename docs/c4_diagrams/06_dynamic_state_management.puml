@@ -1,0 +1,140 @@
+@startuml TITO_Dynamic_StateManagement
+!include <C4/C4_Dynamic>
+
+LAYOUT_TOP_DOWN()
+
+title TITO — Dynamic Diagram: State Management & First-Run Lifecycle
+
+' ── Containers ──────────────────────────────────────────────────────────
+Container(state_mgr, "State Manager", "Python", "find_available_states()")
+ContainerDb(state_store, "State Store", "GeoTIFF", "states/<region>/")
+ContainerDb(ss_state_store, "STREAM-Sat State Store", "GeoTIFF", "states/stream_sat/ensS{N}/<region>/")
+Container(orchestrator, "Orchestrator", "Python", "Cycle manager")
+Container(ef5, "EF5 Model", "C++", "Hydrologic simulation")
+
+' ═══════════════════════════════════════════════════════════════════════════
+' SCENARIO 1: VERY FIRST RUN (Cold Start)
+' ═══════════════════════════════════════════════════════════════════════════
+
+group #FFE4B5 Scenario 1: Very First Run — Cold Start (T = 09:00 UTC)
+
+    Rel(orchestrator, state_mgr, "Check states at T-30m = 08:30", "find_available_states()")
+
+    Rel(state_mgr, state_store, "Search backward: 08:30 → 07:30 → ... → 02:30", "7-day lookback max")
+
+    note right #FFB6C1
+        **No states found.**
+        All state files are missing
+        (crest_SM, kwr_IR, kwr_pCQ, kwr_pOQ).
+        This is a COLD START.
+    end note
+
+    Rel(state_mgr, orchestrator, "foundAllStates = False", "return")
+
+    Rel(orchestrator, orchestrator, "Cold-start window:\nbegin = T - 10h = 23:00 (prev day)\nwarm_end = T - 4h = 05:00\n→ 6-hour warmup spin-up", "_resolve_cold_start_window()")
+
+    Rel(orchestrator, ef5, "Simulate: 23:00 → 05:00 (6h warmup)\n+ 05:00 → 05:00 (QPE window)\nTotal: 6h cold-start simulation", "EF5 subprocess")
+
+    note right #90EE90
+        **EF5 runs cold-start mode:**
+        1. Initializes all states to defaults
+        2. Runs 6-hour warmup loop (no state save)
+        3. Switches to QPE task at 05:00
+        4. Saves states at 05:00 (T-4h)
+    end note
+
+    Rel(ef5, state_store, "Save states at 05:00:\ncrest_SM_20240704_0500.tif\nkwr_IR_20240704_0500.tif\nkwr_pCQ_20240704_0500.tif\nkwr_pOQ_20240704_0500.tif", "EF5 internal write")
+
+    note right #DDA0DD
+        **Cold-start alert sent** via SMTP.
+        Subject: "CREST CARIBBEAN_COMOROS REGIONAL\n        failed for 20240704_0900"
+        Message: "Starting model with cold states."
+    end note
+end
+
+' ═══════════════════════════════════════════════════════════════════════════
+' SCENARIO 2: NORMAL WARM START (Next Hour)
+' ═══════════════════════════════════════════════════════════════════════════
+
+group #E0FFE0 Scenario 2: Normal Warm Start — T+1h = 10:00 UTC
+
+    Rel(orchestrator, state_mgr, "Check states at T-30m = 09:30", "find_available_states()")
+
+    Rel(state_mgr, state_store, "Search: 09:30 → found at 05:00?", "scan for all 4 states")
+
+    note right #ADD8E6
+        States from previous run (05:00)
+        are found. EF5 resumes from
+        05:00 → simulates to 06:00.
+        No warm-up needed.
+    end note
+
+    Rel(state_mgr, orchestrator, "foundAllStates = True\nrealSystemStartTime = 05:00", "return")
+
+    Rel(orchestrator, ef5, "Warm-start simulation:\nLoad states at 05:00\nRun QPE: 05:00 → 06:00\nSave states at 06:00", "EF5 subprocess")
+
+    Rel(ef5, state_store, "Save states at 06:00:\n(overwrites previous cycle)", "EF5 internal write")
+end
+
+' ═══════════════════════════════════════════════════════════════════════════
+' SCENARIO 3: STREAM-Sat State Isolation
+' ═══════════════════════════════════════════════════════════════════════════
+
+group #E6E6FA Scenario 3: STREAM-Sat Ensemble — State Isolation
+
+    note right
+        **STREAM-Sat states are COMPLETELY ISOLATED**
+        from IMERG states to avoid cross-contamination.
+        Each ensemble member (N=1..50) has its own
+        state directory.
+    end note
+
+    Rel(orchestrator, orchestrator, "Phase A: STREAM-Sat QPE only\nMember 1 → states/stream_sat/ensS1/antigua/\nMember 2 → states/stream_sat/ensS2/antigua/\n...\nMember 50 → states/stream_sat/ensS50/antigua/", "per-member state dirs")
+
+    Rel(orchestrator, ef5, "Phase A (per member):\nLoad STREAM-Sat QPE →\nsimulate window →\nSAVE state at window end", "parallel EF5 runs")
+
+    Rel(ef5, ss_state_store, "Member 1: save states at SS_end\nMember 2: save states at SS_end\n...\nMember 50: save states at SS_end", "per-member writes")
+
+    Rel(orchestrator, orchestrator, "Phase B: SCaMPR + QPF\nEach member loads its OWN state\nfrom Phase A, gap-fills with SCaMPR,\nforecasts with GFS/AROME.\nDoes NOT save states (primary only).", "state isolation preserved")
+
+    note right #FFD700
+        **IMERG states are untouched**
+        states/antigua/ remains for
+        IMERG-based runs only.
+        No cross-contamination between
+        IMERG and STREAM-Sat flows.
+    end note
+end
+
+' ═══════════════════════════════════════════════════════════════════════════
+' SCENARIO 4: Hindcast State Chaining
+' ═══════════════════════════════════════════════════════════════════════════
+
+group #FFE4E1 Scenario 4: Hindcast — State Chaining Across Cycles
+
+    note right
+        **Hindcast Manager** runs orchestrator
+        sequentially for each hour. States are
+        automatically chained:
+        Cycle H+0 saves at T → Cycle H+1 finds T.
+    end note
+
+    Rel(orchestrator, ef5, "Hindcast cycle 1 (T=00:00):\nCold-start 6h warmup →\nsave state at 00:00", "EF5 run")
+    Rel(ef5, state_store, "Save: crest_SM_20240704_0000.tif", "write")
+
+    Rel(orchestrator, ef5, "Hindcast cycle 2 (T=01:00):\nFind state at 00:00 →\nwarm-start to 01:00 →\nsave state at 01:00", "EF5 run")
+    Rel(ef5, state_store, "Save: crest_SM_20240704_0100.tif", "write")
+
+    Rel(orchestrator, ef5, "Hindcast cycle 3 (T=02:00):\nFind state at 01:00 →\nwarm-start to 02:00 →\nsave state at 02:00", "EF5 run")
+    Rel(ef5, state_store, "Save: crest_SM_20240704_0200.tif", "write")
+
+    note right #98FB98
+        **State chain is maintained automatically.**
+        Each step saves → next step finds.
+        No manual intervention needed.
+        Handles both IMERG_SCAMPR (states at T)
+        and IMERG_ONLY (states at T-4h) modes.
+    end note
+end
+
+@enduml

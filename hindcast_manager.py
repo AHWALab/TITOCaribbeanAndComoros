@@ -241,7 +241,7 @@ def main() -> None:
                 f"See log for details: {log_file}"
             )
             errors.append((date_str, returncode))
-            if args.stop_on-error:
+            if args.stop_on_error:
                 print("    --stop-on-error is set. Aborting.")
                 break
         else:

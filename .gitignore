@@ -22,6 +22,8 @@ Thumbs.db
 *.npy
 *.nc
 *.nc4
+# STREAM-Sat CSGD domain params are small and required at runtime
+!STREAM-Sat-realtime/*.csgdNLWAR_DPR.nc
 *.grb
 *.grib
 *.grib2

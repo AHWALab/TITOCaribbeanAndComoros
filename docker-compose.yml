@@ -43,6 +43,8 @@ services:
       - EF5_RUNTIME=docker                    # force Docker EF5 runtime
       - EF5_IMAGE=ef5-container:latest        # Docker image name (not SIF)
       - EF5_OMP_NUM_THREADS=1                 # single-thread EF5
+      # Host abs path for sibling EF5 docker -v mounts (docker.sock resolves on host)
+      - TITO_HOST_PROJECT=${TITO_HOST_PROJECT:-${PWD}}
       - PYTHONUNBUFFERED=1
       - TZ=Etc/UTC
 

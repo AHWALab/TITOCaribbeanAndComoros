@@ -1,139 +1,234 @@
-# Threading Inputs to Outputs (TITO):
+# Threading Inputs to Outputs (TITO)
 
 TITO is a framework designed to run the EF5 hydrologic model operationally, integrating satellite data, machine learning techniques and NWP products to support real-time forecasting and hydrologic analysis.
 
-## Installation Instructions
+This repository is configured for the **Caribbean** (Antigua, Barbados, Guatemala, Haiti) and **Comoros**.
 
-**1. Clone the repository**
+Partners need **either Docker or Apptainer/Singularity — not both**.
+
+---
+
+## Installation — recommended (containers)
+
+### 0. Clone
 
 ```sh
 git clone https://github.com/AHWALab/TITOCaribbeanAndComoros.git
+cd TITOCaribbeanAndComoros
+# or: cd path/to/TITO_Stream_Sat_test_env
+git checkout TITO-StreamSat   # if using the Stream-Sat development branch
 ```
 
-**2. Navigate to the repository folder**
+Populate static inputs before running:
+
+- `basic/` — DEM, FAC, FDIR  
+- `parameters/` — CREST / KW parameters  
+- `pet/` — monthly PET  
+- `templates/` — EF5 control templates (already in repo)  
+- Edit `Caribbean_Comoros_config.py` (GPM email, regions, credentials)
+
+Runtime folders (`precip/`, `precipEF5/`, `qpf_store/`, `states/`, `outputs/`) are kept empty in git (`.gitkeep` only) and are filled when you run TITO.
+
+---
+
+### A) Docker partner / Docker host
+
+**Build from scratch (Docker host):**
 
 ```sh
-cd TITO/
+./container-build.sh
 ```
 
-**3. Run the set up code**
-This step might take few minutes.
+This builds:
+
+- `tito:latest` — full TITO conda environment + code  
+- `ef5-container:latest` — EF5 Docker image (sibling container via `docker.sock`)  
+- `EF5/bin/ef5` — small glibc EF5 binary (also used by Apptainer partners)
+
+**Or load pre-built images from Zenodo** (recommended for partners who should not rebuild):
+
+> **Zenodo placeholder:** download the Docker image archives from  
+> `https://doi.org/10.5281/zenodo.XXXXXXXX` *(replace with the published deposit)*  
+> Expected files (example names):
+> - `tito_latest.tar.gz`
+> - `ef5-container_latest.tar.gz`
+
+```sh
+gunzip -c tito_latest.tar.gz | docker load
+gunzip -c ef5-container_latest.tar.gz | docker load
+```
+
+Large image tarballs are **not** hosted on GitHub (`dist/` is gitignored). Use Zenodo (or your own registry).
+
+**Run (Docker):**
+
+```sh
+# All regions from Caribbean_Comoros_config.py (regions_to_run)
+TITO_RUNTIME=docker ./tito-run.sh operational
+
+# Single region
+TITO_RUNTIME=docker ./tito-run.sh operational --regions Guatemala
+
+# Hindcast (hourly steps from START → END inclusive)
+TITO_RUNTIME=docker ./tito-run.sh hindcast \
+    "2026-07-22 00:00" "2026-07-22 06:00"
+
+TITO_RUNTIME=docker ./tito-run.sh hindcast \
+    "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
+```
+
+EF5 runs as a **sibling** Docker container (`EF5_RUNTIME=docker`).
+
+---
+
+### B) Apptainer / Singularity (HPC)
+
+Apptainer cannot reliably nest Apptainer→Apptainer. The partner path is:
+
+1. Build/convert **TITO** to `tito.sif`  
+2. Use the **local glibc binary** `EF5/bin/ef5` inside that SIF (no EF5 SIF required)
+
+**On a Docker host (once):**
+
+```sh
+./container-build.sh                 # builds tito:latest + EF5/bin/ef5
+# save / copy to HPC:
+docker save tito:latest | gzip > dist/docker-archives/tito_latest.tar.gz
+# also copy EF5/bin/ef5 to the HPC project tree
+```
+
+Or download `tito_latest.tar.gz` + `EF5/bin/ef5` from the Zenodo deposit (placeholder DOI above).
+
+**On HPC:**
+
+```sh
+# Convert TITO Docker archive → Apptainer SIF (TITO only; EF5 SIF skipped)
+./docker-to-apptainer.sh
+# → tito.sif
+
+ls -lh EF5/bin/ef5                   # must exist (from Docker-host build)
+
+# Rebuild the binary on a Docker host if missing:
+#   ./EF5/docker/build_ef5_local.sh
+```
+
+**Run (Apptainer):**
+
+```sh
+# All regions from config
+TITO_RUNTIME=apptainer ./tito-run.sh operational
+
+# Single region
+TITO_RUNTIME=apptainer ./tito-run.sh operational --regions Guatemala
+
+# Hindcast
+TITO_RUNTIME=apptainer ./tito-run.sh hindcast \
+    "2026-07-22 00:00" "2026-07-22 06:00"
+
+TITO_RUNTIME=apptainer ./tito-run.sh hindcast \
+    "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
+```
+
+EF5 runs as **`EF5_RUNTIME=local`** → `EF5/bin/ef5` inside the TITO container.
+
+---
+
+### Regions flag
+
+| Command | Behavior |
+|---|---|
+| *(no `--regions`)* | Runs **all** regions listed in `Caribbean_Comoros_config.py` → `regions_to_run` |
+| `--regions Guatemala` | Runs only Guatemala |
+| `--regions Antigua,Haiti` | Runs those regions only |
+
+---
+
+## Legacy conda install (dev)
 
 ```sh
 bash setup_tito.sh
-```
-
-**4. Add the new conda env to your routines**
-Open `pipeline.sh` and change the path to the conda environment, should be something like this:
-
-```
-source /Users/$username$/miniconda3/etc/profile.d/conda.sh
-```
-
-After installation, ensure that your TITO folder contains the following subdirectories and files.
-
-## Repository structure
-
-This repository is configured to run EF5 operationally over the Caribbean (Antigua, Barbados, Guatemala, Haiti) and Comoros.
-Region-specific EF5 control file templates are provided under `templates/`:
-- `templates/ef5_Antigua_control_template.txt`
-- `templates/ef5_Barbados_control_template.txt`
-- `templates/ef5_Comoros_control_template.txt`
-- `templates/ef5_Guatemala_control_template.txt`
-- `templates/ef5_Haiti_control_template.txt`
-
-Users must populate the required folders with topographic and parameter grids for their region of interest and modify the corresponding control file. A step-by-step guide to create the needed layers can be found at: [EF5-builder-toolkit](https://github.com/AHWALab/EF5-builder-toolkit).
-
-### Key Files & Folders
-
-- **`Caribbean_Comoros_config.py`** – Configuration file to set up your operational run.
-- **`orchestrator.py`** – Main Python script that manages the entire workflow.
-- **`pipeline.sh`** – Bash script that activates the `tito_env` Conda environment and executes `orchestrator.py` using settings from `Caribbean_Comoros_config.py`.
-
-### Input / Output Directories
-
-- **`basic/`** – Contains DEM, FAC, and FDIR files.
-- **`pet/`** – Contains monthly PET (Potential Evapotranspiration) grids.
-- **`parameters/`** – Contains distributed parameters for the KW and CREST models.
-- **`states/`** – Stores model state files generated during operational runs.
-- **`outputs/`** – Output folder where simulation results are saved.
-- **`precip/`** – IMERG QPE files are downloaded here; nowcast files generated by the nowcasting system are also stored here.
-- **`precipEF5/`** – QPE and QPE_nowcast-based files are reformatted and copied here to be ingested by EF5.
-- **`templates/`** – Stores EF5 control file templates, which are dynamically updated during each run.
-- **`qpf_store/`** – Stores QPF files for using during QPF-based runs.
-- **`Nowcast/`** – Contains machine learning routines used to generate QPF forecasts.
-- **`tito_utils/`** – Collection of utility modules and helper scripts used internally by TITO.
-
-### STREAM-Sat Ensemble QPE
-
-TITO integrates **STREAM-Sat** as an ensemble QPE source for real-time precipitation estimation. STREAM-Sat (Satellite Rainfall Estimation with Advection via Motion vectors) is a deep-learning-based satellite precipitation model that generates half-hourly rainfall estimates at 0.04° resolution using IR satellite imagery and GFS 850 hPa wind fields for motion vectors.
-
-#### How TITO communicates with STREAM-Sat
-
-The orchestrator (`orchestrator.py`) uses `tito_utils/stream_sat_utils.py` to manage the full STREAM-Sat pipeline:
-
-1. **Trigger STREAM-Sat pipeline** — calls the upstream `STREAM-Sat-realtime` code at `STREAM-Sat-realtime/extension/realtime/` to generate ensemble NetCDF precipitation files.
-2. **Convert NetCDF → GeoTIFF** — each ensemble member's NetCDF is converted to per-timestep GeoTIFFs stored under `precip/stream_sat/<domain>/ensP1/`, `ensP2/`, etc.
-3. **Run EF5 per ensemble member** — the orchestrator launches one EF5 simulation per ensemble member, each ingesting its own STREAM-Sat QPE (with SCaMPR gap-fill and QPF extension), and writes outputs to `outputs/stream_sat/ensOut1/<region>/`, `ensOut2/<region>/`, etc.
-4. **Save ensemble states** — model states at the end of the STREAM-Sat window are saved under `states/stream_sat/ensS1/<region>/`, etc., enabling warm-start for subsequent cycles.
-
-STREAM-Sat references:
-- Li et al. (2023) [doi:10.1109/tgrs.2023.3235270](https://doi.org/10.1109/tgrs.2023.3235270)
-- Hartke et al. (2022) [doi:10.1029/2021WR031650](https://doi.org/10.1029/2021WR031650)
-- Peng et al. (2025) [doi:10.1029/2023WR036756](https://doi.org/10.1029/2023WR036756)
-
-#### Configuration
-
-Set `qpe_source = "STREAM_SAT"` in the per-region `region_forcing_map` inside `Caribbean_Comoros_config.py` to enable STREAM-Sat. Key settings:
-
-| Config variable | Description | Default |
-|---|---|---|
-| `stream_sat_ensemble_size` | Number of ensemble members | `10` |
-| `stream_sat_window_hours` | Operational window in hours | `48` |
-| `stream_sat_warmup_hours` | AR(1) warm-up hours | `12` |
-| `stream_sat_gap_fill_mode` | Post–STREAM-Sat gap-fill behavior (`"SCAMPR_QPE"`, `"SCAMPR_ONLY"`, or `"NONE"`) | `"SCAMPR_QPE"` |
-| `stream_sat_pipeline_timeout` | Timeout for the STREAM-Sat subprocess (seconds) | `7200` |
-
-STREAM-Sat configuration files live inside `STREAM-Sat-realtime/extension/realtime/` and control the model domain, data paths, and GFS wind field ingestion.
-
-## How to run?
-
-**1. Edit the config file:**
-After completing the installation of the required environment and populating the corresponding EF5 folders, open `Caribbean_Comoros_config.py` file. There are few lines users need to change in this config file to run TITO successfully:
-
-- **ef5Path:** Update this path to the corresponding ef5's binary path in your system.
-- **HindCastMode:** If you are running an event happened in the PAST, set `HindCastMode = True` and write the date of interest in `HindCastDate`, use the format "YYYY-MM-DD HH:MM". If you want to run it in Nowcast Mode (meaning TITO will start running in the present time) set `HindCastMode = False`. To run multiple hourly cycles for a past event, also set `HindCastEndDate` to your desired end date (same format); leave it as an empty string `""` for a single-cycle hindcast.
-- **run_LR:** To include QPF in the simulation (options are GFS or WRF), set `run_L = True`.
-  - If the simulation is for a **past event** (`HindCastMode = True`), you must provide:
-    - QPF start date (`StartLRtime`)
-    - QPF end date (`EndLRtime`)
-    - QPF time step (`LR_timestep`) in minutes, e.g., `30u`
-    - Path to your QPF archive (`QPF_archive_path`)
-  - If you are activating this option for **real-time operations**, TITO uses a predefined QPF time. You can check `orchestrator.py` to customize it for your convenience.
-- **email_gpm:** This version of TITO uses IMERG Early V07 as QPE, you will need to create and account in GPM server to download precipitation files, please visit [NASA GPM registration web page](https://registration.pps.eosdis.nasa.gov/registration/) and follow the instruction provided in the webpage. **Important:** use your registration email as password so TITO can use it in the routines.
-- **qpe_source:** Select the QPE source to ingest. Supported values are `"IMERG"` and `"HSAF"`.
-  - `IMERG` keeps the existing IMERG + ML nowcast behavior when `run_LR = False`.
-  - `HSAF` disables ML nowcast and ingests H40B files, filling the latest latency window by duplicating the most recent available HSAF file.
-- **hsaf_ftp_user / hsaf_ftp_pass:** Required only when `qpe_source = "HSAF"`. Downloading HSAF products from their official FTP server requires an account (user name and password). Register at [HSAF](https://hsaf.meteoam.it/User/Login) and provide your FTP credentials.
-- **hsaf_latency_minutes:** Minutes to treat as near-real-time latency when using HSAF (default `20`).
-
-**What if I want to use TITO in other regions?**
-
-If you plan to run TITO outside the default West Africa domain, there are a few important considerations. The machine learning routines were designed and trained using IMERG V07 data (0.1° resolution) over the West Africa region (xmin = −21.4, xmax = 30.4; ymin = −2.9, ymax = 33.1), corresponding to a grid size of **518 × 360 pixels**.
-
-If you intend to apply TITO to a different region, we recommend selecting an area with the same spatial dimensions (518 × 360 pixels) to ensure compatibility with the input structure.
-
-**2. Run TITO:**
-Run the following line in your terminal:
-
-```sh
+# then edit pipeline.sh conda path and run:
 ./pipeline.sh
 ```
 
+Prefer `./tito-run.sh` with Docker or Apptainer for partner deployments.
+
+---
+
+## Repository structure
+
+Region EF5 templates under `templates/`:
+
+- `ef5_Antigua_control_template.txt`
+- `ef5_Barbados_control_template.txt`
+- `ef5_Comoros_control_template.txt`
+- `ef5_Guatemala_control_template.txt`
+- `ef5_Haiti_control_template.txt`
+
+Users must populate topographic and parameter grids for their region. See [EF5-builder-toolkit](https://github.com/AHWALab/EF5-builder-toolkit).
+
+### Key files
+
+- **`Caribbean_Comoros_config.py`** — operational / hindcast configuration  
+- **`orchestrator.py`** — single-cycle driver  
+- **`hindcast_manager.py`** — multi-hour hindcast loop  
+- **`tito-run.sh`** — unified Docker / Apptainer / native launcher  
+- **`container-build.sh`** — build TITO + EF5 images (+ local EF5 binary)  
+- **`docker-to-apptainer.sh`** — convert `tito` Docker archive → `tito.sif`  
+- **`tito_utils/`** — precip, EF5 jobs, cycle timeline helpers  
+- **`STREAM-Sat-realtime/`** — STREAM-Sat ensemble QPE pipeline  
+
+### Input / output directories
+
+| Folder | Role |
+|---|---|
+| `basic/` | DEM, FAC, FDIR |
+| `pet/` | Monthly PET |
+| `parameters/` | CREST / KW parameters |
+| `states/` | Model states (runtime; `.gitkeep` only in git) |
+| `outputs/` | Simulation outputs + hindcast logs |
+| `precip/` | QPE downloads / STREAM-Sat GeoTIFFs |
+| `precipEF5/` | Staged precip for EF5 |
+| `qpf_store/` | GFS / AROME / WRF QPF |
+| `templates/` | EF5 control templates |
+| `dist/` | Local Docker archives (**gitignored** → Zenodo) |
+
+---
+
+## STREAM-Sat ensemble QPE
+
+Set `qpe_source = "STREAM_SAT"` in `region_forcing_map` inside `Caribbean_Comoros_config.py`.
+
+| Config variable | Description | Default |
+|---|---|---|
+| `stream_sat_ensemble_size` | Ensemble members | `10` |
+| `stream_sat_window_hours` | Operational window (h) | `48` |
+| `stream_sat_warmup_hours` | AR(1) warm-up (h) | `12` |
+| `stream_sat_gap_fill_mode` | `"SCAMPR_QPE"`, `"SCAMPR_ONLY"`, or `"NONE"` | `"SCAMPR_QPE"` |
+
+**Hindcast:** STREAM-Sat uses `--end = cycle time` (no IMERG latency); gap fill is GFS QPF only.
+
+References: Li et al. (2023), Hartke et al. (2022), Peng et al. (2025).
+
+---
+
+## Config notes (`Caribbean_Comoros_config.py`)
+
+- **`HindCastMode` / `--hindcast-date`:** past-event cycles (prefer `./tito-run.sh hindcast …`)  
+- **`email_gpm`:** NASA GPM PPS registration email ([register](https://registration.pps.eosdis.nasa.gov/registration/))  
+- **`qpe_source`:** `"IMERG"`, `"HSAF"`, or `"STREAM_SAT"` (per-region map)  
+- **`run_LR`:** enable QPF extension (GFS / AROME as configured)
+
+---
+
 ## Contact
 
-Please contact Naman Mehta at naman-mehta@uiowa.edu or Vanessa Robledo at vanessa-robledodelgado@uiowa.edu or the [AHWA Laboratory](https://ahwa.lab.uiowa.edu/) Development team at engr-ahwa-lab@uiowa.edu.
+Naman Mehta — naman-mehta@uiowa.edu  
+Vanessa Robledo — vanessa-robledodelgado@uiowa.edu  
+AHWA Laboratory — [ahwa.lab.uiowa.edu](https://ahwa.lab.uiowa.edu/) — engr-ahwa-lab@uiowa.edu
 
-## Cite this package
+## Cite
 
 Robledo Delgado, V., & Vergara, H. (2025). Threading Inputs to Outputs (TITO) (v2.0.0). Zenodo. https://doi.org/10.5281/zenodo.17246491
+
+Container image archives for this Stream-Sat release will also be deposited on Zenodo (DOI placeholder above).

@@ -68,7 +68,11 @@ ENV PATH=/opt/conda/bin:$PATH
 # ── Create conda environment ───────────────────────────────────────────────
 # Copy only the env file first (better layer caching)
 COPY tito_env.yml /tmp/tito_env.yml
-RUN conda env create -f /tmp/tito_env.yml && conda clean -afy
+# Newer Miniconda requires accepting Anaconda ToS in non-interactive builds
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
+    && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r \
+    && conda env create -f /tmp/tito_env.yml \
+    && conda clean -afy
 
 # Make conda activate available in non-interactive shells
 SHELL ["/bin/bash", "-c"]

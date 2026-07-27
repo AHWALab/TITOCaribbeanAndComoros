@@ -5,6 +5,7 @@ model_resolution = "90m"
 # Barbados uses 30m (higher-res DEM, FAC, FDIR, CREST, KW parameter sets).
 region_resolution_map = {"Barbados": "30m"}
 regions_to_run = ["Antigua", "Barbados", "Comoros", "Guatemala", "Haiti"]
+# regions_to_run = ["Guatemala"]
 systemModel = "crest"
 systemTimestep = 60 #in minutes
 
@@ -21,13 +22,18 @@ ymin = -12.5
 ymax = 24.0
 nowcast_model_name = "convlstm" 
 systemName = systemModel.upper() + " " + domain.upper() + " " + subdomain.upper()
-# ── EF5 Docker configuration ────────────────────────────────────────────────
-# EF5 is now run via Docker container (see EF5/docker/ for Dockerfile).
-# The container mounts the TITO_Stream_Sat/ directory as /data and runs
-# /ef5/bin/ef5 inside the container.  All paths in control files are
-# relative to TITO_Stream_Sat/ (states/, outputs/, precipEF5/, etc.)
-# and resolve to /data/... inside the container.
-ef5Path = "EF5/ef5-container.sif"
+# ── EF5 container configuration ─────────────────────────────────────────────
+# Docker partners:   EF5_RUNTIME=docker  → ef5-container image via docker.sock
+# Apptainer partners: EF5_RUNTIME=local → glibc binary EF5/bin/ef5 (NO nesting)
+# Host SIF fallback:  EF5/ef5-container.sif when Apptainer is available on host
+import os as _os
+_ef5_rt = _os.environ.get("EF5_RUNTIME", "").strip().lower()
+if _ef5_rt == "docker":
+    ef5Path = _os.environ.get("EF5_IMAGE", "ef5-container:latest")
+elif _ef5_rt in ("local", "embedded"):
+    ef5Path = _os.environ.get("EF5_LOCAL_BIN", "EF5/bin/ef5")
+else:
+    ef5Path = "EF5/ef5-container.sif"
 
 # Legacy binary paths (no longer used):
 # ef5Path = "/Dedicated/Humberto/EF5Binary/EF5V1.2.7/EF5/bin/ef5"
@@ -43,8 +49,11 @@ hsaf_precip_folder = "precip/hsaf/"
 scampr_precip_folder = "precip/scampr/"  # SCaMPR — public AWS S3, no credentials needed
 precipEF5Folder = "precipEF5/"
 modelStates = ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"]
+# Required state layers EF5 must find together at one timestamp.
+# find_available_states() checks ALL of these exist (non-empty) before warm-start.
 templatePath = "templates/"
-templates = "ef5_Antigua_control_template.txt"  # legacy fallback; region templates are auto-selected
+templates = "ef5_Antigua_control_template.txt"  # legacy fallback ONLY if ef5_<Region>_control_template.txt is missing
+# Prefer per-region files: templates/ef5_Guatemala_control_template.txt (auto-selected)
 basicPath = "basic/"
 parametersPath = "parameters/"
 dataPath = "outputs/"
@@ -78,6 +87,9 @@ region_forcing_map = {
     "Guatemala": {"qpe_source": "STREAM_SAT", "qpf_source": "GFS"},              # No AROME (outside domain)
     "Haiti":     {"qpe_source": "STREAM_SAT", "qpf_source": ["GFS", "AROME"]},
     "Comoros":   {"qpe_source": "STREAM_SAT", "qpf_source": ["GFS", "AROME"]},  # Indian Ocean — INDIEN domain
+
+    # "Guatemala": {"qpe_source": "STREAM_SAT", "qpf_source": "GFS"},              # STREAM-SAT ensemble for web app
+
     # All regions: IMERG base QPE (up to T−4h) + SCaMPR gap fill (T−4h → T)
     # controlled by qpe_gap_fill_mode = "IMERG_SCAMPR" below.
     # Dual QPF: one EF5 run with GFS, one with AROME (where available).
@@ -150,10 +162,13 @@ warmup_precip_source_map = {
 # Used when qpe_source == "STREAM_SAT" in region_forcing_map.
 # STREAM-Sat repo lives inside the TITO directory:
 #   TITO_Stream_Sat/STREAM-Sat-realtime/
-# The orchestrator auto-resolves paths relative to its own location.
-stream_sat_ensemble_size = 10       # number of ensemble members (reduce for testing)
-stream_sat_window_hours = 48        # operational window (h) passed to run_pipeline
-stream_sat_warmup_hours = 12        # AR(1) warm-up (h) passed to run_pipeline
+stream_sat_ensemble_size = 10      # ← USER-TUNABLE (use 2 for test, 10 for ops)
+
+# ── Informational only (STREAM-Sat pipeline internals — do not treat as knobs) ──
+# These are passed through to STREAM-Sat run_pipeline; values below match the
+# STREAM-Sat defaults. Prefer changing STREAM-Sat's own config if needed.
+stream_sat_window_hours = 48        # operational window (h) — STREAM-Sat controlled
+stream_sat_warmup_hours = 12        # AR(1) warm-up (h) — STREAM-Sat controlled
 
 # Where STREAM-Sat GeoTIFFs (one folder per member) are written.
 # The orchestrator appends the domain name automatically:
@@ -203,11 +218,11 @@ If running in operational mode (Hindcast False) and LR_mode = True, user only ha
 """
 HindCastMode = False
 # Hindcast start time (used when HindCastMode=True)
-HindCastDate = "2025-11-16 00:00"  # "%Y-%m-%d %H:%M" UTC
+HindCastDate = "2026-07-22 00:00"  # "%Y-%m-%d %H:%M" UTC
         
 # Hindcast end time (optional; if set, runs hourly from HindCastDate → HindCastEndDate)
 # Leave as empty string "" for single-cycle hindcast.
-HindCastEndDate = "2025-11-17 20:00"  # "%Y-%m-%d %H:%M" UTC
+HindCastEndDate = "2026-07-23 20:00"  # "%Y-%m-%d %H:%M" UTC
 
 run_LR = True
 LR_timestep = "60u"

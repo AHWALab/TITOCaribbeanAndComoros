@@ -1,14 +1,40 @@
-#from .nowcast_ml import (run_ml_nowcast)
-from .nowcast_convlstm import (run_convlstm)
-from .gfs_downloader import (download_GFS)
-from .gfs_manager import (GFS_searcher)
-from .wrf_manager import (WRF_searcher)
-from .arome_downloader import (download_AROME, get_arome_domain_for_region)
-from .arome_manager import (AROME_searcher)
+"""QPF utilities (GFS, AROME, WRF, optional ConvLSTM nowcast).
+
+Heavy modules are imported lazily via ``__getattr__`` so importing
+``GFS_searcher`` does not pull PySTEPS / ConvLSTM.
+"""
+
+from __future__ import annotations
 
 __all__ = [
-    'run_convlstm',
-    'download_GFS', 'GFS_searcher',
-    'WRF_searcher',
-    'download_AROME', 'get_arome_domain_for_region', 'AROME_searcher',
+    "run_convlstm",
+    "download_GFS",
+    "GFS_searcher",
+    "GFS_wind_searcher",
+    "WRF_searcher",
+    "download_AROME",
+    "get_arome_domain_for_region",
+    "AROME_searcher",
 ]
+
+_LAZY = {
+    "run_convlstm": (".nowcast_convlstm", "run_convlstm"),
+    "download_GFS": (".gfs_downloader", "download_GFS"),  # legacy v1 CLI API
+    "GFS_searcher": (".gfs_manager", "GFS_searcher"),
+    "GFS_wind_searcher": (".gfs_manager", "GFS_wind_searcher"),
+    "WRF_searcher": (".wrf_manager", "WRF_searcher"),
+    "download_AROME": (".arome_downloader", "download_AROME"),
+    "get_arome_domain_for_region": (".arome_downloader", "get_arome_domain_for_region"),
+    "AROME_searcher": (".arome_manager", "AROME_searcher"),
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr = _LAZY[name]
+    import importlib
+    mod = importlib.import_module(module_name, __name__)
+    value = getattr(mod, attr)
+    globals()[name] = value
+    return value

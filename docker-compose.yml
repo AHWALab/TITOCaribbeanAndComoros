@@ -31,10 +31,17 @@ services:
       - ./parameters:/app/parameters:ro
       - ./templates:/app/templates:ro
       - ./EF5:/app/EF5:ro
+      # Mount config so edits apply without rebuilding the image
+      - ./Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro
+      - ./orchestrator.py:/app/orchestrator.py:ro
+      - ./hindcast_manager.py:/app/hindcast_manager.py:ro
+      - ./tito_utils:/app/tito_utils:ro
+      - ./STREAM-Sat-realtime:/app/STREAM-Sat-realtime:rw
 
     # ── Environment ────────────────────────────────────────────────────
     environment:
       - EF5_RUNTIME=docker                    # force Docker EF5 runtime
+      - EF5_IMAGE=ef5-container:latest        # Docker image name (not SIF)
       - EF5_OMP_NUM_THREADS=1                 # single-thread EF5
       - PYTHONUNBUFFERED=1
       - TZ=Etc/UTC

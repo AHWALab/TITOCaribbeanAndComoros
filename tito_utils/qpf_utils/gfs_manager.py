@@ -46,8 +46,8 @@ def GFS_searcher(path_gfs, qpf_store_path, start_time, end_time, xmin, xmax, ymi
     1. Always clear qpf_store_path/gfs_data/ (stale files from the previous run).
     2. Check path_gfs for all expected hourly tifs (gfs.YYYYMMDDHH00.tif):
        - **All present** → copy to gfs_data/ and return.  No network access.
-       - **Any missing** → trigger a one-shot download_GFS directly into gfs_data/.
-         The result is NOT archived back to path_gfs; the daemon owns that folder.
+       - **Any missing** → one-shot download via ``gfs_downloader_v2.download_cycle``
+         into gfs_data/.  Not archived back to path_gfs; the daemon owns that folder.
 
     Parameters
     ----------

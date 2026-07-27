@@ -8,30 +8,13 @@ cycle time, regardless of QPF differences).  Other QPE sources (HSAF,
 SCaMPR) and all QPF sources (GFS, AROME) are grouped by their forcing
 signature for sharing.
 
-Staging (copying to ``precipEF5/<region>/``) is left to the EF5 routines
-(``rename_ef5_precip``), called by the orchestrator via
-``prepare_ef5(…, stage_precip=True)``.
-
-For IMERG QPE, available states are checked first (7-day lookback).  If a
-state exists at T_state, IMERG is only downloaded from T_state forward.
-The effective start time is returned to the orchestrator.
+Staging (copying to ``precipEF5/<region>/``) is left to
+``prepare_ef5(…, stage_precip=True)`` inside ``tito_utils.ef5.jobs.builders``.
 
 Usage (from orchestrator)::
 
-    from tito_utils.file_utils.prepare_precip import prepare_all_precip
-
-    shared = prepare_all_precip(
-        regions_to_run,
-        region_cycle_times,
-        region_qpe_sources,
-        region_qpf_requested,
-        config,
-    )
-    # shared.imerg_folders    → {cycle_key: imerg_folder}
-    # shared.imerg_eff_starts → {region: datetime}
-    # shared.gfs_cache         → {cycle_key: gfs_data_folder}
-    # shared.arome_cache       → {(cycle_key, domain): arome_data_folder}
-    # shared.scampr_folder     → path or None
+    from tito_utils.precip import prepare_cycle_precip
+    shared = prepare_cycle_precip(...)
 """
 
 from __future__ import annotations
@@ -39,7 +22,6 @@ from __future__ import annotations
 import glob
 import os
 import re
-import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -54,11 +36,9 @@ from tito_utils.qpe_utils import (
     get_new_hsaf_precip,
     get_new_scampr_precip,
 )
-from tito_utils.qpf_utils import (
-    GFS_searcher,
-    AROME_searcher,
-    get_arome_domain_for_region,
-)
+from tito_utils.qpf_utils.gfs_manager import GFS_searcher
+from tito_utils.qpf_utils.arome_manager import AROME_searcher
+from tito_utils.qpf_utils.arome_downloader import get_arome_domain_for_region
 
 
 # ---------------------------------------------------------------------------
@@ -139,19 +119,6 @@ def _resolve_imerg_download_window(
               f"{dl_start.strftime('%Y%m%d_%H%M')}")
 
     return dl_start, effective
-
-
-# ---------------------------------------------------------------------------
-# QPF helpers
-# ---------------------------------------------------------------------------
-
-def _copy_tifs_from_shared(shared_folder: str, dest_folder: str):
-    mkdir_p(dest_folder)
-    for src in glob.glob(os.path.join(shared_folder, "*.tif")):
-        try:
-            shutil.copy2(src, dest_folder)
-        except Exception as exc:
-            print(f"    Warning: tif copy {os.path.basename(src)}: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +265,10 @@ def prepare_all_precip(
     # ═══════════════════════════════════════════════════════════════════
 
     hindcast = getattr(config, "HindCastMode", False)
-    if gap_mode == "IMERG_SCAMPR" or any(
+    # In hindcast, IMERG has no latency → SCaMPR gap fill is never needed.
+    # Only download SCaMPR if (a) a region uses it as its primary QPE, or
+    # (b) we're in realtime mode with IMERG_SCAMPR gap fill or STREAM_SAT+SCaMPR.
+    if (not hindcast and gap_mode == "IMERG_SCAMPR") or any(
         region_qpe_sources.get(r, "").upper() == "SCAMPR" for r in regions_to_run
     ) or (not hindcast and any(
         # STREAM_SAT gap fill only in realtime (hindcast uses QPF-only)
@@ -425,8 +395,14 @@ def prepare_all_precip(
             # Hindcast mode: pass cycle time as --end (no IMERG latency subtraction).
             # STREAM-Sat's half-hourly grid rounds down, so add +30 min to get
             # output covering up to the actual cycle time.
-            hindcast = getattr(config, "HindCastMode", False)
-            ss_end_dt = (region_cycle_times.get(representative) + timedelta(minutes=30)) if hindcast else None
+            hindcast = bool(getattr(config, "HindCastMode", False))
+            ss_end_dt = None
+            if hindcast:
+                ss_end_dt = region_cycle_times.get(representative) + timedelta(minutes=30)
+                print(f"    STREAM-Sat hindcast --end {ss_end_dt.strftime('%Y-%m-%dT%H:%M')} "
+                      f"(cycle {region_cycle_times.get(representative)})")
+            else:
+                print("    STREAM-Sat operational --end omitted (pipeline uses now − IMERG latency)")
 
             # Domain-specific precip folder:
             #   precip/stream_sat/caribbean/ensP1/...  (Caribbean regions)
@@ -435,7 +411,8 @@ def prepare_all_precip(
 
             print(f"***_________STREAM-Sat [{domain}] for {domains_regions} [{ck}]_________***")
             if master_log:
-                master_log.info("STREAM-Sat [%s] start — regions: %s", domain, domains_regions)
+                master_log.info("STREAM-Sat [%s] start — regions: %s end=%s",
+                                domain, domains_regions, ss_end_dt)
 
             try:
                 info = run_and_convert_streamsat(

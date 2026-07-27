@@ -1,0 +1,83 @@
+Bootstrap: docker://ubuntu:22.04
+
+# ============================================================================
+# TITO — Apptainer / Singularity container
+# ============================================================================
+# Preferred build path (on a machine that has Docker + Apptainer):
+#   1. docker build -t tito:latest .
+#   2. apptainer build tito.sif docker-daemon://tito:latest
+#
+# Or build this definition directly (slow — recreates conda env):
+#   apptainer build --fakeroot tito.sif apptainer/tito.def
+#
+# Run via the unified launcher:
+#   ./tito-run.sh operational --regions Guatemala
+# ============================================================================
+
+%labels
+    Author AHWA Lab
+    Version 2.0
+    Description TITO Caribbean & Comoros operational hydrology pipeline
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+    export TZ=Etc/UTC
+    export PATH=/opt/conda/bin:$PATH
+    export PYTHONUNBUFFERED=1
+    # Nested EF5 should use Apptainer (not Docker) when TITO itself is in Apptainer
+    export EF5_RUNTIME=apptainer
+    export EF5_IMAGE=EF5/ef5-container.sif
+
+%post
+    set -e
+    apt-get update && apt-get install -y --no-install-recommends \
+        wget curl git ca-certificates build-essential \
+        libgdal-dev libnetcdf-dev libhdf5-dev libeccodes-dev \
+        libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev \
+        libfontconfig1 \
+        && rm -rf /var/lib/apt/lists/*
+
+    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+        -O /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -b -p /opt/conda
+    rm /tmp/miniconda.sh
+    /opt/conda/bin/conda init bash
+
+    # Expect build context files under /opt/tito-src (copied by %files if used),
+    # or bake from the definition directory when using `apptainer build` with
+    # a local tree. Prefer converting the Docker image instead of this path.
+    if [ -f /opt/tito-src/tito_env.yml ]; then
+        /opt/conda/bin/conda env create -f /opt/tito-src/tito_env.yml
+        /opt/conda/bin/conda clean -afy
+        mkdir -p /app
+        cp -a /opt/tito-src/. /app/
+        # shellcheck disable=SC1091
+        source /opt/conda/etc/profile.d/conda.sh
+        conda activate tito_env2
+        if [ -d /app/Nowcast/nowcasting ]; then
+            cd /app/Nowcast/nowcasting && pip install -e . --no-deps && pip install requests
+        fi
+    else
+        echo "WARNING: /opt/tito-src/tito_env.yml not found."
+        echo "Prefer: apptainer build tito.sif docker-daemon://tito:latest"
+    fi
+
+    mkdir -p /app/states /app/outputs /app/precip /app/precipEF5 \
+             /app/qpf_store /app/pet /app/basic /app/parameters \
+             /app/templates /app/outputs/logs
+
+%files
+    # Optional: when building from this .def with a local tree as context,
+    # uncomment and adjust, or use docker-daemon conversion instead.
+    # ../tito_env.yml /opt/tito-src/tito_env.yml
+
+%runscript
+    #!/bin/bash
+    set -euo pipefail
+    source /opt/conda/etc/profile.d/conda.sh
+    conda activate tito_env2
+    cd /app
+    exec /app/docker-entrypoint.sh "$@"
+
+%startscript
+    exec /app/docker-entrypoint.sh operational

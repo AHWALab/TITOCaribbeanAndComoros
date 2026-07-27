@@ -131,23 +131,29 @@ def run_streamsat_pipeline(
     if not config_path.exists():
         raise FileNotFoundError(f"STREAM-Sat config not found: {config_path}")
 
-    # ── Pre-clean: wipe STREAM-Sat NC output from previous run ─────
-    # STREAM-Sat skips existing files (out_path.exists() check), so stale
-    # NC files from a prior cycle prevent new data from being written.
-    # Wipe the domain output subdirs so every cycle produces fresh NCs.
-    # NOTE: state_dir is NOT wiped — noise persistence state must survive
-    # across cycles for AR(1) continuity.
+    # ── Pre-clean: DISABLED for pipeline persistence.
+    #    STREAM-Sat NetCDFs must survive across cycles so post-processing
+    #    scripts (streamsat_ensemble_tiles, streamsat_imerg_diff) can
+    #    consume all timesteps after the hindcast completes.
+    #    The pipeline already skips existing timestamp-specific files, so
+    #    wiping the entire output dir is unnecessary for correctness.
+    #    To re-enable, uncomment the block below.
+    #
+    # output_dir = STREAMSAT_REPO / "extension" / "realtime" / "output" / domain
+    # alt_dir = STREAMSAT_REPO / "extension" / "realtime" / "extension" / "realtime" / "output" / domain
+    # for d in (output_dir, alt_dir):
+    #     if d.exists():
+    #         for f in d.glob("*"):
+    #             try:
+    #                 f.unlink()
+    #             except OSError:
+    #                 pass
+    # if pipeline_log:
+    #     pipeline_log.info("[STREAM-Sat %s] Cleaned output dirs (state preserved)", domain)
+
+    # Resolve output directory paths (needed for NC file discovery below)
     output_dir = STREAMSAT_REPO / "extension" / "realtime" / "output" / domain
     alt_dir = STREAMSAT_REPO / "extension" / "realtime" / "extension" / "realtime" / "output" / domain
-    for d in (output_dir, alt_dir):
-        if d.exists():
-            for f in d.glob("*"):
-                try:
-                    f.unlink()
-                except OSError:
-                    pass
-    if pipeline_log:
-        pipeline_log.info("[STREAM-Sat %s] Cleaned output dirs (state preserved)", domain)
 
     cmd = [
         sys.executable,
@@ -164,6 +170,7 @@ def run_streamsat_pipeline(
         cmd.append("--keep-scratch")
 
     log.info("[STREAM-Sat %s] Running: %s", domain, " ".join(cmd))
+    print(f"    [STREAM-Sat {domain}] cmd: {' '.join(cmd)}")
     if pipeline_log:
         pipeline_log.info("[STREAM-Sat %s] cmd: %s", domain, " ".join(cmd))
     t0 = time.time()
@@ -365,6 +372,7 @@ def convert_streamsat_nc_to_geotiffs(
     max_workers: Optional[int] = None,
     dry_run: bool = False,
     tif_naming: str = "streamsat",
+    max_end_dt: Optional[datetime] = None,
 ) -> int:
     """Convert all STREAM-Sat NetCDF files → per-member GeoTIFFs.
 
@@ -385,6 +393,9 @@ def convert_streamsat_nc_to_geotiffs(
         If True, only preview what would be done.
     tif_naming : str
         Prefix for GeoTIFF filenames (e.g. "streamsat").
+    max_end_dt : datetime or None
+        If set, only convert NetCDFs with timestamp <= max_end_dt
+        (needed for hindcast so leftover operational NCs are ignored).
 
     Returns
     -------
@@ -395,6 +406,35 @@ def convert_streamsat_nc_to_geotiffs(
     if not ncs:
         log.warning("No STREAM-Sat NetCDF files found in %s", nc_output_dir)
         return 0
+
+    if max_end_dt is not None:
+        kept = []
+        skipped = 0
+        for nc_path in ncs:
+            ts_str = parse_nc_timestamp(nc_path)
+            if not ts_str:
+                skipped += 1
+                continue
+            try:
+                ts = datetime.strptime(ts_str, "%Y%m%d%H%M")
+            except ValueError:
+                skipped += 1
+                continue
+            if ts <= max_end_dt:
+                kept.append(nc_path)
+            else:
+                skipped += 1
+        log.info(
+            "NC filter max_end=%s: keep %d / skip %d (leftover future files)",
+            max_end_dt.strftime("%Y%m%d%H%M"), len(kept), skipped,
+        )
+        ncs = kept
+        if not ncs:
+            log.warning(
+                "No STREAM-Sat NetCDFs <= %s in %s",
+                max_end_dt.strftime("%Y%m%d%H%M"), nc_output_dir,
+            )
+            return 0
 
     total_tifs = len(ncs) * n_ensemble
     log.info(
@@ -520,6 +560,7 @@ def run_and_convert_streamsat(
         divide_by=divide_by,
         max_workers=max_workers,
         tif_naming=tif_naming,
+        max_end_dt=end_dt,
     )
 
     log.info(

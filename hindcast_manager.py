@@ -44,7 +44,9 @@ Options
 -------
     --step-hours N      Simulation step in hours (default: 1).
     --regions R1,R2     Comma-separated region names to run (overrides config).
-    --log-dir PATH      Directory for per-step log files (default: current dir).
+    --log-dir PATH      Directory for per-step log files
+                        (default: outputs/logs — writable under Docker/Apptainer).
+    --quiet             Log to file only (no live terminal stream).
     --dry-run           Print commands without executing them.
     --stop-on-error     Abort the sequence on the first failed step.
 
@@ -119,7 +121,7 @@ def main() -> None:
         "--log-dir",
         default=None,
         metavar="PATH",
-        help="Directory to write per-step log files (default: current directory)",
+        help="Directory for per-step logs (default: outputs/logs)",
     )
     parser.add_argument(
         "--dry-run",
@@ -130,6 +132,11 @@ def main() -> None:
         "--stop-on-error",
         action="store_true",
         help="Abort the hindcast sequence on the first failed orchestrator step",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Do not stream orchestrator output to the terminal (log file only)",
     )
     args = parser.parse_args()
 
@@ -148,7 +155,11 @@ def main() -> None:
         print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
         sys.exit(1)
 
-    log_dir = os.path.abspath(args.log_dir) if args.log_dir else os.getcwd()
+    # Default under outputs/ — /app itself is read-only inside Apptainer SIFs;
+    # outputs/ is bind-mounted writable by tito-run.sh (Docker and Apptainer).
+    log_dir = os.path.abspath(args.log_dir) if args.log_dir else os.path.abspath(
+        os.path.join("outputs", "logs")
+    )
     if not args.dry_run:
         os.makedirs(log_dir, exist_ok=True)
 
@@ -198,27 +209,43 @@ def main() -> None:
             continue
 
         print(f"  → {log_file}")
+        if not args.quiet:
+            print("-" * 60)
 
         with open(log_file, "w", encoding="utf-8") as log_fh:
             log_fh.write(f"=== TITO Hindcast Step {date_str} UTC ===\n")
             log_fh.flush()
-            result = subprocess.run(
+            # Stream orchestrator stdout/stderr live to terminal AND the log file.
+            # (Previously stdout went only to the log — terminal showed OK/FAILED only.)
+            proc = subprocess.Popen(
                 cmd,
-                stdout=log_fh,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
             )
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                log_fh.write(line)
+                log_fh.flush()
+                if not args.quiet:
+                    print(line, end="", flush=True)
+            returncode = proc.wait()
 
-        if result.returncode != 0:
+        if not args.quiet:
+            print("-" * 60)
+
+        if returncode != 0:
             print(
-                f"    FAILED (exit code {result.returncode}). "
-                f"See log for details."
+                f"    FAILED (exit code {returncode}). "
+                f"See log for details: {log_file}"
             )
-            errors.append((date_str, result.returncode))
-            if args.stop_on_error:
+            errors.append((date_str, returncode))
+            if args.stop_on-error:
                 print("    --stop-on-error is set. Aborting.")
                 break
         else:
-            print(f"    OK")
+            print(f"    OK  (step {idx}/{total})")
 
     # Final summary.
     print("\n" + "=" * 60)

@@ -3,10 +3,12 @@
 # TITO Docker Entrypoint
 # ============================================================================
 # Usage:
-#   docker run ... tito:latest                    # operational mode
-#   docker run ... tito:latest operational        # explicit operational
-#   docker run ... tito:latest hindcast "START" "END"   # hindcast loop
-#   docker run ... tito:latest shell              # interactive bash
+#   docker run ... tito:latest                                    # operational, all regions
+#   docker run ... tito:latest operational                        # explicit operational
+#   docker run ... tito:latest operational --regions Guatemala    # single region
+#   docker run ... tito:latest hindcast "START" "END"                         # all regions
+#   docker run ... tito:latest hindcast "START" "END" --regions Guatemala     # single region
+#   docker run ... tito:latest shell                              # interactive bash
 # ============================================================================
 set -euo pipefail
 
@@ -16,6 +18,23 @@ conda activate tito_env2
 
 cd /app
 
+# ── Parse common optional flags ────────────────────────────────────────────
+REGIONS_ARG=""
+REMAINING_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --regions)
+            REGIONS_ARG="--regions $2"
+            shift 2
+            ;;
+        *)
+            REMAINING_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${REMAINING_ARGS[@]}"
+
 MODE="${1:-operational}"
 shift || true
 
@@ -23,7 +42,8 @@ case "$MODE" in
     operational)
         echo "==== TITO Operational Mode ===="
         echo "Cycle: $(date -u --iso-8601=seconds)"
-        exec python orchestrator.py Caribbean_Comoros_config.py
+        [ -n "$REGIONS_ARG" ] && echo "Regions: ${REGIONS_ARG#--regions }"
+        exec python orchestrator.py Caribbean_Comoros_config.py $REGIONS_ARG
         ;;
 
     hindcast)
@@ -32,7 +52,8 @@ case "$MODE" in
         echo "==== TITO Hindcast Mode ===="
         echo "From: $HINDCAST_START"
         echo "To:   $HINDCAST_END"
-        exec python hindcast_manager.py Caribbean_Comoros_config.py "$HINDCAST_START" "$HINDCAST_END"
+        [ -n "$REGIONS_ARG" ] && echo "Regions: ${REGIONS_ARG#--regions }"
+        exec python hindcast_manager.py Caribbean_Comoros_config.py "$HINDCAST_START" "$HINDCAST_END" $REGIONS_ARG
         ;;
 
     shell|bash)
@@ -44,7 +65,7 @@ case "$MODE" in
 
     *)
         echo "Unknown mode: $MODE"
-        echo "Usage: docker run ... tito:latest [operational|hindcast START END|shell]"
+        echo "Usage: docker run ... tito:latest [operational|hindcast START END|shell] [--regions R1,R2]"
         exit 1
         ;;
 esac

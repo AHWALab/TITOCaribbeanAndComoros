@@ -23,7 +23,6 @@ __pycache__/
 Dockerfile
 docker-compose.yml
 docker-build.sh
-docker-entrypoint.sh
 .dockerignore
 
 # ── Docs ──

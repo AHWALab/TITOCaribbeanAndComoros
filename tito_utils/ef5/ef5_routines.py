@@ -1,3 +1,18 @@
+"""
+EF5 low-level routines (still actively used).
+
+This is NOT dead code.  Job builders in ``tito_utils.ef5.jobs`` decide *which*
+simulations to run; this module does the work for each job:
+
+  prepare_ef5()
+    → find_available_states()
+    → rename_ef5_precip()          # stage precip into precipEF5/
+    → write_control_file()         # write the EF5 control file
+  run_ef5_simulations_parallel()
+    → run_ef5_simulation()
+    → run_EF5()                    # docker / apptainer container
+"""
+
 import os
 import shutil
 import re
@@ -607,27 +622,64 @@ def _apply_streamsat_control_overrides(lines, precip_forcing_loc):
 def _detect_container_runtime():
     """Detect which container runtime is available.
 
-    Returns ``"apptainer"``, ``"singularity"``, or ``"docker"``.
-    Preference: Apptainer > Singularity > Docker.
-    Can be overridden with the env var ``EF5_RUNTIME``.
+    Returns ``"local"``, ``"apptainer"``, ``"singularity"``, or ``"docker"``.
+
+    Preference when unset: Apptainer > Singularity > Docker.
+    Override with ``EF5_RUNTIME``.
+
+    ``local`` runs the glibc EF5 binary shipped under ``EF5/bin/ef5``
+    (or ``EF5_LOCAL_BIN``) inside the *current* container — required for
+    Apptainer partners because nesting Apptainer→Apptainer is unreliable
+    on HPC (setuid / session dirs).
     """
     forced = os.environ.get("EF5_RUNTIME", "").strip().lower()
-    if forced in ("apptainer", "singularity", "docker"):
-        return forced
+    if forced in ("local", "embedded", "apptainer", "singularity", "docker"):
+        return "local" if forced == "embedded" else forced
 
     for cmd in ("apptainer", "singularity"):
         if shutil.which(cmd):
             return cmd
     if shutil.which("docker"):
         return "docker"
+    # Last resort: local binary if present
+    for candidate in (
+        os.environ.get("EF5_LOCAL_BIN", "").strip(),
+        "EF5/bin/ef5",
+        "/ef5/bin/ef5",
+    ):
+        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return "local"
     raise RuntimeError(
-        "No container runtime found. Install Docker or Apptainer/Singularity."
+        "No EF5 runtime found. Set EF5_RUNTIME=local|docker|apptainer "
+        "or install Docker/Apptainer."
+    )
+
+
+def _resolve_local_ef5_bin(ef5Path: str) -> str:
+    """Resolve the in-container glibc EF5 binary path."""
+    candidates = [
+        os.environ.get("EF5_LOCAL_BIN", "").strip(),
+        ef5Path if ef5Path and not ef5Path.endswith((".sif", ".tar")) else "",
+        "EF5/bin/ef5",
+        "/ef5/bin/ef5",
+        "/app/EF5/bin/ef5",
+    ]
+    for c in candidates:
+        if not c:
+            continue
+        path = c if os.path.isabs(c) else os.path.abspath(c)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    raise RuntimeError(
+        "EF5_RUNTIME=local but no glibc EF5 binary found. Expected "
+        "EF5/bin/ef5 (build with: ./EF5/docker/build_ef5_local.sh)."
     )
 
 
 def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
     """
-    Run EF5 inside a container (Docker or Apptainer/Singularity).
+    Run EF5 inside a container (Docker or Apptainer/Singularity) **or**
+    as a local glibc binary embedded/bound into the TITO container.
 
     The container mounts the current working directory (TITO_Stream_Sat/)
     as ``/data`` and executes ``/ef5/bin/ef5`` with the supplied control
@@ -639,8 +691,8 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
 
     Arguments:
         ef5Path {str} -- Docker image name (e.g. "ef5-container:latest"),
-                         SIF path ("EF5/ef5-container.sif"), or URI
-                         ("docker-archive://EF5/ef5-container.tar").
+                         SIF path ("EF5/ef5-container.sif"), local binary
+                         ("EF5/bin/ef5"), or URI.
         hot_folder_path {str} -- Path to the current run's "hot" folder
         control_file {str} -- Path to the EF5 control file
         log_file {str} -- Log file name (created inside hot_folder_path)
@@ -655,16 +707,22 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
     except ValueError:
         control_rel = control_abs.lstrip(os.sep)
 
-    total_cpus = os.cpu_count() or 1
     os.makedirs(os.path.dirname(log_abs), exist_ok=True)
 
     runtime = _detect_container_runtime()
-
-    # ── OMP_NUM_THREADS: only for Docker; Apptainer skips it entirely ──
-    # Setting OMP_NUM_THREADS triggers libgomp thread creation which fails
-    # under high concurrency (50+ parallel Apptainer containers).
-    # Docker still benefits from explicit control via EF5_OMP_NUM_THREADS.
     omp_threads = int(os.environ.get("EF5_OMP_NUM_THREADS", "1"))
+
+    if runtime == "local":
+        # Run EF5 binary inside the *current* TITO container/process tree.
+        # No nested Docker/Apptainer — this is the Apptainer partner path.
+        ef5_bin = _resolve_local_ef5_bin(ef5Path)
+        cmd = (
+            f"OMP_NUM_THREADS={omp_threads} OMP_DYNAMIC=false "
+            f"OMP_NESTED=false OMP_THREAD_LIMIT=1 "
+            f'"{ef5_bin}" "{control_rel}" '
+            f'> "{log_abs}" 2>&1'
+        )
+        return subprocess.call(cmd, shell=True, cwd=cwd)
 
     if runtime == "docker":
         cmd = (
@@ -686,27 +744,29 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
             f'/ef5/bin/ef5 "/data/{control_rel}" '
             f'> "{log_abs}"'
         )
-    else:
-        # Apptainer / Singularity — --cleanenv wipes the host environment,
-        # which means ANY env VAR=val prefix on the command line is also
-        # stripped.  Without OMP_NUM_THREADS, libgomp defaults to ALL
-        # CPUs → 50 parallel containers × N cores = thread storm → crash.
-        #
-        # Fix: use --env (Apptainer-native) which survives --cleanenv.
-        # This forces exactly 1 OpenMP thread per EF5 invocation.
-        image = ef5Path
-        if "://" not in ef5Path and not os.path.isabs(ef5Path):
-            image = os.path.abspath(ef5Path)
-        cmd = (
-            f"{runtime} run --cleanenv "
-            f'--env "OMP_NUM_THREADS=1,OMP_DYNAMIC=false,OMP_NESTED=false,OMP_THREAD_LIMIT=1" '
-            f'--bind "{cwd}:/data" '
-            f"--pwd /data "
-            f'"{image}" '
-            f'/ef5/bin/ef5 "/data/{control_rel}" '
-            f'> "{log_abs}"'
-        )
+        return subprocess.call(cmd, shell=True)
 
+    # Apptainer / Singularity (host-level only — do NOT use from inside a SIF)
+    runtime_bin = os.environ.get("EF5_APPTAINER_BIN", "").strip() or runtime
+    if not shutil.which(runtime_bin) and not os.path.isfile(runtime_bin):
+        raise RuntimeError(
+            f"EF5 runtime '{runtime_bin}' not found. "
+            "Inside a TITO Apptainer container use EF5_RUNTIME=local "
+            "(./tito-run.sh sets this). On the host, install Apptainer."
+        )
+    image = ef5Path
+    if "://" not in ef5Path and not os.path.isabs(ef5Path):
+        image = os.path.abspath(ef5Path)
+
+    cmd = (
+        f'"{runtime_bin}" run --cleanenv '
+        f'--env "OMP_NUM_THREADS=1,OMP_DYNAMIC=false,OMP_NESTED=false,OMP_THREAD_LIMIT=1" '
+        f'--bind "{cwd}:/data" '
+        f"--pwd /data "
+        f'"{image}" '
+        f'/ef5/bin/ef5 "/data/{control_rel}" '
+        f'> "{log_abs}"'
+    )
     return subprocess.call(cmd, shell=True)
 
 

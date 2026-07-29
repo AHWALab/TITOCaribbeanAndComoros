@@ -725,6 +725,11 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
         return subprocess.call(cmd, shell=True, cwd=cwd)
 
     if runtime == "docker":
+        # When TITO itself runs in Docker and spawns EF5 via docker.sock,
+        # volume paths are resolved on the *host*.  cwd inside the TITO
+        # container is typically /app, which is not the host project path.
+        # tito-run.sh / compose must set TITO_HOST_PROJECT to the host abs path.
+        host_project = os.environ.get("TITO_HOST_PROJECT", "").strip() or cwd
         cmd = (
             f"docker run --rm "
             f"--network host "
@@ -734,7 +739,7 @@ def run_EF5(ef5Path, hot_folder_path, control_file, log_file):
             f"--ulimit nproc=65535:65535 "
             f"--ulimit memlock=-1:-1 "
             f"--security-opt seccomp=unconfined "
-            f'-v "{cwd}:/data:rw" '
+            f'-v "{host_project}:/data:rw" '
             f'-u "$(id -u):$(id -g)" '
             f"-e OMP_NUM_THREADS={omp_threads} "
             f"-e OMP_PROC_BIND=true "

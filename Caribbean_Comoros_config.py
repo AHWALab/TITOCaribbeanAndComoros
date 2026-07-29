@@ -137,7 +137,7 @@ warmup_enabled = True              # set to True to enable warmup
 # The simulation starts at (cycle_time - warmup_days days) and ends at
 # (cycle_time - 40 hours), saving states at (cycle_time - 40 hours).
 # Default: 10 days if not specified.
-warmup_days = 5
+warmup_days = 10
 
 # Per-region precipitation source for warmup runs.
 # Options: "IMERG" (default if region not listed), "HSAF"
@@ -162,7 +162,7 @@ warmup_precip_source_map = {
 # Used when qpe_source == "STREAM_SAT" in region_forcing_map.
 # STREAM-Sat repo lives inside the TITO directory:
 #   TITO_Stream_Sat/STREAM-Sat-realtime/
-stream_sat_ensemble_size = 10      # ← USER-TUNABLE (use 2 for test, 10 for ops)
+stream_sat_ensemble_size = 2      # ← USER-TUNABLE (use 2 for test, 10 for ops)
 
 # ── Informational only (STREAM-Sat pipeline internals — do not treat as knobs) ──
 # These are passed through to STREAM-Sat run_pipeline; values below match the

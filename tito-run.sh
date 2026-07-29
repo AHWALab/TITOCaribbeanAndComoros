@@ -95,6 +95,7 @@ run_docker() {
         -v /var/run/docker.sock:/var/run/docker.sock
         -e EF5_RUNTIME=docker
         -e "EF5_IMAGE=$EF5_DOCKER_IMAGE"
+        -e "TITO_HOST_PROJECT=$SCRIPT_DIR"
         -e PYTHONUNBUFFERED=1
         -e TZ=Etc/UTC
         --network host
@@ -102,6 +103,7 @@ run_docker() {
     )
     echo "  Image   : $TITO_IMAGE"
     echo "  EF5     : docker /$EF5_DOCKER_IMAGE (sibling via docker.sock)"
+    echo "  Host    : $SCRIPT_DIR"
     exec docker run "${args[@]}" "$TITO_IMAGE" "$@"
 }
 

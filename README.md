@@ -105,7 +105,7 @@ Guatemala Santa Ines Petapa scenario store ships with the repository under
 
 ## Contact
 
-Please contact Naman Mehta at naman-mehta@uiowa.edu or Vanessa Robledo at vanessa-robledodelgado@uiowa.edu or the [AHWA Laboratory](https://ahwa.lab.uiowa.edu/) Development team at engr-ahwa-lab@uiowa.edu.
+Please contact development team at engr-ahwa-lab@uiowa.edu.
 
 ## Cite this package
 

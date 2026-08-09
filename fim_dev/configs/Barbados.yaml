@@ -1,0 +1,46 @@
+# FIM config template for Barbados (admin-boundary Areas of Concern).
+# Copy to fim_config/Barbados.yaml at the repo root and fill the two
+# placeholder paths once the real AOC file and catalog exist.
+region: Barbados
+
+catalog_path: fim_catalog/Barbados/v1
+
+aoc:
+  source: aoc/Barbados_parishes.geojson    # TODO: real admin boundaries file
+  id_field: shapeName                      # TODO: real id attribute
+  name_field: shapeName
+
+ef5:
+  outputs_root: outputs
+  run_dir_glob: "tmp_output_*"
+  cycle_format: "%Y%m%d.%H%M%S"
+  files:
+    uq: "maxunitq.{cycle}.tif"
+    qpe_accum: "qpeaccum.{cycle}.tif"
+    qpf_accum: "qpfaccum.{cycle}.tif"
+    max_q: "maxq.{cycle}.tif"
+  qpe_sources: []        # e.g. [scampr] to restrict; empty = all found
+  qpf_sources: []        # e.g. [gfs, arome]; empty = all found
+  require_qpf: true
+
+trigger:
+  uq_threshold: 1.0
+  scope: any_member
+
+rainfall:
+  stat: mean
+  missing_qpf: skip_member
+
+matching:
+  band: [0.9, 1.2]
+  band_wide: [0.8, 1.3]
+  use_direction: false
+  direction_tolerance_deg: 45
+  rounding: up
+  selectors:
+    best: 50
+    upper: 90
+
+outputs:
+  root: "outputs/{region}/fim"
+  clip_to_aoc: false

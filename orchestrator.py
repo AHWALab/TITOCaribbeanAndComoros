@@ -1530,6 +1530,64 @@ def main(args):
                 print("******** EF5 Outputs are ready!!! ********")
             else:
                 print("No EF5 jobs were prepared.")
+
+        # ── Phase 3: FIM scenario-library lookup (optional, config-driven) ──────────
+        # A region runs FIM when one or more YAMLs named fim_config/<Region>*.yaml
+        # exist (the examples/ subfolder is ignored). One YAML per FIM site, so a
+        # country can carry several basins, e.g. Guatemala_SantaInesPetapa.yaml and
+        # Guatemala_Morales.yaml. A top-level "enabled: false" line in a YAML skips
+        # that site (used while a site's flood map store is not built yet).
+        # Configs with a "hazards:" block use the pluvial + fluvial runner
+        # (pipeline_pf); classic configs keep the v0.2 ensemble runner.
+        # Fully non-fatal: any failure here never breaks the operational pipeline.
+        # See README_FIM.md, fim_config/README.md and tito_utils/fim_utils/.
+        _fim_config_dir = getattr(config_file, "fim_config_dir", "fim_config")
+        if os.path.isdir(_fim_config_dir):
+            print("***_________Phase 3: FIM scenario-library lookup_________***")
+            try:
+                import glob as _fim_glob
+                for _fim_region in regions_to_run:
+                    _fim_yamls = sorted(_fim_glob.glob(
+                        os.path.join(_fim_config_dir, f"{_fim_region}*.yaml")))
+                    if not _fim_yamls:
+                        continue
+                    _fim_rc = region_configs.get(_fim_region, {})
+                    _fim_cycle = _fim_rc.get("output_timestamp_str")
+                    for _fim_yaml in _fim_yamls:
+                        _fim_site = os.path.splitext(os.path.basename(_fim_yaml))[0]
+                        try:
+                            _fim_is_pf = False
+                            _fim_enabled = True
+                            with open(_fim_yaml) as _fh:
+                                for _l in _fh:
+                                    if _l.strip().startswith("hazards:"):
+                                        _fim_is_pf = True
+                                    if (not _l[:1].isspace()
+                                            and _l.split("#")[0].strip().lower()
+                                            in ("enabled: false", "enabled: no")):
+                                        _fim_enabled = False
+                            if not _fim_enabled:
+                                print(f"    FIM {_fim_site}: disabled in its YAML "
+                                      "(enabled: false), skipped")
+                                continue
+                            if _fim_is_pf:
+                                from tito_utils.fim_utils.pipeline_pf import (
+                                    load_pf_config as _fim_load,
+                                    run_pf_cycle as _fim_run)
+                            else:
+                                from tito_utils.fim_utils.pipeline_ensemble import (
+                                    load_ensemble_config as _fim_load,
+                                    run_ensemble_cycle as _fim_run)
+                            _fim_cfg = _fim_load(_fim_yaml)
+                            _fim_summary = _fim_run(_fim_cfg, cycle=_fim_cycle)
+                            print(f"    FIM {_fim_site} [{_fim_cycle}]: "
+                                  f"{_fim_summary.get('status', 'unknown')}")
+                        except Exception as _fim_exc:
+                            print(f"    !!! FIM {_fim_site} failed "
+                                  f"(non-fatal): {_fim_exc}")
+            except Exception as _fim_exc:
+                print(f"    !!! FIM step unavailable (non-fatal): {_fim_exc}")
+        # ── End Phase 3 ──────────────────────────────────────────────────────────────────
     finally:
         if NOWCAST and imerg_needed and region_imerg_folders_used:
             print("***_________Cleaning end-of-run IMERG nowcast/duplicated files_________***")

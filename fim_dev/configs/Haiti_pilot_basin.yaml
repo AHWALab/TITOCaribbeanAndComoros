@@ -1,0 +1,46 @@
+# FIM config template for Haiti (pilot-basin Area of Concern).
+# Identical machinery to the island configs; only the AOC source differs.
+region: Haiti
+
+catalog_path: fim_catalog/Haiti/v1
+
+aoc:
+  source: aoc/Haiti_pilot_basins.gpkg      # TODO: pilot basin polygon(s)
+  id_field: basin_id                       # TODO: real id attribute
+  name_field: basin_name
+  layer: ""                                # set if the gpkg has several layers
+
+ef5:
+  outputs_root: outputs
+  run_dir_glob: "tmp_output_*"
+  cycle_format: "%Y%m%d.%H%M%S"
+  files:
+    uq: "maxunitq.{cycle}.tif"
+    qpe_accum: "qpeaccum.{cycle}.tif"
+    qpf_accum: "qpfaccum.{cycle}.tif"
+    max_q: "maxq.{cycle}.tif"
+  qpe_sources: []
+  qpf_sources: []
+  require_qpf: true
+
+trigger:
+  uq_threshold: 1.0
+  scope: any_member
+
+rainfall:
+  stat: mean
+  missing_qpf: skip_member
+
+matching:
+  band: [0.9, 1.2]
+  band_wide: [0.8, 1.3]
+  use_direction: false
+  direction_tolerance_deg: 45
+  rounding: up
+  selectors:
+    best: 50
+    upper: 90
+
+outputs:
+  root: "outputs/{region}/fim"
+  clip_to_aoc: true      # basins are small inside a big domain; clip products

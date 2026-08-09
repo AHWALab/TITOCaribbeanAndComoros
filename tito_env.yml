@@ -350,6 +350,7 @@ dependencies:
       - pytorch-msssim==1.0.0
       - pytz==2024.2
       - pyyaml==6.0.2
+      - zarr>=3.0.0        # FIM scenario stores (tito_utils/fim_utils)
       - rasterio==1.4.1
       - requests==2.32.3
       - rioxarray==0.17.0

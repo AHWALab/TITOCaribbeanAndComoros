@@ -1,0 +1,45 @@
+# FIM config for the synthetic end-to-end test.
+# Real configs look identical; only the paths change (see Barbados.yaml).
+region: Barbados
+
+catalog_path: fim_dev/sample_data/synthetic/fim_catalog/Barbados/v1
+
+aoc:
+  source: fim_dev/sample_data/synthetic/aoc/units.geojson
+  id_field: unit
+  name_field: label
+
+ef5:
+  outputs_root: fim_dev/sample_data/synthetic/outputs
+  run_dir_glob: "tmp_output_*"
+  cycle_format: "%Y%m%d.%H%M%S"
+  files:
+    uq: "maxunitq.{cycle}.tif"
+    qpe_accum: "qpeaccum.{cycle}.tif"
+    qpf_accum: "qpfaccum.{cycle}.tif"
+    max_q: "maxq.{cycle}.tif"
+  qpe_sources: []          # empty = accept every QPE source found
+  qpf_sources: []          # empty = accept every QPF source found
+  require_qpf: true        # skip QPE-only state-building runs
+
+trigger:
+  uq_threshold: 1.0        # m3/s/km2, any pixel inside an area of concern
+  scope: any_member        # one member above threshold is enough
+
+rainfall:
+  stat: mean               # AOC-average accumulation
+  missing_qpf: skip_member
+
+matching:
+  band: [0.9, 1.2]
+  band_wide: [0.8, 1.3]
+  use_direction: false     # direction stays off until QPF storm motion is wired in
+  direction_tolerance_deg: 45
+  rounding: up
+  selectors:
+    best: 50               # median member
+    upper: 90              # 90th percentile member
+
+outputs:
+  root: "fim_dev/sample_data/synthetic/outputs/{region}/fim"
+  clip_to_aoc: false

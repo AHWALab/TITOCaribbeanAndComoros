@@ -91,6 +91,18 @@ Run the following line in your terminal:
 ./pipeline.sh
 ```
 
+## Flood inundation mapping (FIM)
+
+TITO can attach probabilistic flood inundation maps to any region after the
+EF5 runs of a cycle finish (orchestrator Phase 3). Activation is file based:
+one YAML per FIM site under `fim_config/` switches it on, and the `hazards:`
+block inside the YAML declares whether the site runs pluvial matching only
+(most countries) or pluvial plus fluvial plus the combined product
+(Guatemala). Depth thresholds are a user input. See `README_FIM.md` for the
+full guide and `fim_config/README.md` for the operator cheat sheet. The
+Guatemala Santa Ines Petapa scenario store ships with the repository under
+`fim_store/` and needs a single unzip before first use.
+
 ## Contact
 
 Please contact Naman Mehta at naman-mehta@uiowa.edu or Vanessa Robledo at vanessa-robledodelgado@uiowa.edu or the [AHWA Laboratory](https://ahwa.lab.uiowa.edu/) Development team at engr-ahwa-lab@uiowa.edu.

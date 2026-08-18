@@ -6,6 +6,11 @@ exact region name from `Caribbean_Comoros_config.py` `regions_to_run`. No
 matching YAML means no FIM for that region, and the pipeline is unchanged.
 The `examples/` subfolder is never picked up.
 
+Above the site files sits one master control: the `fim_regions` block in
+`Caribbean_Comoros_config.py`. It switches each region on or off and sets
+the depth thresholds for all of that region's sites. Operators normally
+only touch that block.
+
 ## Current sites
 
 | file | site | hazards | status |
@@ -48,21 +53,27 @@ Remove the line to activate it.
 
 ## Depth thresholds are a user input
 
-    thresholds_m: [0.10, 0.30, 0.50, 1.00]
+Since v0.5 the thresholds live in `Caribbean_Comoros_config.py`:
 
-Edit the list and rerun; every value produces its own probability raster and
-likelihood class raster in every enabled routine. The values above are the
-current working set agreed for Guatemala.
+    fim_regions = {
+        "Guatemala": {"enabled": True, "thresholds_m": [0.10, 0.30, 0.70, 1.00]},
+        ...
+    }
+
+Edit that list and rerun; every value produces its own probability raster
+and likelihood class raster in every enabled routine, and it overrides the
+`thresholds_m` line of the site YAMLs (which still applies to standalone
+runs outside the orchestrator).
 
 ## Before a site can run
 
-Each site needs, once: its scenario store under `fim_store/` (unzipped from
-the shipped zip, or built new with `fim_dev/build_store_guatemala.py`), real
-storm magnitudes attached to that store, and its area of concern polygon
-under `fim_config/aoc/`. The full checklist with commands is in
-`README_FIM.md`, section "Manual steps before a region can run". For the
-Santa Ines Petapa site only the unzip step remains; everything else ships
-done.
+Each site needs, once: its scenario store under `fim_store/<Region>/`
+(run `python fim_store/unzip_stores.py` after pulling a new store zip),
+real storm magnitudes attached to that store, and its area of concern
+polygon under `fim_config/aoc/`. Every country folder under `fim_store/`
+carries a README_ADD_STORE.md with the five step drop-in checklist; the
+full version with commands is in `README_FIM.md`. For the Santa Ines
+Petapa site only the unzip step remains; everything else ships done.
 
 ## Testing a site by hand
 

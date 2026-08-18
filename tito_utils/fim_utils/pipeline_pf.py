@@ -67,7 +67,7 @@ def load_pf_config(path: str, root: str = None) -> dict:
     hz["fluvial"].setdefault("enabled", False)
     hz["fluvial"].setdefault("stat", "max")
     hz["fluvial"].setdefault("method", "standardized")
-    cfg.setdefault("thresholds_m", [0.10, 0.30, 0.50, 1.00])
+    cfg.setdefault("thresholds_m", [0.10, 0.30, 0.70, 1.00])
     cfg.setdefault("likelihood_bands", prob_mod.DEFAULT_BANDS)
     cfg.setdefault("overbank", {})
     cfg["overbank"].setdefault("enabled", True)

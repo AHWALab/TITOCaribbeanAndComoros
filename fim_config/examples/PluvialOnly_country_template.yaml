@@ -19,7 +19,7 @@ outputs_root: outputs/CountryX     # TODO: outputs/<Region>
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/CountryX_SiteName_aoc.geojson   # TODO
-store: fim_store/fim_store_CountryX_SiteName_v1.zarr        # TODO
+store: fim_store/CountryX/fim_store_CountryX_SiteName_v1.zarr   # TODO
 products_root: outputs/CountryX/fim_SiteName                # TODO
 
 member:
@@ -44,7 +44,7 @@ hazards:
     enabled: false
 
 # USER INPUT: depth thresholds in meters, any number of values.
-thresholds_m: [0.10, 0.30, 0.50, 1.00]
+thresholds_m: [0.10, 0.30, 0.70, 1.00]
 
 overbank:
   enabled: true

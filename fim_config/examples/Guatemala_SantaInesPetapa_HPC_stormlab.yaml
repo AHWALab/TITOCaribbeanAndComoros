@@ -3,8 +3,8 @@
 # v0.4 results were produced with. For the operational orchestrator tree use
 # fim_config/Guatemala_SantaInesPetapa.yaml instead.
 # Depth thresholds are a USER INPUT: edit thresholds_m and rerun.
-# The store ships with the repo as fim_store/fim_store_SantaInesPetapa_v1.zarr.zip
-# and must be unzipped once into fim_store/fim_store_SantaInesPetapa_v1.zarr.
+# The store ships with the repo as fim_store/Guatemala/fim_store_SantaInesPetapa_v1.zarr.zip
+# and must be unzipped once with: python fim_store/unzip_stores.py
 # Pluvial index: REAL RainyDay storm totals (AOC mean, Aug 2026).
 # Fluvial index: REAL max boundary discharges (flood_library.mat).
 region: Guatemala_SantaInesPetapa_PF
@@ -13,7 +13,7 @@ outputs_root: outputs/guatemala_90m_runs   # point at the ensemble tree to proce
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/Guatemala_SantaInesPetapa_aoc.geojson
-store: fim_store/fim_store_SantaInesPetapa_v1.zarr
+store: fim_store/Guatemala/fim_store_SantaInesPetapa_v1.zarr
 products_root: outputs/guatemala_90m_runs/fim_pf
 
 member:

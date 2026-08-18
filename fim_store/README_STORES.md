@@ -1,29 +1,37 @@
-# fim_store: scenario flood map stores shipped with the repository
+# fim_store: scenario flood map stores, one folder per country
 
-fim_store_SantaInesPetapa_v1.zarr.zip is the Guatemala Santa Ines Petapa
-scenario library: 200 pre-simulated flood maps (max depth and extent) on the
-5 m EPSG 3857 display grid, one compressed chunk per scenario.
+Layout: fim_store/<Region>/ where <Region> is the exact region key from
+regions_to_run in Caribbean_Comoros_config.py.
 
-Unzip it ONCE before first use, next to this file:
+    Guatemala/   Santa Ines Petapa store READY (real indexes on both axes);
+                 Morales prepared, waiting for its flood map library
+    Antigua/     Antigua and Barbuda, waiting for analog maps
+    Barbados/    waiting for analog maps
+    Comoros/     waiting for analog maps
+    Haiti/       waiting for analog maps
 
-    cd fim_store
-    unzip fim_store_SantaInesPetapa_v1.zarr.zip -d fim_store_SantaInesPetapa_v1.zarr
+Each store is a zarr library of pre-simulated flood maps (max depth and
+extent per scenario) carrying the matching indexes: rainfall magnitude per
+scenario for the pluvial routine, and where the site is also fluvial the
+maximum boundary discharges per scenario. One store serves all routines of
+its site; nothing is duplicated.
 
-The store carries both matching indices, real data on both axes:
+Workflow: stores travel through git as a single <name>.zarr.zip per site
+inside the country folder (tracked via LFS). After every clone or pull that
+brings a new store, run once:
 
-- pluvial magnitudes: RainyDay storm totals, mean over the area of concern,
-  0 to 1051 mm (magnitudes_SantaInesPetapa_real.csv, attached Aug 2026)
-- fluvial index: maximum boundary discharges Q1, Q2 per scenario from the
-  hydraulic runs (flood_library.mat of the standalone prototype)
+    python fim_store/unzip_stores.py
 
-magnitudes_Morales_real.csv holds the RainyDay totals for the Morales site
-(domain mean, 200 scenarios); the Morales store itself is pending its flood
-map library and can be built with fim_dev/build_store_guatemala.py plus
-fim_dev/attach_real_magnitudes_santaines.py as the template.
+It extracts every zip that is not yet unzipped and skips the rest, so it is
+always safe to run. The unzipped .zarr folders and all model outputs stay
+out of git.
 
-Rebuild from scratch: build the store from the MaximumDepth GeoTIFFs, then
-run the attach script. attach_magnitudes re-sorts the store by magnitude and
-re-links every per-scenario index, including the fluvial one.
+Adding a country or site: the README_ADD_STORE.md inside each country
+folder is the five step drop-in checklist (upload zip, unzip, AOC polygon,
+site YAML from the template, switch the region on in the main config).
 
-Never commit model outputs or FIM products; the stores here are versioned
-INPUTS of the method, which is why they live in git.
+Building and indexing stores: fim_dev/build_store_guatemala.py builds a
+store from a flood map library; fim_dev/attach_real_magnitudes_santaines.py
+is the worked example for attaching the real magnitudes and the fluvial
+index. attach_magnitudes re-sorts the store by magnitude and re-links every
+per-scenario index, including the fluvial one.

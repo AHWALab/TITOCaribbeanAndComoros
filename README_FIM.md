@@ -1,6 +1,6 @@
 # FIM in TITO: probabilistic flood inundation maps from a scenario library
 
-`tito_utils/fim_utils` (v0.4.0) adds flood inundation mapping to the TITO
+`tito_utils/fim_utils` (v0.5.0) adds flood inundation mapping to the TITO
 pipeline. No hydraulic model runs in real time. Instead, each site has a
 library of pre simulated flood maps (RainyDay storms run through a hydraulic
 model once, offline). At forecast time every EF5 ensemble member is matched
@@ -18,7 +18,26 @@ Glasgow pilot.
 This document is written for whoever operates TITO next. Read this section
 and the next two and you can run everything; the rest is reference.
 
-## What is new in v0.4 (August 2026)
+## What is new in v0.5 (August 2026)
+
+1. FIM is switched on and off PER REGION from the main configuration file.
+   The `fim_regions` block in `Caribbean_Comoros_config.py` is the only
+   place operators touch: `enabled` per region, and `thresholds_m` with the
+   depth thresholds in meters (defaults 0.10, 0.30, 0.70, 1.00). The
+   thresholds set there override the site YAMLs, so changing them never
+   requires editing `tito_utils/fim_utils` or `fim_config`.
+2. One store folder per country under `fim_store/`: Guatemala, Antigua
+   (Antigua and Barbuda), Barbados, Comoros and Haiti. Every folder holds a
+   README_ADD_STORE.md with the five step drop-in checklist, so a country
+   activates the day its analog maps are ready, with no code changes.
+3. Stores travel as one `<name>.zarr.zip` per site and
+   `python fim_store/unzip_stores.py` extracts whatever is not yet
+   unzipped, safely and repeatably, after any clone or pull.
+4. Default depth thresholds are now 0.10, 0.30, 0.70 and 1.00 m (0.70
+   replaces 0.50; product names change accordingly, for example
+   `prob_depth_ge_70cm`).
+
+## What was new in v0.4 (August 2026)
 
 1. Two hazard routines instead of one. Pluvial (P) matches each member by
    its rainfall total over the area of concern. Fluvial (F) matches each
@@ -29,9 +48,9 @@ and the next two and you can run everything; the rest is reference.
 2. Hazards are declared per site in the config. Guatemala sites run pluvial
    plus fluvial plus combined. Sites in other countries run pluvial only.
    Same code, one switch (see "How FIM is activated" below).
-3. Depth thresholds are a user input. `thresholds_m` in the site YAML takes
-   any list of values in meters. Current working set for Guatemala: 0.10,
-   0.30, 0.50, 1.00.
+3. Depth thresholds are a user input, any list of values in meters. Since
+   v0.5 they live in the `fim_regions` block of the main config; current
+   default set for all regions: 0.10, 0.30, 0.70, 1.00.
 4. Overbank variants of every product. Pixels that are already wet in a near
    zero inflow reference scenario are masked, so the maps read as hazard
    beyond the permanent river channel. Use the overbank maps for impact work.
@@ -57,7 +76,11 @@ are ready. Activation is file based, no code changes:
    `fim_config/Guatemala_SantaInesPetapa.yaml` and
    `fim_config/Guatemala_Morales.yaml`. One YAML = one FIM site, so a
    country with several pilot basins simply has several files.
-2. Inside each YAML, the `hazards:` block declares what runs at that site:
+2. The `fim_regions` block in `Caribbean_Comoros_config.py` is the master
+   switch per region and carries the depth thresholds. A region set to
+   `enabled: False` there is skipped even if its site YAMLs exist; the
+   `thresholds_m` list there overrides every site YAML of the region.
+3. Inside each YAML, the `hazards:` block declares what runs at that site:
 
        hazards:
          pluvial: {enabled: true}                # all sites
@@ -67,9 +90,9 @@ are ready. Activation is file based, no code changes:
    Pluvial only countries set `fluvial: enabled: false` and get pluvial
    products alone. There is a ready template:
    `fim_config/examples/PluvialOnly_country_template.yaml`.
-3. A top level line `enabled: false` in a YAML skips that site entirely
+4. A top level line `enabled: false` in a YAML skips that one site
    (that is how `Guatemala_Morales.yaml` ships, until its store is built).
-4. No YAML for a region means no FIM there, and the pipeline behaves exactly
+5. No YAML for a region means no FIM there, and the pipeline behaves exactly
    as before. Every FIM error is caught and printed as non fatal; FIM can
    never break the operational forecast.
 
@@ -87,10 +110,10 @@ configs without the orchestrator:
 
 ## One time setup on a fresh checkout
 
-1. Unzip the shipped Guatemala store (once per checkout):
+1. Unzip the shipped stores (once per checkout, and after any pull that
+   brings a new store):
 
-       cd fim_store
-       unzip fim_store_SantaInesPetapa_v1.zarr.zip -d fim_store_SantaInesPetapa_v1.zarr
+       python fim_store/unzip_stores.py
 
 2. Make sure the environment has `zarr` version 3 or newer. It is listed in
    `tito_env.yml`; on an existing environment: `pip install "zarr>=3"`.
@@ -144,8 +167,11 @@ trigger table and summary, by design.
                              pipeline_pf.py (runner for hazards configs),
                              pipeline_ensemble.py (classic v0.2 runner)
     fim_config/              one YAML per FIM site + aoc/ polygons + examples/
-    fim_store/               scenario stores (zipped) + magnitude tables;
-                             versioned INPUTS of the method, they stay in git
+    fim_store/<Region>/      scenario stores (zipped) + magnitude tables,
+                             one folder per country (Guatemala, Antigua,
+                             Barbados, Comoros, Haiti); versioned INPUTS of
+                             the method, they stay in git; unzip_stores.py
+                             extracts them
     fim_dev/                 tests, store builder, magnitude attach script,
                              architecture notes; nothing here runs operationally
     README_FIM.md            this file
@@ -193,12 +219,12 @@ nothing assumes a specific install location.
    for Guatemala in August 2026 (the guatemala domain includes the cuenca
    Villalobos basin and its gauges; products carry no sampling flags), but
    check it for every new region.
-7. Zip the store and commit it under `fim_store/` (see the LFS note in
+7. Zip the store and commit it under `fim_store/<Region>/` (see the LFS note in
    `.gitattributes`; `*.zarr.zip` is tracked like the parameter tifs).
 
 Current status per site: Santa Ines Petapa has all seven steps done, only
 the unzip on each checkout remains. Morales has its magnitudes table ready
-(`fim_store/magnitudes_Morales_real.csv`) and waits for its flood map
+(`fim_store/Guatemala/magnitudes_Morales_real.csv`) and waits for its flood map
 library; its YAML documents the exact activation steps and ships disabled.
 
 ## Things to be careful about

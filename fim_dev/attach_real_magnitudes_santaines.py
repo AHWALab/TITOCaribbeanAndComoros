@@ -2,7 +2,7 @@
 
 Reproduces the shipped store from its inputs:
 1. pluvial magnitudes from the RainyDay scenario GeoTIFFs (AOC mean of the
-   72-band storm total), see fim_store/magnitudes_SantaInesPetapa_real.csv
+   72-band storm total), see fim_store/Guatemala/magnitudes_SantaInesPetapa_real.csv
 2. fluvial index (Q1, Q2 per scenario) from flood_library.mat
 
 Usage: set the three paths below, then run once.
@@ -13,8 +13,8 @@ from tito_utils.fim_utils.store import attach_magnitudes
 from tito_utils.fim_utils.fluvial import attach_fluvial_index, reorder_index
 from tito_utils.fim_utils.store import FimStore
 
-STORE = "fim_store/fim_store_SantaInesPetapa_v1.zarr"
-MAG_CSV = "fim_store/magnitudes_SantaInesPetapa_real.csv"
+STORE = "fim_store/Guatemala/fim_store_SantaInesPetapa_v1.zarr"
+MAG_CSV = "fim_store/Guatemala/magnitudes_SantaInesPetapa_real.csv"
 FLOOD_LIB_MAT = "path/to/flood_library.mat"   # only needed if index missing
 
 mags = {r["storm_id"]: float(r["magnitude_mm_aoc_mean"])

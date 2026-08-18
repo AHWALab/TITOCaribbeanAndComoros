@@ -12,7 +12,7 @@
 # likelihood 6 to 9 hours before the CONRED flood reports of 21 June 2023.
 #
 # BEFORE FIRST USE (see README_FIM.md, "Manual steps"):
-#   1. unzip fim_store/fim_store_SantaInesPetapa_v1.zarr.zip once (README_STORES.md)
+#   1. unzip the store once: python fim_store/unzip_stores.py (README_STORES.md)
 #   2. make sure the Guatemala basin list writes the two boundary gauge series
 #      ts.cuenca_villalobos_1 / ts.cuenca_villalobos_2 (outputts=true), otherwise
 #      the fluvial routine finds no discharge input and reports it
@@ -29,7 +29,7 @@ outputs_root: outputs/Guatemala
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/Guatemala_SantaInesPetapa_aoc.geojson
-store: fim_store/fim_store_SantaInesPetapa_v1.zarr
+store: fim_store/Guatemala/fim_store_SantaInesPetapa_v1.zarr
 products_root: outputs/Guatemala/fim_SantaInesPetapa
 
 # Every run folder matched by member.template counts as one ensemble member.
@@ -64,7 +64,9 @@ hazards:
 
 # USER INPUT: depth thresholds in meters, any number of values. Every value
 # produces its own probability and likelihood class rasters per routine.
-thresholds_m: [0.10, 0.30, 0.50, 1.00]
+# NOTE: the fim_regions block in Caribbean_Comoros_config.py OVERRIDES this
+# list in operational runs; edit it there. This list applies to standalone runs.
+thresholds_m: [0.10, 0.30, 0.70, 1.00]
 
 # Overbank variants mask pixels that are already wet in a near zero inflow
 # reference scenario, so the maps read as hazard beyond the permanent channel.

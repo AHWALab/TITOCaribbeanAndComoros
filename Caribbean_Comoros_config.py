@@ -70,6 +70,31 @@ region_forcing_map = {
     # Dual QPF: one EF5 run with GFS, one with AROME (where available).
 }
 
+# ── FIM analog flood maps (scenario library lookup, orchestrator Phase 3) ────
+# This is the ONLY place operators need to touch to control FIM.
+# Per region:
+#   enabled       True/False master switch for all of that region's FIM sites
+#                 (the site files are fim_config/<Region>*.yaml).
+#   thresholds_m  flood depth thresholds in METERS used for every product of
+#                 that region. Edit the list freely, any number of values.
+#                 These OVERRIDE the thresholds written in the site YAMLs, so
+#                 nothing inside tito_utils/fim_utils or fim_config needs to
+#                 be edited to change them. Set to None to keep the site
+#                 YAML values instead.
+# A region missing from this dict simply follows its site YAMLs (enabled if
+# they exist). FIM stays fully non-fatal: it can never break the forecast.
+# Stores live under fim_store/<Region>/ as zip files; unzip once with
+#   python fim_store/unzip_stores.py
+# See README_FIM.md for the drop-in checklist per country.
+fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
+fim_regions = {
+    "Guatemala": {"enabled": True,  "thresholds_m": fim_default_thresholds_m},
+    "Antigua":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda
+    "Barbados":  {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+    "Comoros":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+    "Haiti":     {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+}
+
 # HSAF credentials/settings (required only when qpe_source == "HSAF")
 hsaf_ftp_user = "naman-mehta@uiowa.edu"
 hsaf_ftp_pass = "change_me1234"

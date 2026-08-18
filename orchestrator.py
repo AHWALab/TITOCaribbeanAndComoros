@@ -1546,11 +1546,26 @@ def main(args):
             print("***_________Phase 3: FIM scenario-library lookup_________***")
             try:
                 import glob as _fim_glob
+                # Region-level switches and user thresholds live in the main
+                # config (fim_regions in Caribbean_Comoros_config.py), so
+                # operators never edit fim_utils or the site YAMLs for these.
+                _fim_reg_map = getattr(config_file, "fim_regions", {}) or {}
                 for _fim_region in regions_to_run:
                     _fim_yamls = sorted(_fim_glob.glob(
                         os.path.join(_fim_config_dir, f"{_fim_region}*.yaml")))
                     if not _fim_yamls:
                         continue
+                    _fim_entry = _fim_reg_map.get(_fim_region)
+                    if not isinstance(_fim_entry, dict):
+                        # accept the shorthand "Region": True / False too
+                        _fim_entry = ({} if _fim_entry is None
+                                      else {"enabled": bool(_fim_entry)})
+                    if _fim_region in _fim_reg_map \
+                            and not _fim_entry.get("enabled", True):
+                        print(f"    FIM {_fim_region}: disabled in the main "
+                              "config (fim_regions), skipped")
+                        continue
+                    _fim_reg_thr = _fim_entry.get("thresholds_m")
                     _fim_rc = region_configs.get(_fim_region, {})
                     _fim_cycle = _fim_rc.get("output_timestamp_str")
                     for _fim_yaml in _fim_yamls:
@@ -1579,6 +1594,23 @@ def main(args):
                                     load_ensemble_config as _fim_load,
                                     run_ensemble_cycle as _fim_run)
                             _fim_cfg = _fim_load(_fim_yaml)
+                            if _fim_is_pf and _fim_reg_thr:
+                                try:
+                                    _fim_thr_clean = sorted({
+                                        float(_t) for _t in _fim_reg_thr
+                                        if float(_t) > 0})
+                                    if not _fim_thr_clean:
+                                        raise ValueError(
+                                            "no positive values in the list")
+                                    _fim_cfg["thresholds_m"] = _fim_thr_clean
+                                    print(f"    FIM {_fim_site}: thresholds "
+                                          f"from the main config "
+                                          f"{_fim_thr_clean}")
+                                except (TypeError, ValueError) as _fim_thr_exc:
+                                    print(f"    !!! FIM {_fim_site}: bad "
+                                          f"thresholds_m in fim_regions "
+                                          f"({_fim_thr_exc}), using the site "
+                                          "YAML values")
                             _fim_summary = _fim_run(_fim_cfg, cycle=_fim_cycle)
                             print(f"    FIM {_fim_site} [{_fim_cycle}]: "
                                   f"{_fim_summary.get('status', 'unknown')}")

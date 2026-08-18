@@ -21,7 +21,7 @@ Design rules:
   rasters, CSVs and a JSON decision log
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from .config import FimConfig, load_config
 from .aoc import AreaOfConcern, load_aocs

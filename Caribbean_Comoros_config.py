@@ -324,10 +324,26 @@ dry_run_hours = 6
 # Site YAMLs: fim_config/<Region>*.yaml  (rain_components list)
 #
 #   fim_enabled = True/False
-# Before first use: cd fim_store && unzip -o fim_store_SantaInesPetapa_v1.zarr.zip
+# Before first use: python fim_store/unzip_stores.py
 fim_enabled = True
 fim_config_dir = "fim_config"
 # fim_root = ""
+
+# Per-region FIM switches and USER depth thresholds (v0.5). This block is the
+# only place operators touch. enabled: master switch for the region's sites.
+# thresholds_m: depth thresholds in METERS for all products of the region,
+# any number of values; they OVERRIDE the thresholds_m in the site YAMLs.
+# Set thresholds_m to None to keep the site YAML values. A region missing
+# from this dict simply follows its site YAMLs. Stores live under
+# fim_store/<Region>/ as zips; extract with: python fim_store/unzip_stores.py
+fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
+fim_regions = {
+    "Guatemala": {"enabled": True,  "thresholds_m": fim_default_thresholds_m},
+    "Antigua":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda
+    "Barbados":  {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+    "Comoros":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+    "Haiti":     {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+}
 
 # WRF configuration (used when run_LR=True).
 # Set WRF_archive_path to the folder containing WRF netCDF files.

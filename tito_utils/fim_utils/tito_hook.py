@@ -134,6 +134,36 @@ def _match_yaml_to_region(yml_basename: str, regions: Sequence[str]) -> Optional
     return best
 
 
+def _region_fim_entry(region: str, config: Any) -> Optional[dict]:
+    """The region's entry in config.fim_regions, normalized to a dict.
+
+    Accepts the bool shorthand {"Region": True/False}. Returns None when the
+    region is not listed at all (caller treats that as enabled, YAML rules).
+    """
+    reg_map = (getattr(config, "fim_regions", None) or {}) if config is not None else {}
+    if region not in reg_map:
+        return None
+    entry = reg_map.get(region)
+    if not isinstance(entry, dict):
+        entry = {"enabled": bool(entry)}
+    return entry
+
+
+def _region_thresholds(region: str, config: Any) -> Optional[List[float]]:
+    """Cleaned thresholds_m for *region* from config.fim_regions, or None."""
+    entry = _region_fim_entry(region, config)
+    if not entry:
+        return None
+    thr = entry.get("thresholds_m")
+    if not thr:
+        return None
+    try:
+        clean = sorted({float(t) for t in thr if float(t) > 0})
+    except (TypeError, ValueError):
+        return None
+    return clean or None
+
+
 # Path templates for cycle-first EF5 layout, keyed by forcing_chain_tag().
 # Applied at runtime so one site YAML works for both training chains.
 _CHAIN_TEMPLATES = {
@@ -299,6 +329,23 @@ def run_fim_for_cycle(
             master_log.info("FIM skipped — no 90m regions")
         return []
 
+    # Per-region switches from the main config (fim_regions block), v0.5.
+    kept = []
+    for r in regions_90:
+        entry = _region_fim_entry(r, config)
+        if entry is not None and not entry.get("enabled", True):
+            log(f"  FIM: {r} disabled in the main config (fim_regions)")
+            if master_log:
+                master_log.info("FIM %s disabled via fim_regions", r)
+            continue
+        kept.append(r)
+    regions_90 = kept
+    if not regions_90:
+        log("  FIM: every region is switched off in fim_regions")
+        if master_log:
+            master_log.info("FIM skipped: all regions off in fim_regions")
+        return []
+
     root = _project_root()
     if config is not None and getattr(config, "fim_root", None):
         root = os.path.abspath(getattr(config, "fim_root"))
@@ -362,6 +409,13 @@ def run_fim_for_cycle(
                 cfg = load_pf_config(yml, root=root)
                 cfg["products_root"] = products_root
                 cfg["append_cycle"] = False
+                _thr = _region_thresholds(region, config)
+                if _thr:
+                    cfg["thresholds_m"] = _thr
+                    log(f"       thresholds from fim_regions: {_thr}")
+                    if master_log:
+                        master_log.info(
+                            "FIM %s thresholds from fim_regions: %s", site, _thr)
                 _apply_chain_templates(cfg, chain)
                 log(f"       member template: {cfg.get('member', {}).get('template')}")
                 summary = run_pf_cycle(cfg, cycle=cycle, verbose=verbose)

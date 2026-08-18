@@ -6,7 +6,7 @@ outputs_root: outputs
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/Guatemala_SantaInesPetapa_aoc.geojson
-store: fim_store/fim_store_SantaInesPetapa_v1.zarr
+store: fim_store/Guatemala/fim_store_SantaInesPetapa_v1.zarr
 products_root: outputs/fim/Guatemala_SantaInesPetapa
 
 member:
@@ -46,7 +46,9 @@ hazards:
       - "ts.cuenca_villalobos_1.crest.{cycle}.csv"
       - "ts.cuenca_villalobos_2.crest.{cycle}.csv"
 
-thresholds_m: [0.10, 0.30, 0.50, 1.00]
+# NOTE: in orchestrated runs the fim_regions block in
+# Caribbean_Comoros_config.py OVERRIDES this thresholds list.
+thresholds_m: [0.10, 0.30, 0.70, 1.00]
 overbank:
   enabled: true
   reference_scenario: sample_0002

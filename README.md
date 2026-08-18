@@ -1,4 +1,4 @@
-# TITO — Guatemala Training
+# TITO  Guatemala Training
 
 **Threading Inputs to Outputs (TITO)** is AHWA Lab’s framework for running the **EF5** hydrologic model with satellite QPE, ensemble nowcast/QPF products, and (optionally) flood inundation mapping (FIM).
 

@@ -1,0 +1,12 @@
+pcode,name,island_model,store,magnitude_min_mm,magnitude_max_mm
+BB01,Christ Church,barbados,fim_store_BB01_ChristChurch_v1.zarr,0.0,1014.2
+BB02,Saint Andrew,barbados,fim_store_BB02_SaintAndrew_v1.zarr,0.0,1090.3
+BB03,Saint George,barbados,fim_store_BB03_SaintGeorge_v1.zarr,0.0,953.1
+BB04,Saint James,barbados,fim_store_BB04_SaintJames_v1.zarr,0.0,988.5
+BB05,Saint John,barbados,fim_store_BB05_SaintJohn_v1.zarr,0.0,1033.0
+BB06,Saint Joseph,barbados,fim_store_BB06_SaintJoseph_v1.zarr,0.0,1025.2
+BB07,Saint Lucy,barbados,fim_store_BB07_SaintLucy_v1.zarr,0.0,1106.0
+BB08,Saint Michael,barbados,fim_store_BB08_SaintMichael_v1.zarr,0.0,1034.5
+BB09,Saint Peter,barbados,fim_store_BB09_SaintPeter_v1.zarr,0.0,1050.2
+BB10,Saint Philip,barbados,fim_store_BB10_SaintPhilip_v1.zarr,0.0,1027.8
+BB11,Saint Thomas,barbados,fim_store_BB11_SaintThomas_v1.zarr,0.0,920.2

@@ -89,8 +89,8 @@ region_forcing_map = {
 fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
 fim_regions = {
     "Guatemala": {"enabled": True,  "thresholds_m": fim_default_thresholds_m},
-    "Antigua":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda
-    "Barbados":  {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+    "Antigua":   {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda, 7 ADM1 unit stores
+    "Barbados":  {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # 11 parish stores
     "Comoros":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},
     "Haiti":     {"enabled": False, "thresholds_m": fim_default_thresholds_m},
 }

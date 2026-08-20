@@ -23,11 +23,31 @@ python -m tito_utils.ibf_utils.pipeline_ibf \
     [--cycle 20230621.070000] [--products-dir DIR] [--rebuild-cache]
 ```
 
-One YAML per region (see `fim_config/ibf/`). The first run over a domain
-builds the receptor cache from the national preload (bbox-filtered read,
-the 6 GB country GeoPackage is never loaded whole); every later cycle
-reuses it. Guatemala Santa Ines Petapa: cold start about 2.5 minutes,
-warm cycles about 10 seconds.
+One YAML per site (see `fim_config/ibf/`, paired with the FIM site YAML by
+name). The first run over a domain builds the receptor cache from the
+national preload (bbox-filtered read, a multi GB country GeoPackage is
+never loaded whole); every later cycle reuses it. Guatemala Santa Ines
+Petapa: cold start about 2.5 minutes, warm cycles about 10 seconds. Dense
+island units (Saint John's, Saint Michael) run in about 2 to 3 minutes cold
+and under 2 minutes warm; small units in seconds.
+
+## Static data per country
+
+- Guatemala: external `IBFv10_Guatemala/input_data/` package next to the
+  repo (about 6 GB, not in git).
+- Antigua and Barbuda, Barbados: `ibf_data/<Country>/` IN the repo.
+  Overture Maps buildings and roads (layers `buildings`, `roads`), admin
+  units with census population (`<Country>_adm1_population.gpkg`, layer
+  `adm1`, fields ADM1_PCODE / ADM1_EN / population / pop_year /
+  pop_source), and the GHS BUILT-C FUN 10 m crop for the dasymetric
+  weights. `manifest_ibf_<Country>.json` records sources and counts;
+  `fim_dev/build_island_ibf_static.py` rebuilds everything from scratch
+  (Overture download, census CSV merge, GHS tile crop).
+
+In orchestrated runs `tito_hook` chains IBF right after each FIM site and
+applies the `ibf_regions` overrides from `Caribbean_Comoros_config.py`
+(likelihood cutoff, severity depths, reporting threshold). The user default
+for the likelihood cutoff is 0.50; the IBFv1.0 reference runs used 0.30.
 
 ## Classification
 

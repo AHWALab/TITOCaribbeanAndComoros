@@ -51,6 +51,9 @@ def _cache_key(cfg, domain) -> str:
     parts.append(str(domain.crs))
     parts.append(str(rec["domain_buffer_m"]))
     parts.append(rec.get("work_crs") or "domain")
+    # cache format salt: v2 = domain buffer applied after reprojection
+    # (meters, not domain units); old country-wide caches must not be reused
+    parts.append("cachev2")
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
 
 

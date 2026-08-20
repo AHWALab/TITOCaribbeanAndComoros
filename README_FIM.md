@@ -120,12 +120,22 @@ buildings and roads, classifies them with the flood risk matrix (Speight et
 al. 2018), rolls exposure up to admin units and writes per cycle GeoPackage,
 CSV and JSON summaries under `outputs/ibf/`.
 
-Two prerequisites, both one time per machine: the receptor preload (Overture
-buildings and roads, admin census layer, GHS BUILT-C raster) must sit where
-the IBF YAML points (default `../IBFv10_Guatemala/input_data/` next to the
-repo; it is too large for git), and the environment needs geopandas plus
-pyogrio (declared in `tito_env.yml`). The first cycle builds a clipped
-receptor cache; later cycles reuse it and finish in seconds. Details:
+Coverage: all 18 island unit sites (Antigua and Barbuda, Barbados) plus
+Guatemala Santa Ines Petapa. The island receptor data ships IN the repo
+under `ibf_data/<Country>/` (Overture buildings and roads, admin units with
+census population, GHS BUILT-C classes), so the islands need nothing
+downloaded. Guatemala still uses the external `IBFv10_Guatemala/input_data/`
+package next to the repo (too large for git). The environment needs
+geopandas plus pyogrio (declared in `tito_env.yml`); without them IBF logs
+one line and skips.
+
+The user thresholds live in `ibf_regions` in the main config: the
+likelihood cutoff that flags a receptor (default 0.50, that is 50 percent)
+and the severity depths, set equal to the FIM depth thresholds of each
+region. The first cycle over a domain builds a clipped receptor cache under
+`outputs/ibf_cache/`; later cycles reuse it (seconds for small units, about
+two minutes for the densest ones such as Saint John's or Saint Michael).
+Details and the flood risk matrix semantics:
 `tito_utils/ibf_utils/README.md`.
 
 ## Manual tests

@@ -41,16 +41,27 @@ class FimDomain:
                        path=path)
 
     def bounds_in(self, crs, buffer_m: float = 0.0) -> tuple:
-        """Domain bounds (optionally buffered in domain units) in another CRS."""
-        minx, miny, maxx, maxy = self.bounds
-        if buffer_m:
-            minx, miny = minx - buffer_m, miny - buffer_m
-            maxx, maxy = maxx + buffer_m, maxy + buffer_m
+        """Domain bounds in another CRS, optionally buffered by buffer_m METERS.
+
+        The buffer is applied AFTER reprojection, in the units of the target
+        CRS (meters when projected, converted to degrees when geographic).
+        The previous behaviour buffered in domain units before reprojecting,
+        which turned 250 m into 250 DEGREES for the new EPSG:4326 FIM
+        products: the domain window silently became country wide, receptor
+        caches and cycle outputs bloated to every admin unit, and per cycle
+        sampling looped over the whole national receptor stock.
+        """
         dst = CRS.from_user_input(crs)
         if dst.equals(self.crs):
-            return (minx, miny, maxx, maxy)
-        tr = Transformer.from_crs(self.crs, dst, always_xy=True)
-        return tr.transform_bounds(minx, miny, maxx, maxy)
+            b = tuple(self.bounds)
+        else:
+            tr = Transformer.from_crs(self.crs, dst, always_xy=True)
+            b = tr.transform_bounds(*self.bounds)
+        if buffer_m:
+            pad = float(buffer_m) if dst.is_projected \
+                else float(buffer_m) / 111320.0
+            b = (b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad)
+        return b
 
     def polygon_in(self, crs, buffer_m: float = 0.0):
         from shapely.geometry import box

@@ -367,26 +367,47 @@ fim_regions = {
 # builds a clipped receptor cache under outputs/ibf_cache; later cycles
 # reuse it and finish in seconds.
 #
-# Per region: enabled switch plus the knobs users touch most. Values set
-# here OVERRIDE the site YAML; remove a key (or set it to None) to keep the
+# Per region: enabled switch plus the USER thresholds. Values set here
+# OVERRIDE the site YAML; remove a key (or set it to None) to keep the
 # YAML value. A region missing from ibf_regions follows its YAMLs, the same
 # rule as fim_regions.
 #   severity_thresholds_m  water depth (m) behind each severity class of
-#                          the flood risk matrix (minor, significant, severe)
-#   hazard_flag_cutoff     probability that raises the IBFv1.0 hazard flag
+#                          the flood risk matrix (minor, significant,
+#                          severe). Match them to the FIM depth thresholds
+#                          of the region so every severity class is served
+#                          by an exact probability product.
+#   hazard_flag_cutoff     likelihood (exceedance probability) that flags a
+#                          receptor as affected. USER DEFAULT: 0.50, that
+#                          is 50 percent. The IBFv1.0 reference runs for
+#                          Guatemala used 0.30; set 0.30 to reproduce them.
 #   reporting_threshold    probabilities below this are treated as zero
+#
+# Static receptor data: Antigua and Barbuda and Barbados ship IN the repo
+# under ibf_data/<Country>/ (Overture buildings and roads, admin census
+# population, GHS BUILT-C classes), nothing to download. Guatemala still
+# uses the external IBFv10_Guatemala package next to the repo.
 ibf_enabled = True
 ibf_regions = {
     "Guatemala": {
         "enabled": True,
         "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.76},
-        "hazard_flag_cutoff": 0.30,
+        "hazard_flag_cutoff": 0.50,   # user default; IBFv1.0 reference used 0.30
         "reporting_threshold": 0.05,
     },
-    "Antigua":  {"enabled": False},  # no receptor preload packaged yet
-    "Barbados": {"enabled": False},  # no receptor preload packaged yet
-    "Comoros":  {"enabled": False},
-    "Haiti":    {"enabled": False},
+    "Antigua": {                      # Antigua and Barbuda, 7 unit sites
+        "enabled": True,
+        "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.70},
+        "hazard_flag_cutoff": 0.50,
+        "reporting_threshold": 0.05,
+    },
+    "Barbados": {                     # 11 parish sites
+        "enabled": True,
+        "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.70},
+        "hazard_flag_cutoff": 0.50,
+        "reporting_threshold": 0.05,
+    },
+    "Comoros":  {"enabled": False},   # no receptor data yet
+    "Haiti":    {"enabled": False},   # no receptor data yet
 }
 
 # WRF configuration (used when run_LR=True).

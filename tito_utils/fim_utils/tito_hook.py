@@ -15,6 +15,12 @@ Output layout (cycle-first, chain-tagged)::
 
 Discovers ``fim_config/<Region>*.yaml``. YAMLs with ``hazards:`` → pipeline_pf;
 else → pipeline_ensemble.
+
+After a successful FIM site run the IBF receptor layer
+(``tito_utils.ibf_utils``) is chained on that site's fresh probability
+products when ``fim_config/ibf/<Site>_ibf.yaml`` exists and the region is
+enabled via ``ibf_enabled`` / ``ibf_regions`` in the main config. IBF is
+non-fatal too: it can never block EF5 or FIM.
 """
 
 from __future__ import annotations
@@ -162,6 +168,140 @@ def _region_thresholds(region: str, config: Any) -> Optional[List[float]]:
     except (TypeError, ValueError):
         return None
     return clean or None
+
+
+def _ibf_master_enabled(config: Any) -> bool:
+    """Master IBF switch (config.ibf_enabled, default True)."""
+    if config is None:
+        return True
+    return bool(getattr(config, "ibf_enabled", True))
+
+
+def _region_ibf_entry(region: str, config: Any) -> Optional[dict]:
+    """The region's entry in config.ibf_regions, normalized like fim_regions.
+
+    Accepts the bool shorthand {"Region": True/False}. Returns None when the
+    region is not listed at all (caller treats that as enabled, YAML rules).
+    """
+    reg_map = (getattr(config, "ibf_regions", None) or {}) if config is not None else {}
+    if region not in reg_map:
+        return None
+    entry = reg_map.get(region)
+    if not isinstance(entry, dict):
+        entry = {"enabled": bool(entry)}
+    return entry
+
+
+def run_ibf_for_site(
+    *,
+    site_stem: str,
+    region: str,
+    products_root: str,
+    cycle: str,
+    cfg_dir: str,
+    root: str,
+    config: Any = None,
+    master_log: Any = None,
+    verbose: bool = True,
+) -> Optional[dict]:
+    """
+    IBF receptor products for one FIM site, right after its FIM run.
+
+    Chained but never required: every problem is caught and returned as a
+    summary dict; EF5 and FIM products are never affected.
+
+    Config surface (Caribbean_Comoros_config.py):
+      ibf_enabled              master switch, default True
+      ibf_regions[region]      enabled switch plus optional overrides
+                               (severity_thresholds_m, hazard_flag_cutoff,
+                               reporting_threshold), same shape as fim_regions
+
+    Site YAML: fim_config/ibf/<Site>_ibf.yaml. No YAML means no IBF for the
+    site, silently, unless the region is explicitly enabled in ibf_regions.
+    """
+    log = print if verbose else (lambda *a, **k: None)
+
+    if not _ibf_master_enabled(config):
+        return None
+
+    entry = _region_ibf_entry(region, config)
+    if entry is not None and not entry.get("enabled", True):
+        return None
+
+    ibf_yml = os.path.join(cfg_dir, "ibf", f"{site_stem}_ibf.yaml")
+    if not os.path.isfile(ibf_yml):
+        if entry is not None and entry.get("enabled", True):
+            log(f"  IBF: {site_stem}: no fim_config/ibf/{site_stem}_ibf.yaml, skip")
+        return None
+
+    try:
+        from tito_utils.ibf_utils.config import load_ibf_config
+        from tito_utils.ibf_utils.pipeline_ibf import run_ibf_cycle
+    except Exception as exc:
+        log(f"  IBF: skipped, dependencies missing ({exc}); "
+            "geopandas and pyogrio are declared in tito_env.yml")
+        if master_log:
+            master_log.info("IBF skipped for %s: deps missing (%s)", site_stem, exc)
+        return {"region": region, "site": site_stem, "status": "deps_missing"}
+
+    cfg: dict = {}
+    try:
+        cfg = load_ibf_config(ibf_yml, root=root)
+
+        # Overrides from the main config (ibf_regions), applied on top of the
+        # site YAML so operators never have to open the YAML for these.
+        cl = cfg.setdefault("classification", {})
+        applied = []
+        if entry:
+            sev = entry.get("severity_thresholds_m")
+            if isinstance(sev, dict) and sev:
+                cl["severity_thresholds_m"] = {
+                    str(k): float(v) for k, v in sev.items()}
+                applied.append(
+                    f"severity_thresholds_m={cl['severity_thresholds_m']}")
+            for key in ("hazard_flag_cutoff", "reporting_threshold"):
+                if entry.get(key) is not None:
+                    cl[key] = float(entry[key])
+                    applied.append(f"{key}={cl[key]}")
+        if applied:
+            log(f"       IBF overrides from ibf_regions: {', '.join(applied)}")
+
+        mode = (cfg.get("fim_products") or {}).get("mode", "combined")
+        products_dir = os.path.join(products_root, mode)
+        if not os.path.isabs(products_dir):
+            # same resolution rule as pipeline_pf: relative paths live
+            # under the repo root, independent of the current directory
+            products_dir = os.path.join(root, products_dir)
+        log(f"  IBF: running {site_stem} on {products_dir} ...")
+        if master_log:
+            master_log.info(
+                "IBF start %s cycle=%s dir=%s", site_stem, cycle, products_dir)
+
+        summary = run_ibf_cycle(
+            cfg, cycle=cycle, products_dir=products_dir, verbose=verbose)
+        status = summary.get("status", "?") if isinstance(summary, dict) else "?"
+        log(f"  IBF: {site_stem} -> {status}")
+        if master_log:
+            master_log.info("IBF done %s status=%s", site_stem, status)
+        return summary
+    except Exception as exc:
+        # A missing receptor preload is the usual cause on fresh machines.
+        hint = ""
+        try:
+            src = ((cfg.get("receptors") or {}).get("buildings") or {}).get(
+                "source", "")
+            if src:
+                from tito_utils.ibf_utils.config import resolve as _ibf_resolve
+                if not os.path.exists(_ibf_resolve(cfg, src)):
+                    hint = (f" (receptor preload not found at {src}; "
+                            "see tito_utils/ibf_utils/README.md)")
+        except Exception:
+            pass
+        log(f"  IBF: {site_stem} failed (non-fatal): {exc}{hint}")
+        if master_log:
+            master_log.error("IBF failed %s: %s", site_stem, exc)
+        return {"region": region, "site": site_stem, "status": "error",
+                "error": str(exc)}
 
 
 # Path templates for cycle-first EF5 layout, keyed by forcing_chain_tag().
@@ -450,6 +590,24 @@ def run_fim_for_cycle(
             if master_log:
                 master_log.info(
                     "FIM done %s chain=%s status=%s", site, chain, status)
+
+            # IBF receptor products, chained on this site's fresh FIM
+            # probabilities (config gated; see run_ibf_for_site).
+            if status not in ("error", "no_runs"):
+                ibf_summary = run_ibf_for_site(
+                    site_stem=site_stem,
+                    region=region,
+                    products_root=products_root,
+                    cycle=cycle,
+                    cfg_dir=cfg_dir,
+                    root=root,
+                    config=config,
+                    master_log=master_log,
+                    verbose=verbose,
+                )
+                if ibf_summary:
+                    summary["ibf"] = ibf_summary
+
             summaries.append(summary)
         except Exception as exc:
             msg = f"  FIM: {site} failed (non-fatal): {exc}"

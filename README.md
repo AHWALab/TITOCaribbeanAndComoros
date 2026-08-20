@@ -1,13 +1,22 @@
-# TITO  Guatemala Training
+# TITO Caribbean and Comoros
 
-**Threading Inputs to Outputs (TITO)** is AHWA Lab’s framework for running the **EF5** hydrologic model with satellite QPE, ensemble nowcast/QPF products, and (optionally) flood inundation mapping (FIM).
+**Threading Inputs to Outputs (TITO)** is AHWA Lab's framework for running the **EF5** hydrologic model with satellite QPE, ensemble nowcast/QPF products, scenario library flood inundation mapping (FIM) and impact based forecasting (IBF).
 
-This folder is the **Guatemala training package** — a trimmed, classroom-ready copy of TITO focused on **Guatemala** (90 m and 900 m). It is not the full Caribbean/Comoros operational tree.
+This is the **main branch**: the current operational tree for the Caribbean and Comoros system (Antigua and Barbuda, Barbados, Comoros, Guatemala, Haiti). It also carries the **Guatemala training package** used in the 2026 course (fixed hindcast **2023-06-21 07:00 to 08:00 UTC**, warmup states provided; use the [Setup Wizard](trainings/TITO_Setup_Wizard.html) to pick resolution, ensembles and RAM, then run the printed command).
 
-**Training case (fixed):** hindcast **2023-06-21 07:00–08:00 UTC**.  
-Warmup states are already provided. Use the [Setup Wizard](trainings/TITO_Setup_Wizard.html) to pick resolution, ensembles, and RAM, then run the printed command.
+Partners need **either Docker or Apptainer/Singularity, not both**.
 
-Partners need **either Docker or Apptainer/Singularity — not both**.
+## What is new on main (August 2026)
+
+| Change | Where |
+|--------|-------|
+| FIM per country switches and USER depth thresholds (defaults 10, 30, 70, 100 cm), editable in one block without touching any YAML | `fim_regions` in `Caribbean_Comoros_config.py` |
+| Per unit analog stores for Antigua and Barbuda (7 ADM1 units) and Barbados (11 parishes), with real rain magnitudes | `fim_store/Antigua/`, `fim_store/Barbados/`, 18 site YAMLs in `fim_config/` |
+| IBF receptor products (buildings, roads, admin exposure) chained after FIM inside the cycle, config gated | `ibf_enabled` / `ibf_regions` in the config, `tito_utils/ibf_utils/` |
+| Store zips are plain git files now (no LFS): plain clones and Download ZIP always work | `fim_store/<Country>/*.zarr.zip` |
+| One time step after clone or pull: extract all stores | `python fim_store/unzip_stores.py` |
+
+Details: [README_FIM.md](README_FIM.md), [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -19,7 +28,8 @@ Partners need **either Docker or Apptainer/Singularity — not both**.
 | **STREAM-Sat** | Ensemble satellite QPE (IMERG + GFS 850 hPa U/V motion). See [Li et al. (2023)](https://doi.org/10.1029/2022WR033752), Hartke et al. (2022). Code: `tito_utils/qpe_utils/STREAM-Sat-realtime/`. |
 | **StormLab** | Ensemble precipitation forecast from GEFS/GFS (Liu, Wright & Lorenz, 2024; Peng et al., 2025). Code: `tito_utils/qpf_utils/StormLab-GFS-realtime/`. In this package StormLab is run as **QPE** (no EF5 long-range / `PRECIPFORECAST`). |
 | **IMERG + GFS** | Deterministic QPE + forecast-as-QPE chain (optional training path). |
-| **FIM** | Scenario-library inundation **after the forecast phase**, **90 m only**. Details: [README_FIM.md](README_FIM.md). |
+| **FIM** | Scenario-library inundation **after the forecast phase**, **90 m only**. Per country switches and user thresholds in `fim_regions`. Details: [README_FIM.md](README_FIM.md). |
+| **IBF** | Receptor warning products (buildings, roads, admin exposure) chained after FIM, config gated via `ibf_enabled` / `ibf_regions`. Details: `tito_utils/ibf_utils/README.md`. |
 
 **QPE-only EF5 chain (no long-range block):**
 
@@ -35,7 +45,7 @@ Partners need **either Docker or Apptainer/Singularity — not both**.
 ## Quick start (training)
 
 1. Install **Docker Desktop** (Windows/macOS) or Docker Engine / **Apptainer** (Linux/HPC).
-2. Load images (once) — see [Loading Docker images](#loading-docker-images).
+2. Load images (once), see [Loading Docker images](#loading-docker-images).
 3. Open **`trainings/TITO_Setup_Wizard.html`** in a browser (no server needed).
 4. Work through: Run mode → Regions → Approach (RAM + ensembles) → Review.
 5. Merge the printed snippet into `Caribbean_Comoros_config.py`.
@@ -59,7 +69,7 @@ TITO_RUNTIME=apptainer ./tito-run.sh hindcast \
     "2023-06-21 07:00" "2023-06-21 08:00" --regions Guatemala
 ```
 
-Add **`--offline`** to skip all precip downloads (uses `offline_precips/` — see [Offline mode](#offline-mode)).
+Add **`--offline`** to skip all precip downloads (uses `offline_precips/`, see [Offline mode](#offline-mode)).
 
 ---
 
@@ -90,7 +100,7 @@ docker images tito
 docker images ef5-container
 ```
 
-Expect `tito:latest` and `ef5-container:latest`. A 502 on `docker load` is usually Docker Desktop not fully started — restart Docker and retry.
+Expect `tito:latest` and `ef5-container:latest`. A 502 on `docker load` is usually Docker Desktop not fully started, restart Docker and retry.
 
 ---
 
@@ -263,13 +273,20 @@ stormlab_ensemble_size = 2
 ef5_max_workers = 1                           # 1 = sequential EF5 (safest)
 dry_run_hours = 6
 warmup_enabled = False                        # training states already shipped
+
 fim_enabled = True                            # 90m + after forecast only
+fim_regions = {                               # per country switch + thresholds
+    "Guatemala": {"enabled": True, "thresholds_m": [0.10, 0.30, 0.70, 1.00]},
+    ...
+}
+ibf_enabled = True                            # IBF chained after FIM
+ibf_regions = {"Guatemala": {"enabled": True, ...}, ...}
 ```
 
 90 m control template: `EF5_conf/templates/ef5_Guatemala_90m_control_template.txt`  
 900 m: `ef5_Guatemala_900m_control_template.txt`
 
-FIM: unzip `fim_store/fim_store_SantaInesPetapa_v1.zarr.zip` once. See [README_FIM.md](README_FIM.md).
+FIM stores: run `python fim_store/unzip_stores.py` once after clone or pull (extracts every store zip, including the 18 island stores). See [README_FIM.md](README_FIM.md).
 
 ---
 
@@ -280,7 +297,7 @@ TITO_RUNTIME=apptainer ./tito-run.sh hindcast \
     "2023-06-21 07:00" "2023-06-21 08:00" --regions Guatemala --offline
 ```
 
-Uses `tito.sif` + **local** `EF5/bin/ef5` (no nested Apptainer). Needs `libtiff`/`libgeotiff`/`libgomp` inside the TITO image (already in the current Dockerfile). Exit **127** usually means a missing shared library — rebuild TITO image.
+Uses `tito.sif` + **local** `EF5/bin/ef5` (no nested Apptainer). Needs `libtiff`/`libgeotiff`/`libgomp` inside the TITO image (already in the current Dockerfile). Exit **127** usually means a missing shared library, rebuild TITO image.
 
 Convert a Docker archive on HPC: `./docker-to-apptainer.sh`.
 
@@ -315,7 +332,7 @@ Then re-run the training hindcast (add `--offline` if you do not want downloads)
 tito-run.cmd hindcast "2023-06-21 07:00" "2023-06-21 07:00" --regions Guatemala --offline
 ```
 
-`offline_precips/` is **not** wiped — the next `--offline` run restages precip from that archive.
+`offline_precips/` is **not** wiped, the next `--offline` run restages precip from that archive.
 
 ---
 
@@ -323,12 +340,12 @@ tito-run.cmd hindcast "2023-06-21 07:00" "2023-06-21 07:00" --regions Guatemala 
 
 | Symptom | Likely cause |
 |---------|----------------|
-| `docker load` 502 | Docker Desktop not ready — restart daemon |
-| EF5 exit **137** | OOM — lower ensembles, `ef5_max_workers=1`, use 900 m, raise Docker RAM |
-| EF5 exit **127** | Missing `libtiff.so.5` (local EF5) — rebuild TITO image |
-| `Cannot open TIFF` after STREAM-Sat | Corrupt GeoTIFFs from RAM pressure — delete `EF5_conf/precip/stream_sat` and re-run |
-| FIM `no_runs` | Wrong chain vs folders, or not 90 m — check `outputs/<cycle>/<rkey>/gfs` vs `stormlab/` |
-| FIM skip 900 m | Expected — FIM is **90 m only** |
+| `docker load` 502 | Docker Desktop not ready: restart daemon |
+| EF5 exit **137** | OOM: lower ensembles, `ef5_max_workers=1`, use 900 m, raise Docker RAM |
+| EF5 exit **127** | Missing `libtiff.so.5` (local EF5): rebuild TITO image |
+| `Cannot open TIFF` after STREAM-Sat | Corrupt GeoTIFFs from RAM pressure: delete `EF5_conf/precip/stream_sat` and re-run |
+| FIM `no_runs` | Wrong chain vs folders, or not 90 m: check `outputs/<cycle>/<rkey>/gfs` vs `stormlab/` |
+| FIM skip 900 m | Expected: FIM is **90 m only** |
 | Offline refused cycle | Only 21 Jun 2023 07:00 and 08:00 UTC are allowed |
 | Offline still downloads | Old Apptainer path; current launcher prints `Offline : YES` and `OFFLINE precip (hard guard…)` |
 
@@ -346,9 +363,9 @@ tito-run.cmd hindcast "2023-06-21 07:00" "2023-06-21 07:00" --regions Guatemala 
 
 ## Contact
 
-Naman Mehta — naman-mehta@uiowa.edu  
-Vanessa Robledo — vanessa-robledodelgado@uiowa.edu  
-AHWA Laboratory — [ahwa.lab.uiowa.edu](https://ahwa.lab.uiowa.edu/) — engr-ahwa-lab@uiowa.edu
+Naman Mehta - naman-mehta@uiowa.edu  
+Vanessa Robledo - vanessa-robledodelgado@uiowa.edu  
+AHWA Laboratory - [ahwa.lab.uiowa.edu](https://ahwa.lab.uiowa.edu/) - engr-ahwa-lab@uiowa.edu
 
 ## Cite
 

@@ -21,7 +21,7 @@ Design rules:
   rasters, CSVs and a JSON decision log
 """
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 from .config import FimConfig, load_config
 from .aoc import AreaOfConcern, load_aocs
@@ -31,7 +31,7 @@ from .rainfall import member_totals
 from .catalog import Catalog, build_catalog
 from .matching import MatchRules, match_total, match_members, select_scenarios
 from .pipeline import run_fim_cycle
-from .tito_hook import run_fim_for_cycle, discover_fim_configs
+from .tito_hook import run_fim_for_cycle, run_ibf_for_site, discover_fim_configs
 
 __all__ = [
     "FimConfig", "load_config",
@@ -42,7 +42,7 @@ __all__ = [
     "Catalog", "build_catalog",
     "MatchRules", "match_total", "match_members", "select_scenarios",
     "run_fim_cycle",
-    "run_fim_for_cycle", "discover_fim_configs",
+    "run_fim_for_cycle", "run_ibf_for_site", "discover_fim_configs",
     # v0.2 ensemble/zarr API (lazy: needs zarr only when used)
     "FimStore", "build_store", "run_ensemble_cycle", "load_ensemble_config",
     # v0.4 pluvial + fluvial hazard API

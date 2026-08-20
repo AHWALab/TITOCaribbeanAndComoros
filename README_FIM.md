@@ -1,86 +1,153 @@
-# FIM integration (TITO Guatemala Training)
+# FIM and IBF in TITO (main)
 
-Scenario-library flood inundation mapping runs **after each EF5 cycle** when
-`fim_enabled = True` in `Caribbean_Comoros_config.py`.
+Scenario library flood inundation mapping (FIM) turns each forecast cycle's
+rainfall into pre-simulated flood maps: the cycle's rain total is matched to
+the closest simulated storm in a per-site zarr store, and that storm's depth
+and extent become the cycle's probabilistic products. The IBF receptor layer
+can then turn those probabilities into building, road and admin-unit warning
+products. Both run inside orchestrator STEP 8, after EF5, and both are
+non-fatal: they can never block EF5.
 
 ## Layout
 
 | Path | Role |
 |------|------|
-| `tito_utils/fim_utils/` | FIM package (pipelines, store, matching) |
-| `fim_config/` | One YAML per FIM **site** (`Guatemala_*.yaml`) |
-| `fim_config/aoc/` | Area-of-concern polygons |
-| `fim_store/` | Pre-simulated flood map stores (zarr) |
-| `outputs/fim/<site>/<cycle>/` | Runtime products (gitignored) |
+| `tito_utils/fim_utils/` | FIM package (pipelines, store, matching, the STEP 8 hook) |
+| `tito_utils/ibf_utils/` | IBF receptor package (see its own README) |
+| `fim_config/` | One YAML per FIM site (`<Region>*.yaml`) |
+| `fim_config/ibf/` | One YAML per IBF site (`<Site>_ibf.yaml`) |
+| `fim_config/aoc/` | Area of concern polygons |
+| `fim_store/<Region>/` | Scenario stores, one zip per site (plain files, no LFS) |
+| `fim_dev/` | Store builders (Guatemala basins, island admin units) |
+| `outputs/<cycle>/<rkey>/fim/<chain>/` | Runtime FIM products (gitignored) |
+| `outputs/ibf/` | Runtime IBF products (gitignored) |
 
-## Toggle & rules
+## Switching things on and off
+
+Everything operators touch lives in `Caribbean_Comoros_config.py`:
 
 ```python
-fim_enabled = True          # False = skip FIM
-fim_config_dir = "fim_config"
+fim_enabled = True                 # global FIM switch
+fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
+fim_regions = {                    # per country switch + USER thresholds
+    "Guatemala": {"enabled": True, "thresholds_m": fim_default_thresholds_m},
+    "Antigua":   {"enabled": True, "thresholds_m": fim_default_thresholds_m},
+    ...
+}
+
+ibf_enabled = True                 # global IBF switch
+ibf_regions = {                    # per country switch + threshold overrides
+    "Guatemala": {"enabled": True,
+                  "severity_thresholds_m": {"minor": 0.10,
+                                            "significant": 0.30,
+                                            "severe": 0.76},
+                  "hazard_flag_cutoff": 0.30,
+                  "reporting_threshold": 0.05},
+    ...
+}
 ```
+
+Rules of the two blocks: one country key switches every site of that country
+(Antigua has 7 unit sites, Barbados 11). Values set here OVERRIDE the site
+YAMLs, so thresholds can be changed without opening any YAML. A region
+missing from a block simply follows its YAMLs. `thresholds_m` accepts any
+number of positive depths in meters; each value produces its own probability
+raster and likelihood raster.
+
+## When FIM runs
 
 | Rule | Behaviour |
 |------|-----------|
-| **When** | After **forecast** EF5 only (`run_LR` / Phase C). Not after IMERG/SS alone. |
-| **Resolution** | **90m only** (non-90m regions skipped). |
-| **Rain total** | Sum of **qpeaccum** components (never qpfaccum). |
-| **IMERG+GFS** | IMERG + optional SCaMPR gap + GFS forecast QPE accums |
-| **STREAM-Sat+StormLab** | STREAM-Sat + StormLab QPE accums per ensemble member |
+| When | After the forecast EF5 phase only (`run_LR` / Phase C). Never after IMERG or STREAM-Sat alone. |
+| Resolution | 90m regions only; others are skipped and logged. |
+| Rain total | Sum of qpeaccum components (never qpfaccum or long range). |
+| IMERG+GFS chain | IMERG + optional SCaMPR gap + GFS forecast QPE accums |
+| STREAM-Sat+StormLab chain | STREAM-Sat + StormLab QPE accums per ensemble member |
 
-Sites: `fim_config/<Region>*.yaml`. Park a site with `enabled: false`.
+Site discovery: `fim_config/<Region>*.yaml`, where `<Region>` is the exact
+name in `regions_to_run`. Park a single site with a top level
+`enabled: false` line in its YAML.
 
-## One-time setup (Santa Ines Petapa)
+## Current sites
+
+| Country | Sites | Status |
+|---------|-------|--------|
+| Guatemala | Santa Ines Petapa (pluvial + fluvial + combined) | READY |
+| Guatemala | Morales (prepared, `enabled: false`) | waiting for its flood map library |
+| Antigua and Barbuda | 7 ADM1 units, one store each (pluvial) | READY |
+| Barbados | 11 parishes, one store each (pluvial) | READY |
+| Comoros, Haiti | placeholders under `fim_store/` | waiting for analog maps |
+
+Island unit stores hold the 200 hydrodynamic samples clipped to the unit
+window, max depth from the dmax product (uint8 centimeters, saturated at
+2.55 m) and real pluvial magnitudes (289 band storm totals in mm averaged
+over the unit polygon), so matching is local to every unit.
+`fim_store/<Country>/manifest_*.csv` lists every unit and its store.
+
+## One time setup after clone or pull
+
+Store zips are plain git files (no LFS involved). Extract them once:
 
 ```bash
-# If the zip is a Git LFS pointer (~130 bytes text), fetch the real blob first:
-#   git lfs pull --include "fim_store/*"
-cd fim_store
-unzip -o fim_store_SantaInesPetapa_v1.zarr.zip
-# → fim_store/fim_store_SantaInesPetapa_v1.zarr/
+python fim_store/unzip_stores.py
 ```
 
-Requires: `pyyaml`, `numpy`, `rasterio` (or gdal), `zarr` (`pip install zarr`).
+The helper extracts every zip that is not yet unzipped and skips the rest,
+so it is always safe to rerun. Requires: pyyaml, numpy, rasterio, zarr (all
+in `tito_env.yml`).
 
-## What runs
+## Products
 
-After EF5 finishes, orchestrator STEP 8 calls:
-
-```python
-from tito_utils.fim_utils import run_fim_for_cycle
-run_fim_for_cycle(regions_to_run=..., cycle="YYYYMMDD.HHMMSS", config=config)
-```
-
-- YAML with `hazards:` → pluvial + fluvial runner (`pipeline_pf`)
-- YAML without → classic ensemble runner
-- Failures are **non-fatal** (logged; EF5 products kept)
-
-## EF5 inputs (cycle-first)
-
-```text
-outputs/<cycle>/<rkey>/stream_sat/ensOut{N}/
-outputs/<cycle>/<rkey>/stormlab/ensOut{N}_sl{M}/
-outputs/<cycle>/<rkey>/imerg/
-outputs/<cycle>/<rkey>/gfs/
-```
-
-## FIM products (cycle-first + chain tag)
-
-The hook writes under a folder named by the forcing chain so IMERG+GFS and
+FIM writes cycle first, tagged by the forcing chain so IMERG+GFS and
 STREAM-Sat+StormLab never mix:
 
 ```text
-outputs/<cycle>/<rkey>/fim/stream_sat_stormlab/   # qpe=STREAM_SAT, qpf=STORMLAB
-outputs/<cycle>/<rkey>/fim/imerg_gfs/             # qpe=IMERG, qpf=GFS
-  pluvial/  fluvial/  combined/  …
+outputs/<cycle>/<rkey>/fim/<chain>/
+  pluvial/   prob_depth_ge_10cm.<cycle>.tif ... likelihood + extent rasters
+  fluvial/   (Guatemala sites)
+  combined/  (Guatemala sites)
 ```
 
-IMERG+GFS FIM YAML template: `fim_config/examples/Guatemala_SantaInesPetapa_imerg_gfs.yaml`
+with `<chain>` one of `stream_sat_stormlab`, `imerg_gfs`, `imerg_stormlab`,
+`stream_sat_gfs`.
 
-## Manual test
+## IBF chained after FIM
+
+For each site that just produced FIM products, STEP 8 also runs the IBF
+receptor layer when `fim_config/ibf/<Site>_ibf.yaml` exists and the region
+is enabled in `ibf_regions`. IBF samples the probability rasters onto
+buildings and roads, classifies them with the flood risk matrix (Speight et
+al. 2018), rolls exposure up to admin units and writes per cycle GeoPackage,
+CSV and JSON summaries under `outputs/ibf/`.
+
+Two prerequisites, both one time per machine: the receptor preload (Overture
+buildings and roads, admin census layer, GHS BUILT-C raster) must sit where
+the IBF YAML points (default `../IBFv10_Guatemala/input_data/` next to the
+repo; it is too large for git), and the environment needs geopandas plus
+pyogrio (declared in `tito_env.yml`). The first cycle builds a clipped
+receptor cache; later cycles reuse it and finish in seconds. Details:
+`tito_utils/ibf_utils/README.md`.
+
+## Manual tests
 
 ```bash
+# one FIM site, one cycle
 python -m tito_utils.fim_utils.pipeline_pf \
-  --config fim_config/Guatemala_SantaInesPetapa.yaml \
-  --cycle 20230621.070000
+  --config fim_config/Guatemala_SantaInesPetapa.yaml --cycle 20230621.070000
+
+# one IBF site on an existing FIM products folder
+python -m tito_utils.ibf_utils.pipeline_ibf \
+  --config fim_config/ibf/Guatemala_SantaInesPetapa_ibf.yaml \
+  --cycle 20230621.070000 \
+  --products-dir outputs/20230621.070000/guatemala_90m/fim/imerg_gfs/combined
 ```
+
+## Building or extending stores
+
+- Guatemala basins: `fim_dev/build_store_guatemala.py` plus
+  `fim_dev/attach_real_magnitudes_santaines.py` (worked example for real
+  magnitudes and the fluvial index).
+- Island admin units: `fim_dev/build_admin_stores.py` rebuilds all Antigua
+  and Barbuda plus Barbados stores from the ADM1 shapefile and the dmax and
+  pcpout rasters; see the notes at the top of the script and
+  `fim_store/<Country>/README_<Country>.md`.

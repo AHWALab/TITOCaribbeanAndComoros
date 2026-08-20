@@ -329,20 +329,64 @@ fim_enabled = True
 fim_config_dir = "fim_config"
 # fim_root = ""
 
-# Per-region FIM switches and USER depth thresholds (v0.5). This block is the
-# only place operators touch. enabled: master switch for the region's sites.
-# thresholds_m: depth thresholds in METERS for all products of the region,
-# any number of values; they OVERRIDE the thresholds_m in the site YAMLs.
-# Set thresholds_m to None to keep the site YAML values. A region missing
-# from this dict simply follows its site YAMLs. Stores live under
-# fim_store/<Region>/ as zips; extract with: python fim_store/unzip_stores.py
+# Per-region FIM switches and USER depth thresholds (since v0.5). This block
+# is the only place operators touch. enabled: master switch for ALL of the
+# region's sites at once (Antigua has 7 per-unit sites, Barbados 11; one
+# switch covers them all). thresholds_m: depth thresholds in METERS for all
+# products of the region, any number of values; they OVERRIDE the
+# thresholds_m in the site YAMLs. Set thresholds_m to None to keep the site
+# YAML values. A region missing from this dict simply follows its site YAMLs.
+#
+# Stores live under fim_store/<Region>/ as plain zip files (no LFS).
+# One-time step after every clone or pull that brings a new store:
+#   python fim_store/unzip_stores.py
 fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
 fim_regions = {
-    "Guatemala": {"enabled": True,  "thresholds_m": fim_default_thresholds_m},
-    "Antigua":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda
-    "Barbados":  {"enabled": False, "thresholds_m": fim_default_thresholds_m},
-    "Comoros":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},
-    "Haiti":     {"enabled": False, "thresholds_m": fim_default_thresholds_m},
+    "Guatemala": {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Santa Ines Petapa READY; Morales waiting for its library
+    "Antigua":   {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda, 7 ADM1 unit stores READY
+    "Barbados":  {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # 11 parish stores READY
+    "Comoros":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # waiting for analog maps
+    "Haiti":     {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # waiting for analog maps
+}
+
+# ── IBF (Impact Based Forecasting receptor products) ───────────────────────
+# Runs right after FIM inside STEP 8, one site at a time, and consumes the
+# probability rasters FIM just wrote for that cycle. Chained but never
+# required: any IBF problem is logged and the cycle continues with the EF5
+# and FIM products intact.
+#
+# A site gets IBF when BOTH are true:
+#   1. ibf_enabled = True and its region is not switched off in ibf_regions
+#   2. fim_config/ibf/<Site>_ibf.yaml exists (receptor sources, work CRS,
+#      output naming). No YAML means no IBF for that site.
+#
+# The receptor preload (Overture buildings and roads, admin census layer,
+# GHS BUILT-C raster) ships separately from git because of its size. Put it
+# where the site YAML points (default: ../IBFv10_Guatemala/input_data/
+# next to the repo) or edit the YAML paths. The first cycle on a machine
+# builds a clipped receptor cache under outputs/ibf_cache; later cycles
+# reuse it and finish in seconds.
+#
+# Per region: enabled switch plus the knobs users touch most. Values set
+# here OVERRIDE the site YAML; remove a key (or set it to None) to keep the
+# YAML value. A region missing from ibf_regions follows its YAMLs, the same
+# rule as fim_regions.
+#   severity_thresholds_m  water depth (m) behind each severity class of
+#                          the flood risk matrix (minor, significant, severe)
+#   hazard_flag_cutoff     probability that raises the IBFv1.0 hazard flag
+#   reporting_threshold    probabilities below this are treated as zero
+ibf_enabled = True
+ibf_regions = {
+    "Guatemala": {
+        "enabled": True,
+        "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.76},
+        "hazard_flag_cutoff": 0.30,
+        "reporting_threshold": 0.05,
+    },
+    "Antigua":  {"enabled": False},  # no receptor preload packaged yet
+    "Barbados": {"enabled": False},  # no receptor preload packaged yet
+    "Comoros":  {"enabled": False},
+    "Haiti":    {"enabled": False},
 }
 
 # WRF configuration (used when run_LR=True).

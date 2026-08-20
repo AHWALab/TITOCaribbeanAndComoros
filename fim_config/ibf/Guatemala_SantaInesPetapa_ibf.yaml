@@ -42,6 +42,11 @@ fim_products:
   prefer_overbank: false
 
 classification:
+  # NOTE: in orchestrated runs the ibf_regions block in
+  # Caribbean_Comoros_config.py OVERRIDES severity_thresholds_m,
+  # hazard_flag_cutoff and reporting_threshold, so operators normally edit
+  # them there. The values below apply to manual pipeline_ibf runs and to
+  # regions not listed in ibf_regions.
   # FGS likelihood bands, identical to fim_utils.probability defaults
   likelihood_bands:
     very_low: [0.0, 0.2]

@@ -10,7 +10,7 @@ matrix, and exposure summaries.
 fim_utils.pipeline_pf            ibf_utils.pipeline_ibf
   prob_depth_ge_10cm.{cycle}.tif   1. discover products (cycle-aware)
   prob_depth_ge_30cm.{cycle}.tif   2. receptor cache (preload -> clip -> tag)
-  prob_depth_ge_76cm.{cycle}.tif   3. sample max probability per feature
+  prob_depth_ge_70cm.{cycle}.tif   3. sample max probability per feature
         ... (any thresholds)       4. classify: matrix + IBFv1.0 fields
                                    5. ibf_receptors.{cycle}.gpkg + csv + json
 ```
@@ -56,7 +56,8 @@ Every feature gets, per probability product, a `p_ge_{tag}` column, and:
 - `risk_class` / `risk_level` / `risk_color`: the flood risk matrix of
   Speight et al. (2018, Fig. 1; SFFS / UK FGS standard). Each severity
   level of the potential-impact axis (config `severity_thresholds_m`,
-  default 0.10 / 0.30 / 0.76 m) is served by the closest available
+  project default 0.10 / 0.30 / 0.70 m for every country, the first
+  three FIM depth thresholds; IBFv1.0 used 0.76 m) is served by the closest available
   probability grid; that grid's FGS likelihood band (Very Low < 20 %,
   Low 20-40 %, Medium 40-60 %, High > 60 %, 5 % reporting threshold)
   enters the matrix, and the feature keeps the worst cell. Likelihood

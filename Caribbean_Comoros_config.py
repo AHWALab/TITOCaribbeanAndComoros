@@ -373,9 +373,12 @@ fim_regions = {
 # rule as fim_regions.
 #   severity_thresholds_m  water depth (m) behind each severity class of
 #                          the flood risk matrix (minor, significant,
-#                          severe). Match them to the FIM depth thresholds
-#                          of the region so every severity class is served
-#                          by an exact probability product.
+#                          severe). PROJECT DEFAULT, same for every
+#                          country: 0.10 / 0.30 / 0.70, the first three
+#                          FIM depth thresholds, so every severity class
+#                          is served by an exact probability product (the
+#                          fourth FIM product, 1.00 m, is still sampled
+#                          onto every receptor as its own p_ge column).
 #   hazard_flag_cutoff     likelihood (exceedance probability) that flags a
 #                          receptor as affected. USER DEFAULT: 0.50, that
 #                          is 50 percent. The IBFv1.0 reference runs for
@@ -390,7 +393,9 @@ ibf_enabled = True
 ibf_regions = {
     "Guatemala": {
         "enabled": True,
-        "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.76},
+        # same defaults as every country; the IBF team's legacy rasters
+        # used 0.76 m for severe, set it back only to reproduce IBFv1.0
+        "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.70},
         "hazard_flag_cutoff": 0.50,   # user default; IBFv1.0 reference used 0.30
         "reporting_threshold": 0.05,
     },

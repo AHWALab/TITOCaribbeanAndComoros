@@ -56,12 +56,15 @@ classification:
   reporting_threshold: 0.05
   # potential-impact severity axis (depth a receptor must see);
   # each is served by the closest available probability grid and the
-  # substitution is recorded in ibf_summary.json
+  # substitution is recorded in ibf_summary.json. Project default, same
+  # for every country: 10 / 30 / 70 cm (the first three FIM thresholds).
+  # The IBF team's legacy rasters used 0.76 m for severe; the matcher
+  # still picks a 76cm grid for the 0.70 target when that is what exists.
   severity_thresholds_m:
     minor: 0.10
     significant: 0.30
-    severe: 0.76
-  hazard_flag_cutoff: 0.3     # IBFv1.0 compatibility field
+    severe: 0.70
+  hazard_flag_cutoff: 0.50    # user default; IBFv1.0 used 0.30
 
 outputs:
   root: outputs/ibf/{region}

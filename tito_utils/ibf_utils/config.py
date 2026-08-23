@@ -99,8 +99,11 @@ def load_ibf_config(path: str, root: str = None) -> dict:
     cl.setdefault("reporting_threshold", 0.05)
     # depth thresholds (m) that define the potential-impact severity axis;
     # each is matched to the closest available probability product
+    # project default severity depths = the first three FIM depth
+    # thresholds (10, 30, 70 cm), identical for every country; the IBFv1.0
+    # Guatemala reference used 0.76 m for severe
     cl.setdefault("severity_thresholds_m",
-                  {"minor": 0.10, "significant": 0.30, "severe": 0.76})
+                  {"minor": 0.10, "significant": 0.30, "severe": 0.70})
     cl.setdefault("severity_match_tolerance", 0.6)   # relative, warn above
     cl.setdefault("matrix", [list(r) for r in DEFAULT_MATRIX])
     # IBFv1.0 compatibility: hazard_flag = highest threshold with p >= cutoff

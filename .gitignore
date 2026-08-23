@@ -92,3 +92,15 @@ tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/output/
 
 # Local scratch / training dumps
 trainings/
+
+# IBF static data: the GHS BUILT-C land use rasters are small and required at
+# runtime; without this line the *.tif rule above drops them silently and the
+# island population weights collapse
+!ibf_data/**/*.tif
+
+# Stores that ship as split parts: the joined <name>.zarr.zip is a local
+# by-product of fim_store/unzip_stores.py. Only the .partNN files are tracked
+# (a joined LaQuinte zip is 613 MB, far over GitHub's 100 MB hard limit)
+fim_store/Guatemala/fim_store_Morales_v1.zarr.zip
+fim_store/Haiti/fim_store_Haiti_Gris_v1.zarr.zip
+fim_store/Haiti/fim_store_Haiti_LaQuinte_v1.zarr.zip

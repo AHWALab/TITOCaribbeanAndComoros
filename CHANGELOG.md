@@ -4,6 +4,58 @@ All notable changes to TITO Caribbean and Comoros will be documented here.
 
 ---
 
+## [1.6.0] - 2026-08-23 - Antigua and Barbuda indexed on the real RainyDay rain, Barbuda area of concern fixed
+
+### Changed
+
+- `fim_store/Antigua/`: all seven unit stores are re-indexed on the REAL
+  RainyDay scenario rain geotiffs delivered for the two island models
+  (200 scenarios each, 72 bands, 0.027 degree grid). The magnitude of a
+  unit is the area weighted mean of the band summed storm total over the
+  unit polygon, so each rain cell counts in proportion to the share of
+  the cell inside the polygon; with 3 km rain cells and parishes of about
+  3 cells a plain cell centre mask would bias or empty the small units.
+  The previous pcpout based magnitudes agree closely (correlation 1.000
+  per unit, median difference 1.8 to 2.2 percent, largest single
+  difference 23 mm), which is a mutual validation of both products; the
+  switch was made because the real time side matches against QPE and QPF
+  rainfall, so the store index should be source rainfall rather than the
+  hydrodynamic model's internal applied field. Both values are kept in
+  `magnitudes_Antigua_pcpout_vs_rain.csv`.
+- `fim_config/Antigua_*.yaml` and `fim_config/Barbados_*.yaml` (18 files):
+  `outputs_root` corrected from `outputs/<Country>` to `outputs`. With the
+  country folder in the path the member search resolved to
+  `outputs/Antigua/<cycle>/<rkey>/...`, one level below where the
+  orchestrator writes EF5 runs, so every island site would have reported
+  `no_runs` for ever. Reproduced and fixed under test.
+
+### Fixed
+
+- `fim_config/aoc/Antigua_AG01_Barbuda_aoc.geojson`: the COD-AB 2019
+  boundary of Barbuda carries a 900 m2 artifact square at (-62.0001,
+  16.9999), about 80 km south of the island. The area of concern is used
+  as a BOUNDING BOX when the cycle rain is sampled, so that one stray
+  part stretched Barbuda's sampling box to 28.6 by 81.0 km instead of
+  16.5 by 20.7 km, and the areal rain feeding the analog matching was
+  taken over 60 km of open sea. Measured against the delivered scenario
+  rain, 80 of the 195 wet scenarios came out more than 10 percent wrong,
+  from 38 percent too low to 111 percent too high, which is wider than
+  the 0.9 to 1.2 matching band. Parts below 10000 m2 are now dropped and
+  the removal is recorded in the file. The other 17 unit polygons were
+  checked the same way and are correct.
+- `tito_utils/fim_utils/store.py`: `attach_magnitudes` now rewrites
+  `index.csv` and `meta.json` as well. They kept the old order and the
+  old values after a magnitude update, and they are the copy humans read.
+
+### Added
+
+- `fim_dev/rain_magnitudes_from_geotiffs.py`: the reusable builder for
+  per unit magnitudes from scenario rain geotiffs, with coverage
+  diagnostics and degenerate part removal. Use it for the other countries
+  as their rain geotiffs arrive.
+
+---
+
 ## [1.5.0] - 2026-08-23 - Morales store live, Haiti stores prepared
 
 ### Added

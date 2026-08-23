@@ -5,7 +5,7 @@
 # switches the whole country and overrides the thresholds below.
 region: Antigua_SaintMary
 
-outputs_root: outputs/Antigua
+outputs_root: outputs
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/Antigua_AG05_SaintMary_aoc.geojson

@@ -226,4 +226,18 @@ def attach_magnitudes(store_path: str, magnitudes: dict, source: str = "rainyday
     if "fluvial_q" in root:
         root["fluvial_q"][...] = np.asarray(root["fluvial_q"][:])[order]
     root.attrs["magnitude_source"] = source
+
+    # Refresh the companion files so they never disagree with the arrays.
+    # Without this the index.csv written by build_store keeps the OLD order
+    # and the OLD magnitudes, which is the copy humans read.
+    sorted_ids = [ids[i] for i in order]
+    sorted_mags = mags[order]
+    import csv
+    with open(os.path.join(store_path, "index.csv"), "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["storm_index", "storm_id", "magnitude_mm"])
+        for i, (s, m) in enumerate(zip(sorted_ids, sorted_mags)):
+            w.writerow([i, s, "" if m != m else round(float(m), 2)])
+    with open(os.path.join(store_path, "meta.json"), "w") as fh:
+        json.dump(dict(root.attrs), fh, indent=2)
     return store_path

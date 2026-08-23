@@ -82,8 +82,12 @@ name in `regions_to_run`. Park a single site with a top level
 
 Island unit stores hold the 200 hydrodynamic samples clipped to the unit
 window, max depth from the dmax product (uint8 centimeters, saturated at
-2.55 m) and real pluvial magnitudes (289 band storm totals in mm averaged
-over the unit polygon), so matching is local to every unit.
+2.55 m) and real pluvial magnitudes, so matching is local to every unit.
+Antigua and Barbuda is indexed on the RainyDay scenario rain geotiffs
+(area weighted mean of the storm total over each unit polygon, since
+v1.6.0); Barbados still uses the pcpout storm totals until its rain
+geotiffs arrive. Rebuild either with
+fim_dev/rain_magnitudes_from_geotiffs.py.
 `fim_store/<Country>/manifest_*.csv` lists every unit and its store.
 
 ## One time setup after clone or pull

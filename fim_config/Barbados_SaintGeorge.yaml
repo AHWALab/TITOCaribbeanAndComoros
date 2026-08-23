@@ -5,7 +5,7 @@
 # switches the whole country and overrides the thresholds below.
 region: Barbados_SaintGeorge
 
-outputs_root: outputs/Barbados
+outputs_root: outputs
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/Barbados_BB03_SaintGeorge_aoc.geojson

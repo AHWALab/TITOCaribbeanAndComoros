@@ -1,0 +1,201 @@
+storm_id,scenario_name,magnitude_mm,in_store
+sample_0001,Griss_Haiti_WRF_Box_rlz1year10000storm5,,yes
+sample_0002,Griss_Haiti_WRF_Box_rlz1year2612storm5,,yes
+sample_0003,Griss_Haiti_WRF_Box_rlz1year2857storm5,,yes
+sample_0004,Griss_Haiti_WRF_Box_rlz1year3176storm5,,yes
+sample_0005,Griss_Haiti_WRF_Box_rlz1year4002storm3,,yes
+sample_0006,Griss_Haiti_WRF_Box_rlz1year4115storm5,,yes
+sample_0007,Griss_Haiti_WRF_Box_rlz1year4131storm4,,yes
+sample_0008,Griss_Haiti_WRF_Box_rlz1year4515storm5,,yes
+sample_0009,Griss_Haiti_WRF_Box_rlz1year4670storm4,,yes
+sample_0010,Griss_Haiti_WRF_Box_rlz1year4916storm4,,yes
+sample_0011,Griss_Haiti_WRF_Box_rlz1year5115storm4,,yes
+sample_0012,Griss_Haiti_WRF_Box_rlz1year5544storm5,,yes
+sample_0013,Griss_Haiti_WRF_Box_rlz1year6105storm5,,yes
+sample_0014,Griss_Haiti_WRF_Box_rlz1year6148storm5,,yes
+sample_0015,Griss_Haiti_WRF_Box_rlz1year6178storm5,,yes
+sample_0016,Griss_Haiti_WRF_Box_rlz1year6343storm5,,yes
+sample_0017,Griss_Haiti_WRF_Box_rlz1year6380storm5,,yes
+sample_0018,Griss_Haiti_WRF_Box_rlz1year6412storm5,,yes
+sample_0019,Griss_Haiti_WRF_Box_rlz1year6427storm5,,yes
+sample_0020,Griss_Haiti_WRF_Box_rlz1year6445storm5,,yes
+sample_0021,Griss_Haiti_WRF_Box_rlz1year6496storm5,,yes
+sample_0022,Griss_Haiti_WRF_Box_rlz1year6524storm5,,yes
+sample_0023,Griss_Haiti_WRF_Box_rlz1year6719storm5,,yes
+sample_0024,Griss_Haiti_WRF_Box_rlz1year6853storm4,,yes
+sample_0025,Griss_Haiti_WRF_Box_rlz1year6876storm3,,yes
+sample_0026,Griss_Haiti_WRF_Box_rlz1year6900storm5,,yes
+sample_0027,Griss_Haiti_WRF_Box_rlz1year6956storm2,,yes
+sample_0028,Griss_Haiti_WRF_Box_rlz1year6969storm4,,yes
+sample_0029,Griss_Haiti_WRF_Box_rlz1year7341storm5,,yes
+sample_0030,Griss_Haiti_WRF_Box_rlz1year7409storm5,,yes
+sample_0031,Griss_Haiti_WRF_Box_rlz1year7473storm5,,yes
+sample_0032,Griss_Haiti_WRF_Box_rlz1year7500storm2,,yes
+sample_0033,Griss_Haiti_WRF_Box_rlz1year7807storm5,,yes
+sample_0034,Griss_Haiti_WRF_Box_rlz1year8075storm5,,yes
+sample_0035,Griss_Haiti_WRF_Box_rlz1year8080storm5,,yes
+sample_0036,Griss_Haiti_WRF_Box_rlz1year8122storm5,,yes
+sample_0037,Griss_Haiti_WRF_Box_rlz1year8151storm4,,yes
+sample_0038,Griss_Haiti_WRF_Box_rlz1year8164storm5,,yes
+sample_0039,Griss_Haiti_WRF_Box_rlz1year8194storm5,,yes
+sample_0040,Griss_Haiti_WRF_Box_rlz1year8249storm5,,yes
+sample_0041,Griss_Haiti_WRF_Box_rlz1year8372storm5,,no (sample missing from delivery)
+sample_0042,Griss_Haiti_WRF_Box_rlz1year8373storm5,,no (sample missing from delivery)
+sample_0043,Griss_Haiti_WRF_Box_rlz1year8404storm5,,no (sample missing from delivery)
+sample_0044,Griss_Haiti_WRF_Box_rlz1year8473storm3,,no (sample missing from delivery)
+sample_0045,Griss_Haiti_WRF_Box_rlz1year8514storm5,,no (sample missing from delivery)
+sample_0046,Griss_Haiti_WRF_Box_rlz1year8546storm5,,no (sample missing from delivery)
+sample_0047,Griss_Haiti_WRF_Box_rlz1year8562storm5,,no (sample missing from delivery)
+sample_0048,Griss_Haiti_WRF_Box_rlz1year8611storm4,,no (sample missing from delivery)
+sample_0049,Griss_Haiti_WRF_Box_rlz1year8657storm5,,no (sample missing from delivery)
+sample_0050,Griss_Haiti_WRF_Box_rlz1year8698storm5,,no (sample missing from delivery)
+sample_0051,Griss_Haiti_WRF_Box_rlz1year8806storm5,,no (sample missing from delivery)
+sample_0052,Griss_Haiti_WRF_Box_rlz1year8875storm5,,no (sample missing from delivery)
+sample_0053,Griss_Haiti_WRF_Box_rlz1year8878storm5,,no (sample missing from delivery)
+sample_0054,Griss_Haiti_WRF_Box_rlz1year8895storm5,,no (sample missing from delivery)
+sample_0055,Griss_Haiti_WRF_Box_rlz1year8924storm5,,no (sample missing from delivery)
+sample_0056,Griss_Haiti_WRF_Box_rlz1year8928storm5,,no (sample missing from delivery)
+sample_0057,Griss_Haiti_WRF_Box_rlz1year8931storm5,,no (sample missing from delivery)
+sample_0058,Griss_Haiti_WRF_Box_rlz1year8954storm5,,no (sample missing from delivery)
+sample_0059,Griss_Haiti_WRF_Box_rlz1year8974storm5,,no (sample missing from delivery)
+sample_0060,Griss_Haiti_WRF_Box_rlz1year8976storm4,,no (sample missing from delivery)
+sample_0061,Griss_Haiti_WRF_Box_rlz1year9027storm5,,no (sample missing from delivery)
+sample_0062,Griss_Haiti_WRF_Box_rlz1year9031storm5,,no (sample missing from delivery)
+sample_0063,Griss_Haiti_WRF_Box_rlz1year9035storm5,,no (sample missing from delivery)
+sample_0064,Griss_Haiti_WRF_Box_rlz1year9036storm5,,no (sample missing from delivery)
+sample_0065,Griss_Haiti_WRF_Box_rlz1year9041storm5,,no (sample missing from delivery)
+sample_0066,Griss_Haiti_WRF_Box_rlz1year9064storm5,,no (sample missing from delivery)
+sample_0067,Griss_Haiti_WRF_Box_rlz1year9094storm5,,no (sample missing from delivery)
+sample_0068,Griss_Haiti_WRF_Box_rlz1year9105storm5,,no (sample missing from delivery)
+sample_0069,Griss_Haiti_WRF_Box_rlz1year9108storm5,,no (sample missing from delivery)
+sample_0070,Griss_Haiti_WRF_Box_rlz1year9123storm5,,no (sample missing from delivery)
+sample_0071,Griss_Haiti_WRF_Box_rlz1year9135storm4,,no (sample missing from delivery)
+sample_0072,Griss_Haiti_WRF_Box_rlz1year9214storm5,,no (sample missing from delivery)
+sample_0073,Griss_Haiti_WRF_Box_rlz1year9242storm4,,no (sample missing from delivery)
+sample_0074,Griss_Haiti_WRF_Box_rlz1year9243storm5,,no (sample missing from delivery)
+sample_0075,Griss_Haiti_WRF_Box_rlz1year9269storm5,,no (sample missing from delivery)
+sample_0076,Griss_Haiti_WRF_Box_rlz1year9284storm5,,no (sample missing from delivery)
+sample_0077,Griss_Haiti_WRF_Box_rlz1year9306storm5,,no (sample missing from delivery)
+sample_0078,Griss_Haiti_WRF_Box_rlz1year9345storm5,,no (sample missing from delivery)
+sample_0079,Griss_Haiti_WRF_Box_rlz1year9352storm4,,no (sample missing from delivery)
+sample_0080,Griss_Haiti_WRF_Box_rlz1year9355storm5,,no (sample missing from delivery)
+sample_0081,Griss_Haiti_WRF_Box_rlz1year9367storm5,,no (sample missing from delivery)
+sample_0082,Griss_Haiti_WRF_Box_rlz1year9380storm5,,no (sample missing from delivery)
+sample_0083,Griss_Haiti_WRF_Box_rlz1year9396storm5,,no (sample missing from delivery)
+sample_0084,Griss_Haiti_WRF_Box_rlz1year9398storm5,,no (sample missing from delivery)
+sample_0085,Griss_Haiti_WRF_Box_rlz1year9412storm5,,no (sample missing from delivery)
+sample_0086,Griss_Haiti_WRF_Box_rlz1year9432storm5,,no (sample missing from delivery)
+sample_0087,Griss_Haiti_WRF_Box_rlz1year9434storm5,,no (sample missing from delivery)
+sample_0088,Griss_Haiti_WRF_Box_rlz1year9437storm5,,no (sample missing from delivery)
+sample_0089,Griss_Haiti_WRF_Box_rlz1year9483storm5,,no (sample missing from delivery)
+sample_0090,Griss_Haiti_WRF_Box_rlz1year9505storm5,,no (sample missing from delivery)
+sample_0091,Griss_Haiti_WRF_Box_rlz1year9523storm5,,no (sample missing from delivery)
+sample_0092,Griss_Haiti_WRF_Box_rlz1year9535storm5,,no (sample missing from delivery)
+sample_0093,Griss_Haiti_WRF_Box_rlz1year9549storm5,,no (sample missing from delivery)
+sample_0094,Griss_Haiti_WRF_Box_rlz1year9581storm5,,no (sample missing from delivery)
+sample_0095,Griss_Haiti_WRF_Box_rlz1year9582storm5,,no (sample missing from delivery)
+sample_0096,Griss_Haiti_WRF_Box_rlz1year9602storm5,,no (sample missing from delivery)
+sample_0097,Griss_Haiti_WRF_Box_rlz1year9636storm5,,no (sample missing from delivery)
+sample_0098,Griss_Haiti_WRF_Box_rlz1year9648storm5,,no (sample missing from delivery)
+sample_0099,Griss_Haiti_WRF_Box_rlz1year9649storm5,,no (sample missing from delivery)
+sample_0100,Griss_Haiti_WRF_Box_rlz1year9665storm5,,no (sample missing from delivery)
+sample_0101,Griss_Haiti_WRF_Box_rlz1year9682storm5,,no (sample missing from delivery)
+sample_0102,Griss_Haiti_WRF_Box_rlz1year9686storm4,,no (sample missing from delivery)
+sample_0103,Griss_Haiti_WRF_Box_rlz1year9696storm5,,no (sample missing from delivery)
+sample_0104,Griss_Haiti_WRF_Box_rlz1year9702storm5,,no (sample missing from delivery)
+sample_0105,Griss_Haiti_WRF_Box_rlz1year9729storm5,,no (sample missing from delivery)
+sample_0106,Griss_Haiti_WRF_Box_rlz1year9732storm5,,no (sample missing from delivery)
+sample_0107,Griss_Haiti_WRF_Box_rlz1year9736storm5,,no (sample missing from delivery)
+sample_0108,Griss_Haiti_WRF_Box_rlz1year9745storm5,,no (sample missing from delivery)
+sample_0109,Griss_Haiti_WRF_Box_rlz1year9750storm4,,no (sample missing from delivery)
+sample_0110,Griss_Haiti_WRF_Box_rlz1year9750storm5,,no (sample missing from delivery)
+sample_0111,Griss_Haiti_WRF_Box_rlz1year9763storm5,,no (sample missing from delivery)
+sample_0112,Griss_Haiti_WRF_Box_rlz1year9765storm5,,no (sample missing from delivery)
+sample_0113,Griss_Haiti_WRF_Box_rlz1year9768storm5,,no (sample missing from delivery)
+sample_0114,Griss_Haiti_WRF_Box_rlz1year9770storm5,,no (sample missing from delivery)
+sample_0115,Griss_Haiti_WRF_Box_rlz1year9792storm5,,no (sample missing from delivery)
+sample_0116,Griss_Haiti_WRF_Box_rlz1year9796storm5,,no (sample missing from delivery)
+sample_0117,Griss_Haiti_WRF_Box_rlz1year9808storm5,,no (sample missing from delivery)
+sample_0118,Griss_Haiti_WRF_Box_rlz1year9815storm5,,no (sample missing from delivery)
+sample_0119,Griss_Haiti_WRF_Box_rlz1year9823storm5,,no (sample missing from delivery)
+sample_0120,Griss_Haiti_WRF_Box_rlz1year9826storm5,,no (sample missing from delivery)
+sample_0121,Griss_Haiti_WRF_Box_rlz1year9833storm5,,no (sample missing from delivery)
+sample_0122,Griss_Haiti_WRF_Box_rlz1year9834storm5,,no (sample missing from delivery)
+sample_0123,Griss_Haiti_WRF_Box_rlz1year9835storm5,,no (sample missing from delivery)
+sample_0124,Griss_Haiti_WRF_Box_rlz1year9836storm5,,no (sample missing from delivery)
+sample_0125,Griss_Haiti_WRF_Box_rlz1year9838storm5,,no (sample missing from delivery)
+sample_0126,Griss_Haiti_WRF_Box_rlz1year9840storm5,,no (sample missing from delivery)
+sample_0127,Griss_Haiti_WRF_Box_rlz1year9849storm5,,no (sample missing from delivery)
+sample_0128,Griss_Haiti_WRF_Box_rlz1year9851storm5,,no (sample missing from delivery)
+sample_0129,Griss_Haiti_WRF_Box_rlz1year9853storm5,,no (sample missing from delivery)
+sample_0130,Griss_Haiti_WRF_Box_rlz1year9857storm5,,no (sample missing from delivery)
+sample_0131,Griss_Haiti_WRF_Box_rlz1year9863storm5,,no (sample missing from delivery)
+sample_0132,Griss_Haiti_WRF_Box_rlz1year9865storm5,,no (sample missing from delivery)
+sample_0133,Griss_Haiti_WRF_Box_rlz1year9870storm5,,no (sample missing from delivery)
+sample_0134,Griss_Haiti_WRF_Box_rlz1year9878storm5,,no (sample missing from delivery)
+sample_0135,Griss_Haiti_WRF_Box_rlz1year9882storm5,,no (sample missing from delivery)
+sample_0136,Griss_Haiti_WRF_Box_rlz1year9883storm5,,no (sample missing from delivery)
+sample_0137,Griss_Haiti_WRF_Box_rlz1year9889storm5,,no (sample missing from delivery)
+sample_0138,Griss_Haiti_WRF_Box_rlz1year9894storm5,,no (sample missing from delivery)
+sample_0139,Griss_Haiti_WRF_Box_rlz1year9898storm5,,no (sample missing from delivery)
+sample_0140,Griss_Haiti_WRF_Box_rlz1year9899storm4,,no (sample missing from delivery)
+sample_0141,Griss_Haiti_WRF_Box_rlz1year9900storm5,,no (sample missing from delivery)
+sample_0142,Griss_Haiti_WRF_Box_rlz1year9901storm5,,no (sample missing from delivery)
+sample_0143,Griss_Haiti_WRF_Box_rlz1year9904storm4,,no (sample missing from delivery)
+sample_0144,Griss_Haiti_WRF_Box_rlz1year9905storm5,,no (sample missing from delivery)
+sample_0145,Griss_Haiti_WRF_Box_rlz1year9909storm5,,no (sample missing from delivery)
+sample_0146,Griss_Haiti_WRF_Box_rlz1year9910storm5,,no (sample missing from delivery)
+sample_0147,Griss_Haiti_WRF_Box_rlz1year9911storm5,,no (sample missing from delivery)
+sample_0148,Griss_Haiti_WRF_Box_rlz1year9919storm5,,no (sample missing from delivery)
+sample_0149,Griss_Haiti_WRF_Box_rlz1year9920storm5,,no (sample missing from delivery)
+sample_0150,Griss_Haiti_WRF_Box_rlz1year9922storm3,,no (sample missing from delivery)
+sample_0151,Griss_Haiti_WRF_Box_rlz1year9924storm5,,no (sample missing from delivery)
+sample_0152,Griss_Haiti_WRF_Box_rlz1year9925storm5,,no (sample missing from delivery)
+sample_0153,Griss_Haiti_WRF_Box_rlz1year9928storm5,,no (sample missing from delivery)
+sample_0154,Griss_Haiti_WRF_Box_rlz1year9932storm5,,no (sample missing from delivery)
+sample_0155,Griss_Haiti_WRF_Box_rlz1year9935storm5,,no (sample missing from delivery)
+sample_0156,Griss_Haiti_WRF_Box_rlz1year9936storm5,,no (sample missing from delivery)
+sample_0157,Griss_Haiti_WRF_Box_rlz1year9940storm5,,no (sample missing from delivery)
+sample_0158,Griss_Haiti_WRF_Box_rlz1year9941storm5,,no (sample missing from delivery)
+sample_0159,Griss_Haiti_WRF_Box_rlz1year9945storm5,,no (sample missing from delivery)
+sample_0160,Griss_Haiti_WRF_Box_rlz1year9950storm5,,no (sample missing from delivery)
+sample_0161,Griss_Haiti_WRF_Box_rlz1year9951storm5,,no (sample missing from delivery)
+sample_0162,Griss_Haiti_WRF_Box_rlz1year9952storm5,,no (sample missing from delivery)
+sample_0163,Griss_Haiti_WRF_Box_rlz1year9953storm5,,no (sample missing from delivery)
+sample_0164,Griss_Haiti_WRF_Box_rlz1year9954storm5,,no (sample missing from delivery)
+sample_0165,Griss_Haiti_WRF_Box_rlz1year9956storm5,,no (sample missing from delivery)
+sample_0166,Griss_Haiti_WRF_Box_rlz1year9957storm5,,no (sample missing from delivery)
+sample_0167,Griss_Haiti_WRF_Box_rlz1year9958storm5,,no (sample missing from delivery)
+sample_0168,Griss_Haiti_WRF_Box_rlz1year9959storm5,,no (sample missing from delivery)
+sample_0169,Griss_Haiti_WRF_Box_rlz1year9960storm5,,no (sample missing from delivery)
+sample_0170,Griss_Haiti_WRF_Box_rlz1year9961storm5,,no (sample missing from delivery)
+sample_0171,Griss_Haiti_WRF_Box_rlz1year9962storm5,,no (sample missing from delivery)
+sample_0172,Griss_Haiti_WRF_Box_rlz1year9963storm5,,no (sample missing from delivery)
+sample_0173,Griss_Haiti_WRF_Box_rlz1year9964storm5,,no (sample missing from delivery)
+sample_0174,Griss_Haiti_WRF_Box_rlz1year9965storm4,,no (sample missing from delivery)
+sample_0175,Griss_Haiti_WRF_Box_rlz1year9966storm5,,no (sample missing from delivery)
+sample_0176,Griss_Haiti_WRF_Box_rlz1year9967storm5,,no (sample missing from delivery)
+sample_0177,Griss_Haiti_WRF_Box_rlz1year9969storm5,,no (sample missing from delivery)
+sample_0178,Griss_Haiti_WRF_Box_rlz1year9970storm5,,no (sample missing from delivery)
+sample_0179,Griss_Haiti_WRF_Box_rlz1year9971storm5,,no (sample missing from delivery)
+sample_0180,Griss_Haiti_WRF_Box_rlz1year9972storm4,,no (sample missing from delivery)
+sample_0181,Griss_Haiti_WRF_Box_rlz1year9972storm5,,no (sample missing from delivery)
+sample_0182,Griss_Haiti_WRF_Box_rlz1year9973storm5,,no (sample missing from delivery)
+sample_0183,Griss_Haiti_WRF_Box_rlz1year9974storm5,,no (sample missing from delivery)
+sample_0184,Griss_Haiti_WRF_Box_rlz1year9975storm5,,no (sample missing from delivery)
+sample_0185,Griss_Haiti_WRF_Box_rlz1year9977storm5,,no (sample missing from delivery)
+sample_0186,Griss_Haiti_WRF_Box_rlz1year9979storm5,,no (sample missing from delivery)
+sample_0187,Griss_Haiti_WRF_Box_rlz1year9981storm5,,no (sample missing from delivery)
+sample_0188,Griss_Haiti_WRF_Box_rlz1year9982storm5,,no (sample missing from delivery)
+sample_0189,Griss_Haiti_WRF_Box_rlz1year9983storm5,,no (sample missing from delivery)
+sample_0190,Griss_Haiti_WRF_Box_rlz1year9984storm5,,no (sample missing from delivery)
+sample_0191,Griss_Haiti_WRF_Box_rlz1year9985storm5,,no (sample missing from delivery)
+sample_0192,Griss_Haiti_WRF_Box_rlz1year9987storm5,,no (sample missing from delivery)
+sample_0193,Griss_Haiti_WRF_Box_rlz1year9990storm5,,no (sample missing from delivery)
+sample_0194,Griss_Haiti_WRF_Box_rlz1year9991storm5,,no (sample missing from delivery)
+sample_0195,Griss_Haiti_WRF_Box_rlz1year9992storm5,,no (sample missing from delivery)
+sample_0196,Griss_Haiti_WRF_Box_rlz1year9993storm5,,no (sample missing from delivery)
+sample_0197,Griss_Haiti_WRF_Box_rlz1year9994storm5,,no (sample missing from delivery)
+sample_0198,Griss_Haiti_WRF_Box_rlz1year9995storm5,,no (sample missing from delivery)
+sample_0199,Griss_Haiti_WRF_Box_rlz1year9996storm5,,no (sample missing from delivery)
+sample_0200,Griss_Haiti_WRF_Box_rlz1year9999storm5,,no (sample missing from delivery)

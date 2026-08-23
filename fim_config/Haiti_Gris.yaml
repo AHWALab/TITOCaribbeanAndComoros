@@ -1,0 +1,68 @@
+# FIM site: Haiti, Riviere Grise (Port-au-Prince plain). PREPARED, NOT ACTIVE: placeholder magnitudes.
+# ------------------------------------------------------------------------------
+# STATUS: the flood map library arrived (Gris.zip, 40 usable scenarios of
+# the nominal 200) and the scenario store is built and shipped:
+# fim_store/Haiti/fim_store_Haiti_Gris_v1.zarr.zip (max depth per scenario at
+# 1 cm precision, 2 m grid, EPSG 32618).
+#
+# WHY DISABLED: the rain scenario netcdf zip for this site contains SYMLINK
+# STUBS, not data, so no real RainyDay storm totals exist yet. The store
+# carries PLACEHOLDER magnitudes (wet volume ranks 1..N, clearly marked in
+# its magnitude_source attribute). Matching against real rainfall would be
+# meaningless, so keep this site off until the real totals arrive.
+#
+# TO ACTIVATE:
+#   1. get the real rain scenario netcdfs (or a storm total table) from the
+#      RainyDay side; fim_store/Haiti/magnitude_template_Gris.csv lists
+#      every scenario name and which samples are in the store
+#   2. attach the totals: python -c "from tito_utils.fim_utils.store import
+#      attach_magnitudes; attach_magnitudes('fim_store/Haiti/fim_store_Haiti_Gris_v1.zarr',
+#      {...storm_id: magnitude_mm...}, source='rainyday')"
+#   3. revisit the overbank reference below (currently the smallest wet
+#      volume scenario, sample_0003)
+#   4. delete the "enabled: false" line and switch Haiti on in fim_regions
+# NOTE: only samples 0001..0040 of the 200 were delivered for Gris.
+enabled: false
+
+region: Haiti_Gris
+
+outputs_root: outputs
+cycle_format: "%Y%m%d.%H%M%S"
+
+aoc_geojson: fim_config/aoc/Haiti_Gris_aoc.geojson
+store: fim_store/Haiti/fim_store_Haiti_Gris_v1.zarr
+products_root: outputs/Haiti/fim_Gris
+
+member:
+  template: "tmp_output_crest_scampr_{qpf}"
+
+trigger:
+  threshold: 1.0
+  sources:
+    - template: "tmp_output_crest_scampr_{qpf}"
+    - template: "tmp_output_crest_imerg"
+
+hazards:
+  pluvial:
+    enabled: true
+    grid: qpe_accum
+    band: [0.9, 1.2]
+    band_wide: [0.8, 1.3]
+  fluvial:
+    enabled: false
+
+thresholds_m: [0.10, 0.30, 0.70, 1.00]
+
+overbank:
+  enabled: true
+  reference_scenario: sample_0003   # smallest wet volume; revisit at step 3
+
+sampling:
+  expand_steps_km: [0, 2, 5, 10, 15]
+  min_valid_cells: 50
+
+likelihood_bands:
+  very_low: [0.0, 0.2]
+  low: [0.2, 0.4]
+  medium: [0.4, 0.6]
+  high: [0.6, 1.01]

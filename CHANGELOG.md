@@ -4,6 +4,91 @@ All notable changes to TITO Caribbean and Comoros will be documented here.
 
 ---
 
+## [1.5.0] - 2026-08-23 - Morales store live, Haiti stores prepared
+
+### Added
+
+- `fim_store/Guatemala/fim_store_Morales_v1.zarr.zip` (split parts): the
+  Morales (Rio Motagua) scenario store, 200 scenarios, max depth per
+  scenario at 1 cm precision, 5 m grid, EPSG 3857, built from the
+  delivered flood map library (only the MaximumDepth layer of each
+  scenario was used; velocity and time step maps were left out by
+  design). Magnitudes are REAL RainyDay storm totals: the footprint mean
+  of each scenario's 72 band rain geotiff over the Morales model domain
+  (new column footprint_mean_mm in magnitudes_Morales_real.csv; the box
+  means were reverified against the delivered geotiffs, agreement 0.02
+  percent). The site YAML is ACTIVE for pluvial; fluvial still waits for
+  per scenario boundary discharges.
+- `fim_store/Haiti/`: prepared stores for the two Haiti pilots, built the
+  same way but NOT ACTIVE: Riviere Grise (40 of 200 scenarios delivered)
+  and La Quinte (143 usable of 200; sample_0011 excluded, its grid
+  differs from the rest). The Haiti rain scenario netcdf zips contained
+  symlink stubs instead of data, so these stores carry PLACEHOLDER wet
+  volume rank magnitudes (marked in magnitude_source) and their site
+  YAMLs ship with enabled false. magnitude_template_Gris.csv and
+  magnitude_template_LaQuinte.csv list every scenario name for the
+  RainyDay side to fill; attach with fim_utils.store.attach_magnitudes.
+- `fim_config/`: Guatemala_Morales.yaml activated (pluvial), new
+  Haiti_Gris.yaml and Haiti_LaQuinte.yaml (parked), three new AOC
+  polygons.
+- `fim_store/unzip_stores.py`: now joins split store parts
+  (<name>.zarr.zip.part01, .part02, ...) automatically before extracting,
+  and handles both zip layouts.
+- `fim_dev/build_store_from_library_zip.py`: reproducible builder that
+  reads a delivered library zip (sample_NNNN/MaxVeloc-dept.zip layout)
+  directly, keeps only MaximumDepth, quantizes to 1 cm and builds the
+  store; rebuilds any of these three stores from the original deliveries.
+
+### Notes
+
+- Depths in the new stores are stored at 1 cm precision (float32 meters),
+  which more than halves the store sizes with no effect on products (the
+  smallest depth threshold is 10 cm).
+- No config change: Guatemala was already on in fim_regions (Morales
+  activates through its YAML), and Haiti stays off until real magnitudes
+  arrive.
+
+---
+
+## [1.4.0] - 2026-08-20 - Barbados IBF on census enumeration districts
+
+### Added
+
+- `ibf_data/Barbados/Barbados_enum_districts_population.gpkg`: the 609
+  census enumeration districts of Barbados with their 2010 census
+  populations (TOT_PERS, national total 260,535), extracted from the IBF
+  team's own preliminary analysis layer and now the ACTIVE admin source
+  for all 11 Barbados IBF sites. Dasymetric population weights and admin
+  exposure summaries therefore run at ED granularity instead of the 11
+  parishes. The parish layer stays in the repo for reference and coarse
+  reporting. `fim_dev/extract_barbados_ed_population.py` rebuilds the
+  file from the team package.
+
+### Changed
+
+- The 11 `fim_config/ibf/Barbados_*_ibf.yaml` point their admin block at
+  the ED layer (id ED_CODE); Antigua and Barbuda stays on its ADM1
+  parishes (no ED layer exists for it yet). Generator updated.
+
+---
+
+## [1.3.1] - 2026-08-20 - One severity default for every country
+
+### Changed
+
+- IBF severity depths are now the SAME for every country: minor 0.10,
+  significant 0.30, severe 0.70 m, the first three FIM depth thresholds
+  (10, 30, 70, 100 cm). Guatemala moved from severe 0.76 to 0.70 in
+  `ibf_regions`, in its IBF site YAML and in the ibf_utils library
+  default. The 0.76 value came from the IBF team's legacy rasters; the
+  severity matcher still accepts a 76cm grid for the 0.70 target when
+  that is what a folder contains, and 0.76 can be set back in
+  `ibf_regions` to reproduce IBFv1.0 runs. The Guatemala site YAML
+  likelihood cutoff also now shows the user default 0.50 (config
+  overrides applied either way).
+
+---
+
 ## [1.3.0] - 2026-08-20 - IBF static data for the islands, user thresholds, domain fix
 
 ### Added

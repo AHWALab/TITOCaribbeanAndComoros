@@ -18,7 +18,9 @@ OVERRIDE the `thresholds_m` inside the YAMLs here); a top level
 | file | site | hazards | status |
 | --- | --- | --- | --- |
 | `Guatemala_SantaInesPetapa.yaml` | Santa Ines Petapa, cuenca Villalobos | pluvial + fluvial + combined | READY (unzip the store once, see below) |
-| `Guatemala_Morales.yaml` | Morales, Rio Motagua | pluvial + fluvial + combined | prepared, `enabled: false`, waiting for the flood map library |
+| `Guatemala_Morales.yaml` | Morales, Rio Motagua | pluvial (fluvial waits for boundary discharges) | READY since v1.5.0 |
+| `Haiti_Gris.yaml` | Riviere Grise, Port-au-Prince plain | pluvial | prepared, `enabled: false`: placeholder magnitudes |
+| `Haiti_LaQuinte.yaml` | La Quinte, Gonaives | pluvial | prepared, `enabled: false`: placeholder magnitudes |
 | `Antigua_*.yaml` (7 files) | one per ADM1 unit of Antigua and Barbuda | pluvial | READY |
 | `Barbados_*.yaml` (11 files) | one per parish | pluvial | READY |
 

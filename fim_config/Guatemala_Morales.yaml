@@ -1,34 +1,29 @@
-# FIM site: Guatemala, Morales (Rio Motagua). PREPARED, NOT ACTIVE YET.
+# FIM site: Guatemala, Morales (Rio Motagua). ACTIVE since v1.5.0.
 # ------------------------------------------------------------------------------
-# STATUS August 2026: the RainyDay rain scenarios for Morales exist and their
-# storm totals are already tabulated (fim_store/magnitudes_Morales_real.csv,
-# 200 scenarios), but the flood map library (MaximumDepth GeoTIFF per scenario
-# from the hydraulic model) has not been delivered yet. Without it the scenario
-# store cannot be built, so this site is switched off:
-enabled: false
+# STATUS: the flood map library arrived (Morales.zip, 200 scenarios) and the
+# scenario store is built and shipped: fim_store/Guatemala/
+# fim_store_Morales_v1.zarr.zip (200 scenarios, max depth per scenario at
+# 1 cm precision, 5 m grid, EPSG 3857). Magnitudes are REAL RainyDay storm
+# totals: the mean of each scenario's 72 band rain geotiff over the Morales
+# model domain footprint (column footprint_mean_mm in
+# fim_store/Guatemala/magnitudes_Morales_real.csv; the box means in that
+# file were reverified against the delivered geotiffs, agreement 0.02
+# percent). One scenario has zero rain over the footprint (sample_0002,
+# the overbank reference below) and three more sit below 5 mm.
 #
-# TO ACTIVATE THIS SITE once the flood map library arrives:
-#   1. build the store:    python fim_dev/build_store_guatemala.py
-#      (point FIM_LIB_DIR at the Morales MaximumDepth tifs,
-#       FIM_STORE_OUT at fim_store/fim_store_Morales_v1.zarr)
-#   2. attach the real magnitudes from fim_store/magnitudes_Morales_real.csv
-#      and the fluvial boundary discharges, using
-#      fim_dev/attach_real_magnitudes_santaines.py as the template
-#   3. create the area of concern polygon (library extent plus buffer):
-#      fim_config/aoc/Guatemala_Morales_aoc.geojson (EPSG 4326)
-#   4. make sure the Guatemala basin list writes the boundary gauge series
-#      named below (outputts=true)
-#   5. pick the overbank reference scenario (the near zero inflow scenario of
-#      the Morales library; sample_0002 below is a placeholder to revisit)
-#   6. delete the "enabled: false" line above
-#   7. zip the store and commit it: fim_store/fim_store_Morales_v1.zarr.zip
+# FLUVIAL: still off. The delivery contains max depth maps only, no
+# boundary discharge series per scenario, so the fluvial index cannot be
+# attached yet. When the per scenario Motagua inflows arrive, attach them
+# with fim_dev/attach_real_magnitudes_santaines.py as the template and set
+# fluvial.enabled true (the boundary gauge series below must then also be
+# written by the Guatemala basin list, outputts=true).
 region: Guatemala_Morales
 
-outputs_root: outputs/Guatemala
+outputs_root: outputs
 cycle_format: "%Y%m%d.%H%M%S"
 
-aoc_geojson: fim_config/aoc/Guatemala_Morales_aoc.geojson    # to create, step 3
-store: fim_store/Guatemala/fim_store_Morales_v1.zarr                   # to build, step 1
+aoc_geojson: fim_config/aoc/Guatemala_Morales_aoc.geojson
+store: fim_store/Guatemala/fim_store_Morales_v1.zarr
 products_root: outputs/Guatemala/fim_Morales
 
 member:
@@ -40,8 +35,6 @@ trigger:
     - template: "tmp_output_crest_scampr_{qpf}"
     - template: "tmp_output_crest_imerg"
 
-# Morales is also a pluvial plus fluvial site. The fluvial boundary points are
-# the Motagua gauges upstream of the Morales reach.
 hazards:
   pluvial:
     enabled: true
@@ -49,7 +42,7 @@ hazards:
     band: [0.9, 1.2]
     band_wide: [0.8, 1.3]
   fluvial:
-    enabled: true
+    enabled: false      # waiting for per scenario boundary discharges
     stat: max
     method: standardized
     boundary_series:
@@ -63,7 +56,9 @@ thresholds_m: [0.10, 0.30, 0.70, 1.00]
 
 overbank:
   enabled: true
-  reference_scenario: sample_0002    # revisit for the Morales library, step 5
+  # sample_0002 is the zero rain scenario of the library: its map holds the
+  # permanent channel water only, which is exactly the overbank reference
+  reference_scenario: sample_0002
 
 sampling:
   expand_steps_km: [0, 2, 5, 10, 15]

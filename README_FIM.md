@@ -40,8 +40,8 @@ ibf_regions = {                    # per country switch + threshold overrides
     "Guatemala": {"enabled": True,
                   "severity_thresholds_m": {"minor": 0.10,
                                             "significant": 0.30,
-                                            "severe": 0.76},
-                  "hazard_flag_cutoff": 0.30,
+                                            "severe": 0.70},
+                  "hazard_flag_cutoff": 0.50,
                   "reporting_threshold": 0.05},
     ...
 }
@@ -73,10 +73,12 @@ name in `regions_to_run`. Park a single site with a top level
 | Country | Sites | Status |
 |---------|-------|--------|
 | Guatemala | Santa Ines Petapa (pluvial + fluvial + combined) | READY |
-| Guatemala | Morales (prepared, `enabled: false`) | waiting for its flood map library |
+| Guatemala | Morales (pluvial; fluvial waits for boundary discharges) | READY since v1.5.0 |
+| Haiti | Riviere Grise (40 of 200 scenarios) | prepared, parked: placeholder magnitudes |
+| Haiti | La Quinte (143 of 200 scenarios) | prepared, parked: placeholder magnitudes |
 | Antigua and Barbuda | 7 ADM1 units, one store each (pluvial) | READY |
 | Barbados | 11 parishes, one store each (pluvial) | READY |
-| Comoros, Haiti | placeholders under `fim_store/` | waiting for analog maps |
+| Comoros | placeholder under `fim_store/` | waiting for analog maps |
 
 Island unit stores hold the 200 hydrodynamic samples clipped to the unit
 window, max depth from the dmax product (uint8 centimeters, saturated at
@@ -92,8 +94,9 @@ Store zips are plain git files (no LFS involved). Extract them once:
 python fim_store/unzip_stores.py
 ```
 
-The helper extracts every zip that is not yet unzipped and skips the rest,
-so it is always safe to rerun. Requires: pyyaml, numpy, rasterio, zarr (all
+The helper first joins any split store parts (<name>.zarr.zip.part01,
+.part02, ...), then extracts every zip that is not yet unzipped and skips
+the rest, so it is always safe to rerun. Requires: pyyaml, numpy, rasterio, zarr (all
 in `tito_env.yml`).
 
 ## Products
@@ -124,7 +127,9 @@ Coverage: all 18 island unit sites (Antigua and Barbuda, Barbados) plus
 Guatemala Santa Ines Petapa. The island receptor data ships IN the repo
 under `ibf_data/<Country>/` (Overture buildings and roads, admin units with
 census population, GHS BUILT-C classes), so the islands need nothing
-downloaded. Guatemala still uses the external `IBFv10_Guatemala/input_data/`
+downloaded. Barbados exposure runs at the granularity of its 609 census
+enumeration districts (2010 census populations); Antigua and Barbuda uses
+its 8 ADM1 parishes. Guatemala still uses the external `IBFv10_Guatemala/input_data/`
 package next to the repo (too large for git). The environment needs
 geopandas plus pyogrio (declared in `tito_env.yml`); without them IBF logs
 one line and skips.

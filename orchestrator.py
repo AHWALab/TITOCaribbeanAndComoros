@@ -308,7 +308,7 @@ def _run_single_cycle(
         # Forecast phase = Phase C (GFS/StormLab as QPE). Skip if run_LR off.
         if LR_run:
             console.info(
-                "[bold]STEP 8:[/] FIM after forecast (90m only, QPE accums) …")
+                "[bold]STEP 8:[/] FIM after forecast (90m + Barbados 30m, QPE accums) …")
             run_fim_for_cycle(
                 regions_to_run=regions_to_run,
                 cycle=cycle_ts,

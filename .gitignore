@@ -39,6 +39,9 @@ tito_utils/qpe_utils/STREAM-Sat-realtime/tmp*/
 # FIM runtime products (never commit)
 outputs/fim/
 fim_out*/
+# Extracted stores — only the .zarr.zip (or .partNN) ships; unzip locally
+*.zarr/
+**/*.zarr/
 fim_store/*.zarr/
 fim_store/**/*.zarr/
 

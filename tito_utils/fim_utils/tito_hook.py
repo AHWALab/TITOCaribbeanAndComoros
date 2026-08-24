@@ -1,8 +1,9 @@
 """
 TITO orchestrator hook — FIM after the **forecast** EF5 phase only.
 
-Rules (TITO Guatemala Training):
-  - Only regions at **90m** (FIM library / AOC are 90m-scale).
+Rules:
+  - FIM for **90m** (Guatemala, Antigua, Haiti, Comoros) and **30m** (Barbados).
+  - Skip **900m** (Guatemala coarse).
   - Only when a forecast phase ran (``run_LR`` / Phase C GFS or StormLab).
   - Pluvial rain = sum of **qpeaccum** components (no qpfaccum / long-range).
   - Non-fatal: never blocks EF5.
@@ -62,11 +63,11 @@ def discover_fim_configs(
     return out
 
 
-def _regions_at_90m(
+def _regions_fim_eligible(
     regions: Sequence[str],
     config: Any,
 ) -> List[str]:
-    """FIM only for 90m model resolution."""
+    """FIM for 90m and Barbados 30m. Skip 900m."""
     try:
         from tito_utils.ef5.jobs.helpers import resolve_region_resolution
     except Exception:
@@ -81,7 +82,7 @@ def _regions_at_90m(
         else:
             res = (rmap or {}).get(r, model_res)
         res_s = str(res).lower().replace(" ", "")
-        if res_s in ("90m", "90", "0.09km"):
+        if res_s in ("90m", "90", "0.09km", "30m", "30", "0.03km"):
             keep.append(r)
     return keep
 
@@ -467,17 +468,16 @@ def run_fim_for_cycle(
             master_log.info("FIM skipped — forecast_ran=False")
         return []
 
-    # 90m only
-    regions_90 = _regions_at_90m(regions_to_run, config)
+    regions_90 = _regions_fim_eligible(regions_to_run, config)
     skipped = [r for r in regions_to_run if r not in regions_90]
     if skipped:
-        log(f"  FIM: skip non-90m regions: {', '.join(skipped)}")
+        log(f"  FIM: skip 900m / ineligible regions: {', '.join(skipped)}")
         if master_log:
-            master_log.info("FIM skip non-90m: %s", skipped)
+            master_log.info("FIM skip ineligible: %s", skipped)
     if not regions_90:
-        log("  FIM: no 90m regions — skip")
+        log("  FIM: no eligible regions (90m or Barbados 30m) — skip")
         if master_log:
-            master_log.info("FIM skipped — no 90m regions")
+            master_log.info("FIM skipped — no eligible regions")
         return []
 
     # Per-region switches from the main config (fim_regions block), v0.5.
@@ -546,7 +546,7 @@ def run_fim_for_cycle(
             has_hazards = isinstance(raw.get("hazards"), dict)
             log(
                 f"  FIM: running {site} after forecast "
-                f"(cycle={cycle}, 90m, chain={chain}, "
+                f"(cycle={cycle}, {rkey}, chain={chain}, "
                 f"{'P+F' if has_hazards else 'ensemble'}) …"
             )
             log(f"       products → {products_root}")

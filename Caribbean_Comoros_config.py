@@ -16,19 +16,18 @@ model_resolution = "90m"
 #   EF5_conf/templates/basin_list/{Region}_{res}_basin_new.txt
 #   EF5_conf/templates/ef5_{Region}_{res}_control_template.txt (fallback: no _{res}_)
 #   EF5_conf/states|outputs …/{region}_{res}/  (e.g. guatemala_900m)
-region_resolution_map = {"Antigua": "90m", "Guatemala": "90m"}
+region_resolution_map = {"Barbados": "30m", "Antigua": "90m", "Guatemala": "90m"}
 # Optional explicit control-template override (else resolution-aware auto-select):
-# region_template_map = {"Antigua": "ef5_Antigua_90m_control_template.txt"}
-regions_to_run = ["Antigua", "Barbados", "Comoros", "Guatemala", "Haiti"]
-# regions_to_run = ["Antigua"]
+# region_template_map = {"Barbados": "ef5_Barbados_30m_control_template.txt"}
+regions_to_run = ["Barbados"]
 systemModel = "crest"
 systemTimestep = 60 #in minutes
 
 # Coordinates used for generating QPF files and for clipping SCaMPR GeoTIFFs.
 # Use the tightest box that covers ALL regions you are running.
-# For Caribbean-only runs (Antigua, Barbados, Guatemala, Haiti):
-#   xmin=-95.0, xmax=-58.0, ymin=9.0, ymax=24.0
-# For Caribbean + Comoros combined, extend to include Comoros (-12.5 to 45 E, -12.5 to 13 N):
+# Shared IMERG/SCaMPR/GFS clip for all five regions (StormLab still uses
+# its own per-domain yaml: lesserantilles / barbados / guatemala / haiti / comoros).
+#   Guatemala ~-92, Haiti ~-73, Antigua ~-62, Barbados ~-60, Comoros ~44 E / -12 S
 xmin = -95.0
 xmax = 45.0
 ymin = -12.5
@@ -110,11 +109,7 @@ qpf_source = "STORMLAB"
 #     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
 # }
 region_forcing_map = {
-    "Antigua":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
-    # "Barbados":  {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
-    "Guatemala": {"qpe_source": "IMERG", "qpf_source": "GFS"},
-    # "Haiti":     {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
-    # "Comoros":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    "Barbados": {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
 }
 
 # Deterministic IMERG path folders (optional overrides)
@@ -317,7 +312,8 @@ dry_run_hours = 6
 
 # ── FIM (Flood Inundation Mapping) ─────────────────────────────────────────
 # Runs ONLY after the forecast EF5 phase (Phase C: GFS or StormLab as QPE),
-# never after IMERG/STREAM-Sat/warmup alone. 90m regions only.
+# never after IMERG/STREAM-Sat/warmup alone.
+# Eligible: 90m (Guatemala/Antigua/Haiti/Comoros) and Barbados 30m. Skip 900m.
 #
 # Pluvial rain total = sum of qpeaccum grids (no qpfaccum / long-range):
 #   STREAM-Sat + StormLab → SS qpeaccum + StormLab qpeaccum

@@ -75,7 +75,7 @@ def _resolve_region_paths(region_name, model_resolution, basicPath, parametersPa
     wm_file = _select_file(crest_abs, ["crest_Wm*.tif", "crest_wm*.tif"], fallback="crest_Wm.tif")
     b_file = _select_file(crest_abs, ["crest_b*.tif"], fallback="crest_b.tif")
     fc_file = _select_file(crest_abs, ["crest_Fc*.tif", "crest_fc*.tif"], fallback="crest_Fc_Ksat.tif")
-    im_file = _select_file(crest_abs, ["crest_im*.tif", "crest_Im*.tif", "crest_IM*.tif", "*_IM_final.tif", "*_IM*.tif"], fallback=None)
+    im_file = _select_file(crest_abs, ["crest_im*.tif", "crest_Im*.tif", "crest_IM*.tif", "*_IM_final.tif", "*_IM*.tif", "IM*.tif"], fallback=None)
 
     alpha_file = _select_file(
         kw_abs,

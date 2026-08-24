@@ -1,12 +1,12 @@
-pcode,name,island_model,store,magnitude_min_mm,magnitude_max_mm
-BB01,Christ Church,barbados,fim_store_BB01_ChristChurch_v1.zarr,0.0,1014.2
-BB02,Saint Andrew,barbados,fim_store_BB02_SaintAndrew_v1.zarr,0.0,1090.3
-BB03,Saint George,barbados,fim_store_BB03_SaintGeorge_v1.zarr,0.0,953.1
-BB04,Saint James,barbados,fim_store_BB04_SaintJames_v1.zarr,0.0,988.5
-BB05,Saint John,barbados,fim_store_BB05_SaintJohn_v1.zarr,0.0,1033.0
-BB06,Saint Joseph,barbados,fim_store_BB06_SaintJoseph_v1.zarr,0.0,1025.2
-BB07,Saint Lucy,barbados,fim_store_BB07_SaintLucy_v1.zarr,0.0,1106.0
-BB08,Saint Michael,barbados,fim_store_BB08_SaintMichael_v1.zarr,0.0,1034.5
-BB09,Saint Peter,barbados,fim_store_BB09_SaintPeter_v1.zarr,0.0,1050.2
-BB10,Saint Philip,barbados,fim_store_BB10_SaintPhilip_v1.zarr,0.0,1027.8
-BB11,Saint Thomas,barbados,fim_store_BB11_SaintThomas_v1.zarr,0.0,920.2
+pcode,name,island_model,store,magnitude_min_mm,magnitude_max_mm,rain_coverage_pct,rain_cells_covered
+BB01,Christ Church,barbados,fim_store_BB01_ChristChurch_v1.zarr,0.0,1018.0,100.13,6.84
+BB02,Saint Andrew,barbados,fim_store_BB02_SaintAndrew_v1.zarr,0.0,1087.1,100.17,3.91
+BB03,Saint George,barbados,fim_store_BB03_SaintGeorge_v1.zarr,0.0,950.3,99.93,4.94
+BB04,Saint James,barbados,fim_store_BB04_SaintJames_v1.zarr,0.0,989.3,100.42,3.79
+BB05,Saint John,barbados,fim_store_BB05_SaintJohn_v1.zarr,0.0,1038.0,100.07,4.07
+BB06,Saint Joseph,barbados,fim_store_BB06_SaintJoseph_v1.zarr,0.0,1023.7,99.99,2.73
+BB07,Saint Lucy,barbados,fim_store_BB07_SaintLucy_v1.zarr,0.0,1111.7,99.98,3.96
+BB08,Saint Michael,barbados,fim_store_BB08_SaintMichael_v1.zarr,0.0,1038.5,100.23,4.67
+BB09,Saint Peter,barbados,fim_store_BB09_SaintPeter_v1.zarr,0.0,1054.3,99.79,3.91
+BB10,Saint Philip,barbados,fim_store_BB10_SaintPhilip_v1.zarr,0.0,1031.0,100.0,7.16
+BB11,Saint Thomas,barbados,fim_store_BB11_SaintThomas_v1.zarr,0.0,919.7,99.8,3.84

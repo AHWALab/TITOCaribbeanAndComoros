@@ -342,10 +342,10 @@ fim_config_dir = "fim_config"
 #   python fim_store/unzip_stores.py
 fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
 fim_regions = {
-    "Guatemala": {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Santa Ines Petapa READY; Morales waiting for its library
+    "Guatemala": {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Santa Ines Petapa and Morales READY, both pluvial + fluvial
     "Antigua":   {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda, 7 ADM1 unit stores READY
-    "Barbados":  {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # 11 parish stores READY
-    "Comoros":   {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # waiting for analog maps
+    "Barbados":  {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # 11 parish stores READY, real RainyDay rain since v1.7.0
+    "Comoros":   {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # 55 ADM3 municipality stores READY (3 islands), pluvial
     "Haiti":     {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # waiting for analog maps
 }
 
@@ -411,7 +411,7 @@ ibf_regions = {
         "hazard_flag_cutoff": 0.50,
         "reporting_threshold": 0.05,
     },
-    "Comoros":  {"enabled": False},   # no receptor data yet
+    "Comoros":  {"enabled": False},   # FIM is on, IBF waits for receptor data
     "Haiti":    {"enabled": False},   # no receptor data yet
 }
 

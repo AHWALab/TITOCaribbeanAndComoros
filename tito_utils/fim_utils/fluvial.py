@@ -123,8 +123,17 @@ def member_boundary_q(run_dir: str, cycle: str, series_templates, stat: str = "m
                     acc.append(float(row[col]))
                 except (ValueError, IndexError):
                     pass
-            if acc:
-                best = max(acc) if stat == "max" else sum(acc) / len(acc)
+            # NaN aware: EF5 writes nan while the routing warms up, and a
+            # plain max() keeps the FIRST element when comparisons are all
+            # False, so a leading nan used to poison the whole series and
+            # the member silently lost its fluvial match. A gauge that is
+            # nan from end to end (outside the routing domain) is reported
+            # instead of passing a quiet nan downstream.
+            clean = [v for v in acc if v == v]
+            if clean:
+                best = max(clean) if stat == "max" else sum(clean) / len(clean)
+            elif acc:
+                flags.append(f"all_nan_{os.path.basename(path)}")
             else:
                 flags.append("empty_series")
         vals.append(best)

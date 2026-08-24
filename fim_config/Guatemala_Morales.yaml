@@ -1,22 +1,29 @@
-# FIM site: Guatemala, Morales (Rio Motagua). ACTIVE since v1.5.0.
+# FIM site: Guatemala, Morales (Rio Motagua). ACTIVE, pluvial and fluvial.
 # ------------------------------------------------------------------------------
-# STATUS: the flood map library arrived (Morales.zip, 200 scenarios) and the
-# scenario store is built and shipped: fim_store/Guatemala/
-# fim_store_Morales_v1.zarr.zip (200 scenarios, max depth per scenario at
-# 1 cm precision, 5 m grid, EPSG 3857). Magnitudes are REAL RainyDay storm
-# totals: the mean of each scenario's 72 band rain geotiff over the Morales
-# model domain footprint (column footprint_mean_mm in
-# fim_store/Guatemala/magnitudes_Morales_real.csv; the box means in that
-# file were reverified against the delivered geotiffs, agreement 0.02
-# percent). One scenario has zero rain over the footprint (sample_0002,
-# the overbank reference below) and three more sit below 5 mm.
+# STATUS: the flood map library and both indexes are in place.
+#   store   fim_store/Guatemala/fim_store_Morales_v1.zarr.zip (split parts)
+#           200 scenarios, max depth at 1 cm precision, 5 m grid, EPSG 3857
+#   pluvial REAL RainyDay storm totals, mean of each scenario's 72 band rain
+#           geotiff over the model domain footprint (see
+#           fim_store/Guatemala/magnitudes_Morales_real.csv, column
+#           footprint_mean_mm)
+#   fluvial REAL per scenario boundary discharge, the maximum of the CREST
+#           series delivered in GUATEMALA_outputs_Q_MOTAGUA.zip
 #
-# FLUVIAL: still off. The delivery contains max depth maps only, no
-# boundary discharge series per scenario, so the fluvial index cannot be
-# attached yet. When the per scenario Motagua inflows arrive, attach them
-# with fim_dev/attach_real_magnitudes_santaines.py as the template and set
-# fluvial.enabled true (the boundary gauge series below must then also be
-# written by the Guatemala basin list, outputts=true).
+# DATA ISSUE, PLEASE READ: the delivery carries two gauges per scenario but
+# ts.cuenca_motagua_1.crest.csv has NO discharge at all in any of the 200
+# scenarios (Discharge, SM, Fast Flow and Slow Flow are nan on every row;
+# only Precip and PET are filled). That is the signature of a gauge point
+# outside the routed basin. The fluvial index therefore uses
+# cuenca_motagua_2 alone, and boundary_series below lists only that gauge:
+# listing a gauge that returns nan would make FluvialMatcher discard the
+# member with a missing_discharge flag and silently drop the fluvial map.
+# When the modelling side fixes gauge 1, add its series back below, rebuild
+# the index with both columns and this site becomes a two point match like
+# Santa Ines Petapa.
+#
+# The Guatemala basin list must write the gauge series with outputts=true so
+# the runtime member folders contain ts.cuenca_motagua_2.crest.<cycle>.csv.
 region: Guatemala_Morales
 
 outputs_root: outputs
@@ -42,11 +49,11 @@ hazards:
     band: [0.9, 1.2]
     band_wide: [0.8, 1.3]
   fluvial:
-    enabled: false      # waiting for per scenario boundary discharges
+    enabled: true
     stat: max
     method: standardized
     boundary_series:
-      - "ts.cuenca_motagua_1.crest.{cycle}.csv"
+      # only the gauge that carries data; see the note at the top
       - "ts.cuenca_motagua_2.crest.{cycle}.csv"
 
 # USER INPUT: depth thresholds in meters.

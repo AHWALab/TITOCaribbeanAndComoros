@@ -4,6 +4,95 @@ All notable changes to TITO Caribbean and Comoros will be documented here.
 
 ---
 
+## [1.7.0] - 2026-08-23 - Comoros live on 55 municipalities, Barbados on the real rain, Morales fluvial
+
+### Added
+
+- `fim_store/Comoros/`: 55 scenario stores, one per ADM3 municipality, the
+  whole country. Grande Comore 29 units, Anjouan 20, Moheli 6; 200
+  scenarios each, max depth in metres on the island model grid (EPSG:5629,
+  30.57 m) at 1 cm precision, extent mask at 0.05 m. Which rain box feeds
+  which island was established from the geographic bounds of the delivered
+  grids rather than from the folder names: NE_No1 is Grande Comore,
+  SE_No3 is Anjouan, SW_No2 is Moheli, and each island grid sits fully
+  inside its box. Magnitudes are REAL RainyDay storm totals, the area
+  weighted mean of the band summed scenario rain over each municipality
+  polygon, coverage 99.21 to 100.59 percent of the unit area.
+- `fim_config/Comoros_<Unit>.yaml` and `fim_config/aoc/Comoros_*.geojson`:
+  55 site configs and their areas of concern, pluvial only, standard
+  thresholds, overbank reference set to the driest scenario of each unit.
+- `tito_utils/fim_utils/fluvial.py`: the Morales fluvial index, and with
+  it the second Guatemala site that matches on boundary discharge.
+- `fim_dev/build_comoros_stores.py` and `fim_dev/verify_comoros.py`: the
+  builder and the independent verifier used for this release. The verifier
+  goes back to the sources (depth rasters, reference grids, shapefile,
+  magnitude tables) and re-derives every window, order and value rather
+  than trusting the builder.
+- `fim_store/Barbados/magnitudes_Barbados_pcpout_vs_rain.csv`: both
+  magnitude columns per scenario and unit, kept for provenance.
+
+### Changed
+
+- `fim_store/Barbados/`: all 11 parish stores are re-indexed on the REAL
+  RainyDay scenario rain geotiffs, area weighted per parish, the same
+  treatment Antigua and Barbuda received in v1.6.0 and for the same
+  reason: the real time side matches against QPE and QPF rainfall, so the
+  store index must be source rainfall rather than the hydrodynamic model's
+  internal applied field. The previous pcpout magnitudes agree closely
+  (correlation 1.000 per parish, median difference 1.80 to 2.16 percent,
+  largest single difference 27 mm on totals of hundreds of mm), which is a
+  mutual validation of both products. Coverage of the parish area by the
+  weighted rain cells is 99.79 to 100.42 percent.
+- `fim_store/Guatemala/fim_store_Morales_v1.zarr.zip`: the fluvial index is
+  attached, so Morales now runs pluvial, fluvial and combined like Santa
+  Ines Petapa. The index is the per scenario maximum CREST discharge from
+  GUATEMALA_outputs_Q_MOTAGUA.zip, matched standardized nearest neighbour.
+  The store now ships as five parts instead of two, all under 20 MB.
+- `fim_config/Guatemala_Morales.yaml`: fluvial enabled, with the gauge data
+  issue documented at the top of the file.
+- `Caribbean_Comoros_config.py`: `fim_regions["Comoros"]` switched on and
+  the Guatemala and Barbados comments brought up to date. Nothing else in
+  the file changed; `ibf_regions["Comoros"]` stays off because there is no
+  receptor data for the country yet.
+- `fim_store/Barbados/README_Barbados.md`,
+  `fim_store/Guatemala/README_Guatemala.md`, `README_FIM.md`: current
+  status of the three countries touched here.
+
+### Fixed
+
+- `tito_utils/fim_utils/fluvial.py`, `member_boundary_q`: the boundary
+  discharge of a member was reduced with a plain `max()` over the CREST
+  series. EF5 writes `nan` while the routing warms up, and `max()` keeps
+  the FIRST element when every comparison is False, so a series that
+  starts with `nan` returned `nan` for the whole member, `FluvialMatcher`
+  flagged it `missing_discharge` and the member silently lost its fluvial
+  map. The reduction is now nan aware, and a gauge that is nan from end to
+  end is reported with an `all_nan_<file>` flag instead of passing a quiet
+  nan downstream. Found on the real Morales delivery, where the warm up
+  rows are present in every series.
+
+### Data issues found in the deliveries, please read
+
+- `ts.cuenca_motagua_1.crest.csv` (Morales fluvial delivery) carries NO
+  discharge at all: Discharge, SM, Fast Flow and Slow Flow are nan on
+  every row of all 200 scenarios, only Precip and PET are filled. That is
+  the signature of a gauge point outside the routed basin. The fluvial
+  index is therefore built on `cuenca_motagua_2` alone and the site YAML
+  lists only that gauge; listing a gauge that returns nan would make the
+  matcher discard the member. When the modelling side fixes gauge 1 the
+  index can be rebuilt with both columns.
+- Mledjele (KM331, Moheli) also administers the Nioumachoua islets off the
+  south coast, which lie outside the Moheli hydrodynamic model domain, so
+  4.89 km2 of the commune's 37.17 km2 has no depth data (86.85 percent
+  covered). The commune's mainland, 31.90 km2, is fully covered. The note
+  is repeated at the top of its site YAML and in `README_Comoros.md`.
+  Every other municipality of the country is covered in full.
+- Two delivered Comoros depth rasters, `max_moheli_59_rev.tif` and
+  `max_anjouan_108pr.tif`, are byte identical duplicates of scenarios
+  already present; they were skipped rather than counted twice.
+
+---
+
 ## [1.6.0] - 2026-08-23 - Antigua and Barbuda indexed on the real RainyDay rain, Barbuda area of concern fixed
 
 ### Changed

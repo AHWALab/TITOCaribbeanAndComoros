@@ -73,22 +73,26 @@ name in `regions_to_run`. Park a single site with a top level
 | Country | Sites | Status |
 |---------|-------|--------|
 | Guatemala | Santa Ines Petapa (pluvial + fluvial + combined) | READY |
-| Guatemala | Morales (pluvial; fluvial waits for boundary discharges) | READY since v1.5.0 |
+| Guatemala | Morales (pluvial + fluvial + combined) | READY, fluvial since v1.7.0 |
 | Haiti | Riviere Grise (40 of 200 scenarios) | prepared, parked: placeholder magnitudes |
 | Haiti | La Quinte (143 of 200 scenarios) | prepared, parked: placeholder magnitudes |
 | Antigua and Barbuda | 7 ADM1 units, one store each (pluvial) | READY |
 | Barbados | 11 parishes, one store each (pluvial) | READY |
-| Comoros | placeholder under `fim_store/` | waiting for analog maps |
+| Comoros | 55 ADM3 municipalities, one store each (pluvial) | READY since v1.7.0 |
 
-Island unit stores hold the 200 hydrodynamic samples clipped to the unit
-window, max depth from the dmax product (uint8 centimeters, saturated at
-2.55 m) and real pluvial magnitudes, so matching is local to every unit.
-Antigua and Barbuda is indexed on the RainyDay scenario rain geotiffs
-(area weighted mean of the storm total over each unit polygon, since
-v1.6.0); Barbados still uses the pcpout storm totals until its rain
-geotiffs arrive. Rebuild either with
+Administrative unit stores hold the 200 hydrodynamic samples clipped to
+the unit window, max depth from the model, and real pluvial magnitudes, so
+matching is local to every unit. All three countries built this way,
+Antigua and Barbuda (7 units), Barbados (11 parishes) and Comoros (55
+municipalities on three islands), are indexed on the RainyDay SCENARIO
+RAIN geotiffs: the magnitude of a unit is the area weighted mean of the
+band summed storm total over the unit polygon, so each rain cell counts in
+proportion to the share of the cell inside the polygon. With a rain grid
+of about 3 km and units of a few cells, a plain cell centre mask would
+bias or empty the small ones. Rebuild with
 fim_dev/rain_magnitudes_from_geotiffs.py.
-`fim_store/<Country>/manifest_*.csv` lists every unit and its store.
+`fim_store/<Country>/manifest_*.csv` lists every unit, its store, its
+magnitude range and its coverage.
 
 ## One time setup after clone or pull
 
@@ -170,3 +174,8 @@ python -m tito_utils.ibf_utils.pipeline_ibf \
   and Barbuda plus Barbados stores from the ADM1 shapefile and the dmax and
   pcpout rasters; see the notes at the top of the script and
   `fim_store/<Country>/README_<Country>.md`.
+- Comoros municipalities: `fim_dev/build_comoros_stores.py` builds all 55
+  ADM3 stores, site YAMLs and areas of concern from the three island
+  models, and `fim_dev/verify_comoros.py` checks the result back against
+  the sources (windows, order, values, configs) without reusing anything
+  the builder produced.

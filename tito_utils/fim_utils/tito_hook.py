@@ -266,6 +266,17 @@ def run_ibf_for_site(
         if applied:
             log(f"       IBF overrides from ibf_regions: {', '.join(applied)}")
 
+        # Cycle-first, next to FIM:
+        #   outputs/<cycle>/<rkey>/ibf/<Site>/
+        rkey = _region_key(region, config)
+        data_root = getattr(config, "dataPath", "outputs/") if config else "outputs/"
+        if not os.path.isabs(data_root):
+            data_root = os.path.join(root, str(data_root).rstrip("/\\"))
+        ibf_out = os.path.join(data_root, cycle, rkey, "ibf", site_stem)
+        cfg.setdefault("outputs", {})
+        cfg["outputs"]["root"] = ibf_out
+        cfg["outputs"]["append_cycle"] = False
+
         mode = (cfg.get("fim_products") or {}).get("mode", "combined")
         products_dir = os.path.join(products_root, mode)
         if not os.path.isabs(products_dir):
@@ -547,6 +558,10 @@ def run_fim_for_cycle(
             if has_hazards:
                 from .pipeline_pf import load_pf_config, run_pf_cycle
                 cfg = load_pf_config(yml, root=root)
+                cfg["outputs_root"] = (
+                    data_root if os.path.isabs(data_root)
+                    else os.path.join(root, str(data_root).rstrip("/\\"))
+                )
                 cfg["products_root"] = products_root
                 cfg["append_cycle"] = False
                 _thr = _region_thresholds(region, config)
@@ -562,6 +577,10 @@ def run_fim_for_cycle(
             else:
                 from .pipeline_ensemble import load_ensemble_config, run_ensemble_cycle
                 cfg = load_ensemble_config(yml, root=root)
+                cfg["outputs_root"] = (
+                    data_root if os.path.isabs(data_root)
+                    else os.path.join(root, str(data_root).rstrip("/\\"))
+                )
                 cfg["products_root"] = products_root
                 cfg["append_cycle"] = False
                 _apply_chain_templates(cfg, chain)
@@ -593,7 +612,7 @@ def run_fim_for_cycle(
 
             # IBF receptor products, chained on this site's fresh FIM
             # probabilities (config gated; see run_ibf_for_site).
-            if status not in ("error", "no_runs"):
+            if status not in ("error", "no_runs", "quiet"):
                 ibf_summary = run_ibf_for_site(
                     site_stem=site_stem,
                     region=region,

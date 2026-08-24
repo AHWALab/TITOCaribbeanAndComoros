@@ -24,6 +24,8 @@ script silently fell back to a live Overture download.
 import hashlib
 import json
 import os
+import shutil
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -35,6 +37,36 @@ except ImportError as exc:  # pragma: no cover
 
 from .config import resolve
 from .sampling import sample_raster
+
+
+def write_gpkg_layers(path, layers):
+    """Write named GeoDataFrame layers to one GeoPackage.
+
+    SQLite/GPKG ``Failed to start transaction`` is common on NFS and Docker
+    bind mounts. Build the file in local temp, then copy the finished gpkg.
+    """
+    dest = os.path.abspath(path)
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    fd, tmp = tempfile.mkstemp(suffix=".gpkg")
+    os.close(fd)
+    os.remove(tmp)
+    extras = (tmp + "-wal", tmp + "-shm", tmp + "-journal")
+    try:
+        os.environ.setdefault("OGR_SQLITE_JOURNAL", "DELETE")
+        first = True
+        for name, gdf in layers:
+            kwargs = {"layer": name, "driver": "GPKG"}
+            if not first:
+                kwargs["mode"] = "a"
+            gdf.to_file(tmp, **kwargs)
+            first = False
+        if os.path.exists(dest):
+            os.remove(dest)
+        shutil.copy2(tmp, dest)
+    finally:
+        for p in (tmp,) + extras:
+            if os.path.exists(p):
+                os.remove(p)
 
 
 def _cache_key(cfg, domain) -> str:
@@ -242,9 +274,11 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     bldgs = bldgs[[c for c in keep_b if c in bldgs.columns]]
     roads = roads[[c for c in keep_r if c in roads.columns]]
 
-    bldgs.to_file(cache_gpkg, layer="buildings", driver="GPKG")
-    roads.to_file(cache_gpkg, layer="roads", driver="GPKG")
-    admin.to_file(cache_gpkg, layer="admin", driver="GPKG")
+    write_gpkg_layers(cache_gpkg, (
+        ("buildings", bldgs),
+        ("roads", roads),
+        ("admin", admin),
+    ))
     manifest = {
         "region": cfg["region"], "cache_key": key,
         "domain_bounds": list(domain.bounds), "domain_crs": str(domain.crs),

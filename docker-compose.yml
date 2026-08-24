@@ -23,6 +23,9 @@ services:
       #     survive container restarts) ──────────────────────────────────
       - ./EF5_conf:/app/EF5_conf:rw
       - ./outputs:/app/outputs:rw
+      - ./fim_config:/app/fim_config:ro
+      - ./fim_store:/app/fim_store:ro
+      - ./ibf_data:/app/ibf_data:ro
       - ./EF5:/app/EF5:ro
       # Mount config so edits apply without rebuilding the image
       - ./Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro
@@ -57,7 +60,7 @@ services:
 
     # ── Cron scheduling (use external cron + docker run for hourly runs) ──
     # For hourly operational mode, add this to crontab:
-    #   7 * * * * cd /path/to/TITO_GuatemalaTraining && docker-compose run --rm tito operational
+    #   7 * * * * cd /path/to/TITOCaribbeanAndComoros && docker-compose run --rm tito operational
 
   # ── Optional: EF5 builder service ────────────────────────────────────
   ef5-builder:

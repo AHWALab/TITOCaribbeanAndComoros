@@ -16,12 +16,11 @@ model_resolution = "90m"
 #   EF5_conf/templates/basin_list/{Region}_{res}_basin_new.txt
 #   EF5_conf/templates/ef5_{Region}_{res}_control_template.txt (fallback: no _{res}_)
 #   EF5_conf/states|outputs …/{region}_{res}/  (e.g. guatemala_900m)
-# region_resolution_map = {"Guatemala": "900m", "Barbados": "30m"}
-region_resolution_map = {"Guatemala": "90m"}
+region_resolution_map = {"Antigua": "90m", "Guatemala": "90m"}
 # Optional explicit control-template override (else resolution-aware auto-select):
-# region_template_map = {"Guatemala": "ef5_Guatemala_900m_control_template.txt"}
+# region_template_map = {"Antigua": "ef5_Antigua_90m_control_template.txt"}
 regions_to_run = ["Antigua", "Barbados", "Comoros", "Guatemala", "Haiti"]
-# regions_to_run = ["Guatemala"]
+# regions_to_run = ["Antigua"]
 systemModel = "crest"
 systemTimestep = 60 #in minutes
 
@@ -91,13 +90,6 @@ qpf_source = "STORMLAB"
 # Values can use either qpe/qpf or qpe_source/qpf_source keys.
 # Example:
 # region_forcing_map = {
-#     "Antigua":   {"qpe_source": "SCAMPR", "qpf_source": "GFS"},  # Caribbean — SCaMPR
-#     "Barbados":  {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
-#     "Guatemala": {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
-#     "Haiti":     {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
-#     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
-# }
-region_forcing_map = {
     # All forecast products run as QPE (Simulation_QPE) — never long-range PRECIPFORECAST.
     #
     # STREAM-Sat + StormLab (3-phase):
@@ -109,7 +101,16 @@ region_forcing_map = {
     #   A) IMERG QPE + dry → states/imerg/<region_res>/
     #   B) SCaMPR gap QPE + dry → states/scampr_det/<region_res>/  (ops + IMERG_SCAMPR only)
     #   C) GFS as QPE + dry from A or B states (no state save)
-    # "Antigua":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    
+    # examples
+#     "Antigua":   {"qpe_source": "SCAMPR", "qpf_source": "GFS"},  # Caribbean — SCaMPR
+#     "Barbados":  {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
+#     "Guatemala": {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
+#     "Haiti":     {"qpe_source": "SCAMPR", "qpf_source": "GFS"},
+#     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
+# }
+region_forcing_map = {
+    "Antigua":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
     # "Barbados":  {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
     "Guatemala": {"qpe_source": "IMERG", "qpf_source": "GFS"},
     # "Haiti":     {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
@@ -162,7 +163,7 @@ warmup_days = 160
 
 # Parallel IMERG download threads (warmup + get_gpm_files batch).
 # 0 / unset → auto min(16, cpu*2).  Also: export IMERG_MAX_WORKERS=16
-imerg_max_workers = 12
+imerg_max_workers = 8
 
 # Per-region precipitation source for warmup runs.
 # Options: "IMERG" (default if region not listed), "HSAF"

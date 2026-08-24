@@ -20,7 +20,7 @@ import sys
 
 from .config import load_ibf_config, resolve, RISK_LEVELS
 from .domain import FimDomain
-from .receptors import prepare_receptors
+from .receptors import prepare_receptors, write_gpkg_layers
 from .sampling import discover_probability_products, sample_probabilities
 from .classify import match_severity_layers, classify_features, summarize_admin
 
@@ -64,11 +64,11 @@ def run_ibf_cycle(cfg, cycle: str = None, products_dir: str = None,
     out_dir = os.path.join(out_root, cycle) if cfg["outputs"]["append_cycle"] else out_root
     os.makedirs(out_dir, exist_ok=True)
     gpkg = os.path.join(out_dir, f"ibf_receptors.{cycle}.gpkg")
-    if os.path.exists(gpkg):
-        os.remove(gpkg)
-    bldgs.to_file(gpkg, layer="buildings_ibf", driver="GPKG")
-    roads.to_file(gpkg, layer="roads_ibf", driver="GPKG")
-    admin.to_file(gpkg, layer="admin_ibf", driver="GPKG")
+    write_gpkg_layers(gpkg, (
+        ("buildings_ibf", bldgs),
+        ("roads_ibf", roads),
+        ("admin_ibf", admin),
+    ))
     admin.drop(columns="geometry").to_csv(
         os.path.join(out_dir, f"ibf_admin_summary.{cycle}.csv"), index=False)
 

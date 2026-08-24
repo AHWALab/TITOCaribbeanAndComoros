@@ -78,8 +78,9 @@ classification:
   hazard_flag_cutoff: 0.50
 
 outputs:
-  root: outputs/ibf/{{region}}
-  append_cycle: true
+  # Orchestrated runs override to outputs/<cycle>/<rkey>/ibf/<Site>/
+  root: outputs
+  append_cycle: false
 """
 
 

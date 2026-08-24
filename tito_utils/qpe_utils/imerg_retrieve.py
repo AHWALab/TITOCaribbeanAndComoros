@@ -204,15 +204,21 @@ def _imerg_one_timestep(
         WriteGrid(gridOutName, NewGrid, nx, ny, gt, proj)
         return "ok"
     except Exception as e:
+        msg = f"    ERROR downloading {filename}: {e}"
         try:
             from tito_utils.logging_utils import debug_print, is_debug
             if is_debug():
-                msg = f"    ERROR downloading {filename}: {e}"
                 if print_lock:
                     with print_lock:
                         debug_print(msg)
                 else:
                     debug_print(msg)
+            elif print_lock is not None:
+                with print_lock:
+                    n = getattr(_imerg_one_timestep, "_err_shown", 0)
+                    if n < 8:
+                        print(msg, flush=True)
+                        _imerg_one_timestep._err_shown = n + 1
         except Exception:
             pass
         return "error"
@@ -380,7 +386,7 @@ def _get_available_files_for_range(server, email_gpm, start_date, end_date, Hind
     return available_files
 
 
-def get_file(filename, server, email_gpm, local_path=None):
+def get_file(filename, server, email_gpm, local_path=None, retries=4):
    ''' Download an IMERG file from the PPS HTTPS server using requests.
    Uses the same auth pattern as retrieve_imerg_files() (email as both user
    and password).  requests follows redirects automatically, which curl
@@ -388,17 +394,38 @@ def get_file(filename, server, email_gpm, local_path=None):
    output file.
    When local_path is provided the file is saved there; otherwise it is saved
    to the current working directory using the bare filename.
+   Retries transient PPS failures (429/5xx/timeouts) with backoff.
    '''
-   # Handle trailing slash to avoid double slashes in URL
+   import time
    server = server.rstrip('/')
    url = server + '/' + filename
    if local_path is None:
        local_path = os.path.basename(filename)
-   with requests.get(url, auth=(email_gpm, email_gpm), stream=True) as r:
-       r.raise_for_status()
-       with open(local_path, 'wb') as f:
-           for chunk in r.iter_content(chunk_size=65536):
-               f.write(chunk)
+   last_exc = None
+   for attempt in range(retries):
+       try:
+           with requests.get(
+               url, auth=(email_gpm, email_gpm), stream=True, timeout=60,
+           ) as r:
+               if r.status_code in (429, 500, 502, 503, 504):
+                   raise requests.HTTPError(f"{r.status_code} {r.reason}", response=r)
+               r.raise_for_status()
+               with open(local_path, 'wb') as f:
+                   for chunk in r.iter_content(chunk_size=65536):
+                       f.write(chunk)
+           if os.path.getsize(local_path) <= 0:
+               raise IOError(f"empty download: {filename}")
+           return
+       except (requests.RequestException, IOError, OSError) as exc:
+           last_exc = exc
+           if os.path.isfile(local_path):
+               try:
+                   os.remove(local_path)
+               except OSError:
+                   pass
+           if attempt + 1 < retries:
+               time.sleep(min(30.0, 1.5 * (2 ** attempt)))
+   raise last_exc
 
 
 def ReadandWarp(gridFile, xmin, ymin, xmax, ymax):

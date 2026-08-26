@@ -427,9 +427,6 @@ def convert_stormlab_nc_to_geotiffs(
                 continue
             out_name = f"{tif_naming}.{vt.strftime('%Y%m%d%H')}00.tif"
             out_path = os.path.join(member_dir, out_name)
-            if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
-                ok += 1
-                continue
             try:
                 arr = data_all[m_idx, t_idx, :, :].astype(np.float64)
                 arr = np.where(np.isnan(arr), FILL_VALUE, arr)

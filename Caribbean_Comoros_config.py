@@ -343,7 +343,7 @@ fim_regions = {
     "Antigua":   {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Antigua and Barbuda, 7 ADM1 unit stores READY
     "Barbados":  {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # 11 parish stores READY, real RainyDay rain since v1.7.0
     "Comoros":   {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # 55 ADM3 municipality stores READY (3 islands), pluvial
-    "Haiti":     {"enabled": False, "thresholds_m": fim_default_thresholds_m},  # waiting for analog maps
+    "Haiti":     {"enabled": True,  "thresholds_m": fim_default_thresholds_m},  # Riviere Grise and La Quinte READY, pluvial + fluvial
 }
 
 # ── IBF (Impact Based Forecasting receptor products) ───────────────────────
@@ -409,7 +409,7 @@ ibf_regions = {
         "reporting_threshold": 0.05,
     },
     "Comoros":  {"enabled": False},   # FIM is on, IBF waits for receptor data
-    "Haiti":    {"enabled": False},   # no receptor data yet
+    "Haiti":    {"enabled": False},   # FIM is on, IBF waits for receptor data
 }
 
 # WRF configuration (used when run_LR=True).

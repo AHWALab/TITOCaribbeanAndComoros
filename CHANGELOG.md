@@ -4,6 +4,98 @@ All notable changes to TITO Caribbean and Comoros will be documented here.
 
 ---
 
+## [1.8.0] - 2026-08-26 - Haiti live: 200 scenarios at both sites, real rain and real discharge, lighter stores
+
+### Fixed
+
+- THE REPORTED PROBLEM. `fim_store/Haiti/*`: the Haiti stores carried
+  PLACEHOLDER rank magnitudes and both site YAMLs were switched off, which
+  is why `magnitude_mm` came back empty in the Haiti magnitude tables and
+  why `fim_config/Haiti_Gris.yaml` and `fim_config/Haiti_LaQuinte.yaml`
+  looked disabled. The first rain delivery for Haiti consisted of symlink
+  stubs, so no real storm totals existed at the time. The second delivery
+  is complete and real, and both stores are rebuilt from it with REAL
+  magnitudes and REAL boundary discharge for every scenario, both sites
+  active.
+
+### Changed
+
+- Both Haiti stores hold ALL 200 scenarios and BOTH indexes
+  (`magnitude_mm` and `fluvial_q`), so each site runs pluvial, fluvial and
+  combined exactly like the Guatemala basins. Gris matches on one gauge
+  (cuenca_griss), La Quinte on two (cuenca_laquinta_1 and _2),
+  standardized nearest neighbour. No gauge is nan anywhere.
+- GRIS PLACEHOLDERS. Only 50 of the 200 Gris flood maps were delivered
+  (samples 0001 to 0050). By request the store still carries all 200
+  scenarios: the 150 undelivered ones hold a COPY of `sample_0004`'s map
+  (a real delivered Gris flood, 2.63 m max depth) as a stand in, listed in
+  the store attribute `placeholder_scenarios` and marked in `index.csv`
+  and `magnitudes_Gris.csv`. Their magnitudes and discharges are real;
+  only the map is borrowed. Products matched to those scenarios show
+  sample_0004's flooding until the real maps arrive; rerunning
+  `fim_dev/build_haiti_stores.py` then replaces them with nothing else to
+  change.
+- STORE FORMAT: depth is now stored as uint16 CENTIMETRES with a
+  `depth_scale` attribute (0.01) and zstd level 19.
+  `FimStore.depth()` applies the scale, so every consumer keeps seeing
+  float32 metres. The data was at 1 cm precision either way, so this is
+  lossless relative to the previous format and about a third smaller:
+  La Quinte 458 MB instead of 671, Gris 117 MB for 200 scenarios instead
+  of 138 for 50. Older stores without the attribute read exactly as
+  before; verified by rerunning the Comoros and Morales end to end
+  harnesses against their existing float32 stores through the patched
+  reader.
+- `fim_store/Haiti/fim_store_Haiti_LaQuinte_v1.zarr.zip`: rebuilt with ALL
+  200 scenarios (was 143). `sample_0011` is no longer excluded: it arrived
+  on a 1367 x 1423 grid at 5 m rather than 3417 x 3557 at 2 m, but with
+  the same origin and the same extent, so it is a coarser rendering of the
+  same domain and is resampled nearest neighbour onto the 2 m site grid
+  (recorded in the store's `resampling_notes` attribute).
+- `fim_config/Haiti_Gris.yaml`, `fim_config/Haiti_LaQuinte.yaml`: active,
+  both hazards on, overbank references on the lowest rain magnitude
+  scenario of each library, delivery and placeholder notes in the headers.
+- `Caribbean_Comoros_config.py`: `fim_regions["Haiti"]` switched on.
+  `ibf_regions["Haiti"]` stays off, there is no receptor data for Haiti.
+- `tito_utils/fim_utils/store.py`: `FimStore.depth()` understands the
+  `depth_scale` attribute (see STORE FORMAT above); everything else in the
+  module is unchanged.
+- `fim_store/Haiti/README_Haiti.md`, `README_FIM.md`: current status.
+
+### Added
+
+- `fim_store/Haiti/magnitudes_Gris.csv` and `magnitudes_LaQuinte.csv`: the
+  full 200 row tables with `storm_id`, `scenario_name`, `magnitude_mm`
+  (filled), `map_status` (real or placeholder) and the per gauge maximum
+  discharge. They replace the old `magnitude_template_*.csv` files, whose
+  magnitude column was empty by design.
+- `fim_dev/build_haiti_stores.py`, `fim_dev/verify_haiti.py`,
+  `fim_dev/run_haiti_e2e.py`: builder, independent verifier and end to end
+  harness. The builder reads ONLY `MaximumDepth.tif` out of each sample's
+  nested `MaxVeloc-dept.zip` by byte range, so the 457 GB of Haiti
+  deliveries were never extracted; 11.2 GB of depth members were read and
+  nothing else was touched.
+- `fim_dev/haiti_extract/`: the byte range extraction scripts (standard
+  library plus numpy) plus `make_archive.py`, which wrote the kept maximum
+  depth layers as compact georeferenced GeoTIFFs (uint16 centimetres,
+  deflate, verified pixel exact against the deliveries) so the two
+  delivery zips could be deleted locally. The originals remain on
+  ownCloud.
+
+### Data issues found in the deliveries, please read
+
+- GRIS COVERAGE. 50 of the nominal 200 samples were delivered (0001 to
+  0050). See GRIS PLACEHOLDERS above for how the store bridges the gap
+  until the rest arrive.
+- Four of the 50 delivered Gris maps (samples 0003, 0010, 0027, 0028) are
+  byte identical and fully dry.
+- Two pairs of La Quinte maps are byte identical in the delivery, 0002
+  with 0007 and 0181 with 0182.
+- Maximum depths reach 16.9 m at Gris and 12.6 m at La Quinte. Those are
+  the delivered values, carried through unchanged, but they are worth a
+  sanity check on the modelling side.
+
+---
+
 ## [1.7.0] - 2026-08-23 - Comoros live on 55 municipalities, Barbados on the real rain, Morales fluvial
 
 ### Added

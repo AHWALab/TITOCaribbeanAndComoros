@@ -74,8 +74,8 @@ name in `regions_to_run`. Park a single site with a top level
 |---------|-------|--------|
 | Guatemala | Santa Ines Petapa (pluvial + fluvial + combined) | READY |
 | Guatemala | Morales (pluvial + fluvial + combined) | READY, fluvial since v1.7.0 |
-| Haiti | Riviere Grise (40 of 200 scenarios) | prepared, parked: placeholder magnitudes |
-| Haiti | La Quinte (143 of 200 scenarios) | prepared, parked: placeholder magnitudes |
+| Haiti | Riviere Grise (pluvial + fluvial + combined; 50 real maps, 150 placeholder) | READY since v1.8.0 |
+| Haiti | La Quinte (pluvial + fluvial + combined, all 200 real) | READY since v1.8.0 |
 | Antigua and Barbuda | 7 ADM1 units, one store each (pluvial) | READY |
 | Barbados | 11 parishes, one store each (pluvial) | READY |
 | Comoros | 55 ADM3 municipalities, one store each (pluvial) | READY since v1.7.0 |
@@ -179,3 +179,11 @@ python -m tito_utils.ibf_utils.pipeline_ibf \
   models, and `fim_dev/verify_comoros.py` checks the result back against
   the sources (windows, order, values, configs) without reusing anything
   the builder produced.
+- Haiti basins: `fim_dev/build_haiti_stores.py` builds both Haiti stores
+  with their pluvial and fluvial indexes, reading ONLY `MaximumDepth.tif`
+  out of each sample's nested `MaxVeloc-dept.zip` by byte range so the
+  457 GB of deliveries were never extracted; `fim_dev/verify_haiti.py`
+  and `fim_dev/run_haiti_e2e.py` check the result and run both sites end
+  to end through the shipped pipeline. Since v1.8.0 new stores hold depth
+  as uint16 centimetres with a `depth_scale` attribute; `FimStore.depth()`
+  returns metres either way.

@@ -1,31 +1,31 @@
-# FIM site: Haiti, La Quinte (Gonaives). PREPARED, NOT ACTIVE: placeholder magnitudes.
+# FIM site: Haiti, La Quinte (Gonaives). ACTIVE, pluvial and fluvial.
 # ------------------------------------------------------------------------------
-# STATUS: the flood map library arrived (LaQuinte.zip, 143 usable scenarios of
-# the nominal 200) and the scenario store is built and shipped:
-# fim_store/Haiti/fim_store_Haiti_LaQuinte_v1.zarr.zip (max depth per scenario at
-# 1 cm precision, 2 m grid, EPSG 32618).
+# STATUS: rebuilt August 2026 from the second delivery. Complete and real.
+#   store    fim_store/Haiti/fim_store_Haiti_LaQuinte_v1.zarr.zip (split parts)
+#            ALL 200 scenarios, max depth at 1 cm precision (uint16
+#            centimetres in the store), 2 m grid, EPSG 32618, 3417 x 3557
+#   pluvial  REAL RainyDay storm totals, the area weighted mean of the band
+#            summed scenario rain geotiff over the model footprint
+#            (laquinta_haiti_rain_scenarios_geotiff_files.zip, 200 scenarios,
+#            72 bands), 0.00 to 1070.1 mm. Full table:
+#            fim_store/Haiti/magnitudes_LaQuinte.csv
+#   fluvial  REAL per scenario boundary discharge, the maximum of the CREST
+#            series delivered in HAITI_outputs_Q_LAQUINTA.zip (two gauges,
+#            cuenca_laquinta_1 and _2, 0 to 357 and 0 to 10558 m3/s), matched
+#            standardized nearest neighbour on both, the same two point setup
+#            as Guatemala Santa Ines Petapa
 #
-# WHY DISABLED: the rain scenario netcdf zip for this site contains SYMLINK
-# STUBS, not data, so no real RainyDay storm totals exist yet. The store
-# carries PLACEHOLDER magnitudes (wet volume ranks 1..N, clearly marked in
-# its magnitude_source attribute). Matching against real rainfall would be
-# meaningless, so keep this site off until the real totals arrive.
+# ONE DELIVERY ODDITY: sample_0011 arrived on a 1367 x 1423 grid at 5 m
+# instead of 3417 x 3557 at 2 m. Same origin and same extent, so it is a
+# coarser rendering of the same domain rather than a different area; it is
+# resampled nearest neighbour onto the 2 m site grid and kept, and the note
+# is recorded in the store's resampling_notes attribute. It was excluded
+# outright in the previous build. Two pairs of scenarios are byte identical
+# in the delivery (0002 with 0007, and 0181 with 0182).
 #
-# TO ACTIVATE:
-#   1. get the real rain scenario netcdfs (or a storm total table) from the
-#      RainyDay side; fim_store/Haiti/magnitude_template_LaQuinte.csv lists
-#      every scenario name and which samples are in the store
-#   2. attach the totals: python -c "from tito_utils.fim_utils.store import
-#      attach_magnitudes; attach_magnitudes('fim_store/Haiti/fim_store_Haiti_LaQuinte_v1.zarr',
-#      {...storm_id: magnitude_mm...}, source='rainyday')"
-#   3. revisit the overbank reference below (currently the smallest wet
-#      volume scenario, sample_0002)
-#   4. delete the "enabled: false" line and switch Haiti on in fim_regions
-# NOTE: 144 of the 200 samples were delivered; sample_0011 was EXCLUDED
-# because its grid differs from the rest (1367x1423 vs 3417x3557), and
-# samples 93-99, 151-181 (with gaps) are missing from the delivery.
-enabled: false
-
+# The Haiti basin list must write both gauge series with outputts=true so the
+# runtime member folders contain ts.cuenca_laquinta_1.crest.<cycle>.csv and
+# ts.cuenca_laquinta_2.crest.<cycle>.csv.
 region: Haiti_LaQuinte
 
 outputs_root: outputs
@@ -51,13 +51,22 @@ hazards:
     band: [0.9, 1.2]
     band_wide: [0.8, 1.3]
   fluvial:
-    enabled: false
+    enabled: true
+    stat: max
+    method: standardized
+    boundary_series:
+      - "ts.cuenca_laquinta_1.crest.{cycle}.csv"
+      - "ts.cuenca_laquinta_2.crest.{cycle}.csv"
 
+# USER INPUT: depth thresholds in meters.
+# NOTE: in orchestrated runs the fim_regions block in
+# Caribbean_Comoros_config.py OVERRIDES this thresholds list.
 thresholds_m: [0.10, 0.30, 0.70, 1.00]
 
 overbank:
   enabled: true
-  reference_scenario: sample_0002   # smallest wet volume; revisit at step 3
+  # lowest rain magnitude of the library (0.00 mm), map is baseline water only
+  reference_scenario: sample_0007
 
 sampling:
   expand_steps_km: [0, 2, 5, 10, 15]

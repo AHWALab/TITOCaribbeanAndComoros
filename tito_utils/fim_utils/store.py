@@ -5,7 +5,9 @@ storm and only that storm's depth chunk is read from disk. No netCDF, no
 whole-catalog loads, memory stays flat regardless of library size.
 
 Layout of  <store>.zarr :
-    depth        (storm, y, x)  float32, metres, chunks (1, ny, nx)
+    depth        (storm, y, x)  float32 metres, or uint16 centimetres with
+                                attrs depth_scale=0.01 (since v1.8.0); the
+                                reader always returns metres. chunks (1, ny, nx)
     extent       (storm, y, x)  uint8 0/1 (depth >= extent_threshold_m)
     magnitude_mm (storm,)       float64, 24-h rainfall of each storm
     storm_id     (storm,)       fixed-length strings
@@ -73,10 +75,22 @@ class FimStore:
         return self.storm_id.index(str(storm_id))
 
     def depth(self, idx) -> np.ndarray:
-        """Depth map of one storm (reads exactly one chunk)."""
+        """Depth map of one storm in METRES float32 (reads exactly one chunk).
+
+        Since v1.8.0 a store may hold depth as quantized integers (uint16
+        centimetres) with a depth_scale attribute, which halves the raw
+        bytes and compresses better than float32 of the same values. The
+        scale is applied here, so every consumer keeps seeing metres.
+        Stores without the attribute (all pre-1.8 stores) pass through
+        unchanged.
+        """
         if isinstance(idx, str):
             idx = self.index_of(idx)
-        return np.asarray(self.root["depth"][idx])
+        a = np.asarray(self.root["depth"][idx])
+        scale = self.attrs.get("depth_scale")
+        if scale:
+            return a.astype("float32") * float(scale)
+        return a
 
     def extent(self, idx) -> np.ndarray:
         if isinstance(idx, str):

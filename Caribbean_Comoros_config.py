@@ -16,10 +16,16 @@ model_resolution = "90m"
 #   EF5_conf/templates/basin_list/{Region}_{res}_basin_new.txt
 #   EF5_conf/templates/ef5_{Region}_{res}_control_template.txt (fallback: no _{res}_)
 #   EF5_conf/states|outputs …/{region}_{res}/  (e.g. guatemala_900m)
-region_resolution_map = {"Barbados": "30m", "Antigua": "90m", "Guatemala": "90m"}
+region_resolution_map = {
+    "Antigua": "30m",
+    "Barbados": "30m",
+    "Comoros": "30m",
+    "Guatemala": "90m",
+    "Haiti": "90m",
+}
 # Optional explicit control-template override (else resolution-aware auto-select):
-# region_template_map = {"Barbados": "ef5_Barbados_30m_control_template.txt"}
-regions_to_run = ["Barbados"]
+# region_template_map = {"Comoros": "ef5_Comoros_30m_control_template.txt"}
+regions_to_run = ["Antigua", "Barbados", "Comoros", "Guatemala", "Haiti"]
 systemModel = "crest"
 systemTimestep = 60 #in minutes
 
@@ -109,7 +115,11 @@ qpf_source = "STORMLAB"
 #     "Comoros":   {"qpe_source": "HSAF",   "qpf_source": "WRF"},  # Africa — HSAF
 # }
 region_forcing_map = {
-    "Barbados": {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    "Antigua":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    "Barbados":  {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    "Comoros":   {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    "Guatemala": {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
+    "Haiti":     {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
 }
 
 # Deterministic IMERG path folders (optional overrides)
@@ -313,7 +323,7 @@ dry_run_hours = 6
 # ── FIM (Flood Inundation Mapping) ─────────────────────────────────────────
 # Runs ONLY after the forecast EF5 phase (Phase C: GFS or StormLab as QPE),
 # never after IMERG/STREAM-Sat/warmup alone.
-# Eligible: 90m (Guatemala/Antigua/Haiti/Comoros) and Barbados 30m. Skip 900m.
+# Eligible: 90m (Guatemala/Haiti) and 30m (Antigua, Barbados, Comoros). Skip 900m.
 #
 # Pluvial rain total = sum of qpeaccum grids (no qpfaccum / long-range):
 #   STREAM-Sat + StormLab → SS qpeaccum + StormLab qpeaccum

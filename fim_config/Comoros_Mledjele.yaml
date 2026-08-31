@@ -12,6 +12,7 @@
 # no depth data (86.85 percent covered). The mainland part of the commune,
 # 31.90 km2, is fully inside the model grid. Read products for this site as
 # covering the mainland only.
+required_resolution: "30m"
 region: Comoros_Mledjele
 
 outputs_root: outputs

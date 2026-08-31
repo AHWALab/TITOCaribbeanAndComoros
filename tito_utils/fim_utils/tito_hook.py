@@ -2,7 +2,7 @@
 TITO orchestrator hook — FIM after the **forecast** EF5 phase only.
 
 Rules:
-  - FIM for **90m** (Guatemala, Antigua, Haiti, Comoros) and **30m** (Barbados).
+  - FIM for **90m** (Guatemala, Haiti) and **30m** (Antigua, Barbados, Comoros).
   - Skip **900m** (Guatemala coarse).
   - Only when a forecast phase ran (``run_LR`` / Phase C GFS or StormLab).
   - Pluvial rain = sum of **qpeaccum** components (no qpfaccum / long-range).
@@ -67,7 +67,7 @@ def _regions_fim_eligible(
     regions: Sequence[str],
     config: Any,
 ) -> List[str]:
-    """FIM for 90m and Barbados 30m. Skip 900m."""
+    """FIM for 90m and 30m (Antigua, Barbados, Comoros). Skip 900m."""
     try:
         from tito_utils.ef5.jobs.helpers import resolve_region_resolution
     except Exception:
@@ -475,7 +475,7 @@ def run_fim_for_cycle(
         if master_log:
             master_log.info("FIM skip ineligible: %s", skipped)
     if not regions_90:
-        log("  FIM: no eligible regions (90m or Barbados 30m) — skip")
+        log("  FIM: no eligible regions (90m or 30m) — skip")
         if master_log:
             master_log.info("FIM skipped — no eligible regions")
         return []
@@ -522,6 +522,18 @@ def run_fim_for_cycle(
         site_stem = os.path.splitext(site)[0]
         region = _match_yaml_to_region(site_stem, regions_90) or regions_90[0]
         rkey = _region_key(region, config)
+        try:
+            import yaml as _yaml
+            with open(yml) as _fh:
+                _raw = _yaml.safe_load(_fh) or {}
+            req = str(_raw.get("required_resolution") or "").lower().replace(" ", "")
+        except Exception:
+            req = ""
+        if req:
+            actual = rkey.rsplit("_", 1)[-1].lower().replace(" ", "")
+            if req not in (actual, actual.replace("m", ""), f"0.0{actual.replace('m','')}km"):
+                log(f"  FIM: skip {site} (required_resolution={req}, run is {actual})")
+                continue
 
         # Prefer explicit maps from orchestrator; else config.region_forcing_map
         if region_qpe_sources is not None or region_qpf_sources is not None:

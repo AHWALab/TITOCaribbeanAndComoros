@@ -6,6 +6,7 @@
 # municipality. In orchestrated runs the fim_regions block in
 # Caribbean_Comoros_config.py switches the whole country and overrides the
 # thresholds below.
+required_resolution: "30m"
 region: Comoros_Ngouengoe
 
 outputs_root: outputs

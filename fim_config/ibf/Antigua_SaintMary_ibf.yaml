@@ -53,6 +53,6 @@ classification:
   hazard_flag_cutoff: 0.50
 
 outputs:
-  # Orchestrated runs override to outputs/<cycle>/antigua_90m/ibf/<Site>/
+  # Orchestrated runs override to outputs/<cycle>/antigua_30m/ibf/<Site>/
   root: outputs
   append_cycle: false

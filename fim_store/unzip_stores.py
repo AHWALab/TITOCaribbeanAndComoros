@@ -5,26 +5,45 @@ Stores travel through git as <name>.zarr.zip inside their country folder
 are shipped as split parts named <name>.zarr.zip.part01, .part02, ...;
 this script joins the parts into the single zip first (once), then
 extracts every zip whose matching <name>.zarr folder does not exist yet.
-Already extracted stores are skipped, so the script is safe to run any
-number of times.
+
+Walks never descend into extracted .zarr trees (those are tens of thousands
+of chunk files and stall on NFS). Extraction writes to local temp then
+moves into place, which is much faster than unzipping onto /Dedicated.
 
 Usage, from the repository root or from fim_store/:
 
     python fim_store/unzip_stores.py
+    python fim_store/unzip_stores.py Haiti
 """
 
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def join_parts():
+def _walk_zips(root):
+    """Walk zip/part files only; never descend into extracted .zarr trees."""
+    skip_sfx = (".zarr", ".partial", ".joining", ".partial.root")
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.endswith(skip_sfx)]
+        yield dirpath, dirnames, filenames
+
+
+def _already_extracted(out_dir):
+    return os.path.isfile(os.path.join(out_dir, "zarr.json")) or os.path.isfile(
+        os.path.join(out_dir, ".zgroup"))
+
+
+def join_parts(root):
     """<name>.zarr.zip.partNN -> <name>.zarr.zip (kept; parts left in place)."""
     groups = {}
-    for dirpath, _dirnames, filenames in os.walk(HERE):
+    for dirpath, _dirnames, filenames in _walk_zips(root):
         for fn in filenames:
             m = re.match(r"^(.+\.zarr\.zip)\.part(\d+)$", fn)
             if m:
@@ -37,8 +56,10 @@ def join_parts():
             continue
         nums = [n for n, _ in parts]
         if nums != list(range(1, len(nums) + 1)):
-            raise RuntimeError(f"missing part for {os.path.basename(target)}: have {nums}")
-        print(f"joining {len(parts)} parts -> {os.path.relpath(target, HERE)}")
+            raise RuntimeError(
+                f"missing part for {os.path.basename(target)}: have {nums}")
+        print(f"joining {len(parts)} parts -> {os.path.relpath(target, HERE)}",
+              flush=True)
         tmp = target + ".joining"
         with open(tmp, "wb") as out:
             for _, p in parts:
@@ -51,55 +72,70 @@ def join_parts():
         os.replace(tmp, target)
 
 
-def main():
-    join_parts()
+def extract_zip(zip_path, out_dir):
+    print(f"extracting: {os.path.relpath(out_dir, HERE)}", flush=True)
+    tmp = tempfile.mkdtemp(prefix="tito_fim_")
+    src_is_tmp = False
+    try:
+        unzip = shutil.which("unzip")
+        if unzip:
+            subprocess.check_call(
+                [unzip, "-qo", zip_path, "-d", tmp],
+                stdout=subprocess.DEVNULL)
+        else:
+            with zipfile.ZipFile(zip_path) as z:
+                z.extractall(tmp)
+        names = [n for n in os.listdir(tmp) if n not in (".", "..")]
+        wrapped = (
+            len(names) == 1
+            and os.path.isdir(os.path.join(tmp, names[0]))
+            and names[0] == os.path.basename(out_dir)
+        )
+        if wrapped:
+            src = os.path.join(tmp, names[0])
+        else:
+            src = tmp
+            src_is_tmp = True
+        if os.path.isdir(out_dir):
+            shutil.rmtree(out_dir)
+        shutil.move(src, out_dir)
+        if src_is_tmp:
+            tmp = None
+    finally:
+        if tmp and os.path.isdir(tmp):
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    root = HERE
+    if argv:
+        country = argv[0]
+        cand = os.path.join(HERE, country)
+        if not os.path.isdir(cand):
+            raise SystemExit(f"no country folder: {cand}")
+        root = cand
+        print(f"only: {country}", flush=True)
+
+    join_parts(root)
     done = skipped = 0
-    for dirpath, _dirnames, filenames in os.walk(HERE):
+    for dirpath, _dirnames, filenames in _walk_zips(root):
         for fn in sorted(filenames):
             if not fn.endswith(".zarr.zip"):
                 continue
             zip_path = os.path.join(dirpath, fn)
             out_dir = os.path.join(dirpath, fn[: -len(".zip")])
             rel = os.path.relpath(out_dir, HERE)
-            if os.path.isdir(out_dir) and os.listdir(out_dir):
-                print(f"already extracted: {rel}")
+            if _already_extracted(out_dir):
+                print(f"already extracted: {rel}", flush=True)
                 skipped += 1
                 continue
-            print(f"extracting: {rel}")
-            with zipfile.ZipFile(zip_path) as z:
-                names = z.namelist()
-                # two shipped conventions: members root relative (zarr.json at
-                # top) or wrapped in a single "<name>.zarr/" folder
-                wrapped = all(n.split("/")[0] == os.path.basename(out_dir)
-                              for n in names if n.strip("/"))
-                dest_root = dirpath if wrapped else out_dir
-                for member in names:
-                    target = os.path.realpath(os.path.join(dest_root, member))
-                    safe_base = os.path.realpath(dest_root)
-                    if not target.startswith(safe_base + os.sep) and target != safe_base:
-                        raise RuntimeError(f"unsafe path inside {fn}: {member}")
-                partial = (out_dir if not wrapped else
-                           os.path.join(dirpath, os.path.basename(out_dir))) + ".partial"
-                if os.path.isdir(partial):
-                    import shutil
-                    shutil.rmtree(partial)
-                if wrapped:
-                    tmp_root = partial + ".root"
-                    if os.path.isdir(tmp_root):
-                        import shutil
-                        shutil.rmtree(tmp_root)
-                    z.extractall(tmp_root)
-                    os.rename(os.path.join(tmp_root, os.path.basename(out_dir)), partial)
-                    import shutil
-                    shutil.rmtree(tmp_root, ignore_errors=True)
-                else:
-                    z.extractall(partial)
-                os.rename(partial, out_dir)
+            extract_zip(zip_path, out_dir)
             done += 1
     if done == 0 and skipped == 0:
         print("no .zarr.zip stores found under fim_store/; nothing to do")
     else:
-        print(f"done: {done} extracted, {skipped} already in place")
+        print(f"done: {done} extracted, {skipped} already in place", flush=True)
     return 0
 
 

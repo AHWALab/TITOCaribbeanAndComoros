@@ -1,19 +1,37 @@
-# fim_store — Antigua and Barbuda (30 m)
+# fim_store: scenario flood map stores, one folder per country
 
-Layout: `fim_store/Antigua/` (region key `Antigua` in
-`Caribbean_Comoros_config.py`).
+Layout: fim_store/<Region>/ where <Region> is the exact region key from
+regions_to_run in Caribbean_Comoros_config.py.
 
-    Antigua/     READY: 7 stores, one per ADM1 unit of Antigua and Barbuda
-                 (Barbuda AG01 + six Antigua parishes; Redonda has no store)
+    Guatemala/   Santa Ines Petapa store READY (real indexes on both axes);
+                 Morales prepared, waiting for its flood map library
+    Antigua/     Antigua and Barbuda, waiting for analog maps
+    Barbados/    waiting for analog maps
+    Comoros/     waiting for analog maps
+    Haiti/       waiting for analog maps
 
 Each store is a zarr library of pre-simulated flood maps (max depth and
-extent) with rainfall magnitudes for pluvial matching.
+extent per scenario) carrying the matching indexes: rainfall magnitude per
+scenario for the pluvial routine, and where the site is also fluvial the
+maximum boundary discharges per scenario. One store serves all routines of
+its site; nothing is duplicated.
 
-Stores ship as `<name>.zarr.zip` (plain git, no LFS). After clone or pull:
+Workflow: stores travel through git as a single <name>.zarr.zip per site
+inside the country folder (tracked via LFS). After every clone or pull that
+brings a new store, run once:
 
-    python fim_store/unzip_stores.py Antigua
+    python fim_store/unzip_stores.py
 
-Do not walk other country `.zarr` trees; pass `Antigua` so NFS does not stall.
+It extracts every zip that is not yet unzipped and skips the rest, so it is
+always safe to run. The unzipped .zarr folders and all model outputs stay
+out of git.
 
-Unzipped `.zarr` folders stay out of git. Rebuild island stores with
-`fim_dev/build_admin_stores.py`. See `fim_store/Antigua/README_Antigua.md`.
+Adding a country or site: the README_ADD_STORE.md inside each country
+folder is the five step drop-in checklist (upload zip, unzip, AOC polygon,
+site YAML from the template, switch the region on in the main config).
+
+Building and indexing stores: fim_dev/build_store_guatemala.py builds a
+store from a flood map library; fim_dev/attach_real_magnitudes_santaines.py
+is the worked example for attaching the real magnitudes and the fluvial
+index. attach_magnitudes re-sorts the store by magnitude and re-links every
+per-scenario index, including the fluvial one.

@@ -1,5 +1,5 @@
 *.tif filter=lfs diff=lfs merge=lfs -text
 *.tiff filter=lfs diff=lfs merge=lfs -text
 tito_utils/qpf_utils/StormLab-GFS-realtime/params/**/*.nc filter=lfs diff=lfs merge=lfs -text
-fim_store/**/*.zarr.zip filter=lfs diff=lfs merge=lfs -text
+*.zarr.zip filter=lfs diff=lfs merge=lfs -text
 fim_store/**/*.zarr.zip.part* filter=lfs diff=lfs merge=lfs -text

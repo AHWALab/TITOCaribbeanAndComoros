@@ -50,7 +50,9 @@ hazards:
       - "ts.cuenca_villalobos_1.crest.{cycle}.csv"
       - "ts.cuenca_villalobos_2.crest.{cycle}.csv"
 
-thresholds_m: [0.10, 0.30, 0.50, 1.00]
+# NOTE: in orchestrated runs the fim_regions block in
+# Caribbean_Comoros_config.py OVERRIDES this thresholds list.
+thresholds_m: [0.10, 0.30, 0.70, 1.00]
 
 overbank:
   enabled: true

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-ROOT="/Dedicated/Humberto/WMO_Caribbean_Comoros/TITO/TITO_GuatemalaTraining"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 TARGETS=(
   "$ROOT/EF5_conf/precip"
@@ -54,4 +54,4 @@ else
 fi
 
 
-# DRY_RUN=0 /Dedicated/Humberto/WMO_Caribbean_Comoros/TITO/TITO_GuatemalaTraining/cleanup_outputs.sh
+# DRY_RUN=0 ./cleanup_outputs.sh

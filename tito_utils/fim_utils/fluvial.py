@@ -33,6 +33,7 @@ def attach_fluvial_index(store_path: str, scenarios_q, names, source: str = ""):
     external library whose rows follow sample number order.
     """
     import zarr
+
     root = zarr.open_group(store_path, mode="a")
     q = np.asarray(scenarios_q, dtype="float64")
     if FLUVIAL_INDEX_KEY in root:
@@ -58,11 +59,11 @@ class FluvialMatcher:
 
     def __init__(self, store):
         import zarr
+
         self.store = store
         root = zarr.open_group(store.path, mode="r")
         if FLUVIAL_INDEX_KEY not in root:
-            raise KeyError(
-                f"store has no fluvial index; run attach_fluvial_index() first")
+            raise KeyError("store has no fluvial index; run attach_fluvial_index() first")
         self.q = np.asarray(root[FLUVIAL_INDEX_KEY][:], dtype="float64")
         self.names = list(root.attrs.get("fluvial_index_names", []))
         self.mu = np.asarray(root.attrs["fluvial_mu"], dtype="float64")
@@ -72,11 +73,18 @@ class FluvialMatcher:
         p = np.asarray(q_point, dtype="float64")
         flags = []
         if np.any(~np.isfinite(p)):
-            return {"storm_index": -1, "storm_id": None, "distance": None,
-                    "rule_applied": "none", "flags": ["missing_discharge"]}
+            return {
+                "storm_index": -1,
+                "storm_id": None,
+                "distance": None,
+                "rule_applied": "none",
+                "flags": ["missing_discharge"],
+            }
         if method == "standardized":
-            d = np.sqrt(((self.q - self.mu) / self.sigma
-                         - (p - self.mu) / self.sigma) ** 2 @ np.ones(len(p)))
+            d = np.sqrt(
+                ((self.q - self.mu) / self.sigma - (p - self.mu) / self.sigma) ** 2
+                @ np.ones(len(p))
+            )
         elif method == "euclidean":
             d = np.sqrt(((self.q - p) ** 2).sum(axis=1))
         elif method == "weighted":
@@ -87,16 +95,19 @@ class FluvialMatcher:
         idx = int(np.argmin(d))
         if np.any(p > self.q.max(axis=0)):
             flags.append("beyond_library_q")
-        return {"storm_index": idx,
-                "storm_id": self.store.storm_id[idx],
-                "distance": round(float(d[idx]), 4),
-                "rule_applied": f"fluvial_{method}",
-                "flags": flags}
+        return {
+            "storm_index": idx,
+            "storm_id": self.store.storm_id[idx],
+            "distance": round(float(d[idx]), 4),
+            "rule_applied": f"fluvial_{method}",
+            "flags": flags,
+        }
 
 
 def member_boundary_q(run_dir: str, cycle: str, series_templates, stat: str = "max"):
     """Read the boundary discharge series of one run; returns (vector, flags)."""
     import csv
+
     vals, flags = [], []
     for tpl in series_templates:
         path = os.path.join(run_dir, tpl.format(cycle=cycle))
@@ -123,8 +134,17 @@ def member_boundary_q(run_dir: str, cycle: str, series_templates, stat: str = "m
                     acc.append(float(row[col]))
                 except (ValueError, IndexError):
                     pass
-            if acc:
-                best = max(acc) if stat == "max" else sum(acc) / len(acc)
+            # NaN aware: EF5 writes nan while the routing warms up, and a
+            # plain max() keeps the FIRST element when comparisons are all
+            # False, so a leading nan used to poison the whole series and
+            # the member silently lost its fluvial match. A gauge that is
+            # nan from end to end (outside the routing domain) is reported
+            # instead of passing a quiet nan downstream.
+            clean = [v for v in acc if v == v]
+            if clean:
+                best = max(clean) if stat == "max" else sum(clean) / len(clean)
+            elif acc:
+                flags.append(f"all_nan_{os.path.basename(path)}")
             else:
                 flags.append("empty_series")
         vals.append(best)

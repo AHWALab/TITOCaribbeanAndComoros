@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .io_utils import Grid, read_grid, nan_stat
+from .io_utils import Grid, nan_stat, read_grid
 
 try:
     from rasterio.features import geometry_mask
@@ -32,8 +32,8 @@ except ImportError as exc:  # pragma: no cover
 class AreaOfConcern:
     aoc_id: str
     name: str = ""
-    geoms: list = field(default_factory=list)   # GeoJSON-like geometry dicts
-    mask_path: str = ""                          # set when source is a raster mask
+    geoms: list = field(default_factory=list)  # GeoJSON-like geometry dicts
+    mask_path: str = ""  # set when source is a raster mask
     _bounds: tuple = None
     _mask_cache: dict = field(default_factory=dict, repr=False)
 
@@ -48,10 +48,10 @@ class AreaOfConcern:
                 for geom in self.geoms:
                     _walk_coords(geom.get("coordinates", []), xs, ys)
                 pad = 0.02  # degrees, keeps edge pixels
-                self._bounds = (min(xs) - pad, min(ys) - pad,
-                                max(xs) + pad, max(ys) + pad)
+                self._bounds = (min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad)
             elif self.mask_path:
                 import rasterio
+
                 with rasterio.open(self.mask_path) as src:
                     b = src.bounds
                 self._bounds = (b.left, b.bottom, b.right, b.top)
@@ -67,8 +67,9 @@ class AreaOfConcern:
             if grid.data.size == 0:
                 mask = np.zeros(grid.shape, dtype=bool)
             else:
-                mask = ~geometry_mask(self.geoms, out_shape=grid.shape,
-                                      transform=grid.transform, invert=False)
+                mask = ~geometry_mask(
+                    self.geoms, out_shape=grid.shape, transform=grid.transform, invert=False
+                )
         elif self.mask_path:
             mgrid = read_grid(self.mask_path, bounds=_grid_bounds(grid))
             mask = _resample_nearest(mgrid, grid) > 0
@@ -100,6 +101,7 @@ def _walk_coords(coords, xs, ys):
 
 def _grid_bounds(grid: Grid):
     from rasterio.transform import array_bounds
+
     return array_bounds(grid.shape[0], grid.shape[1], grid.transform)
 
 
@@ -112,13 +114,15 @@ def _resample_nearest(src: Grid, target: Grid) -> np.ndarray:
     if src.data.size == 0:
         return out
     import rasterio.transform as rt
+
     rows, cols = np.indices(target.shape)
     xs, ys = rt.xy(target.transform, rows.ravel(), cols.ravel())
     src_rows, src_cols = rt.rowcol(src.transform, xs, ys)
     src_rows = np.asarray(src_rows)
     src_cols = np.asarray(src_cols)
-    valid = ((src_rows >= 0) & (src_rows < src.shape[0]) &
-             (src_cols >= 0) & (src_cols < src.shape[1]))
+    valid = (
+        (src_rows >= 0) & (src_rows < src.shape[0]) & (src_cols >= 0) & (src_cols < src.shape[1])
+    )
     flat = out.ravel()
     vals = src.data[src_rows[valid], src_cols[valid]]
     vals = np.nan_to_num(vals, nan=0.0)
@@ -128,23 +132,24 @@ def _resample_nearest(src: Grid, target: Grid) -> np.ndarray:
 
 # ---- loading ---------------------------------------------------------------
 
-def load_aocs(source: str, id_field: str = "", name_field: str = "",
-              layer: str = "") -> list:
+
+def load_aocs(source: str, id_field: str = "", name_field: str = "", layer: str = "") -> list:
     """Load Areas of Concern from a polygon file or a folder of mask rasters."""
     if os.path.isdir(source):
         aocs = []
         for fname in sorted(os.listdir(source)):
             if fname.lower().endswith(".tif"):
                 stem = os.path.splitext(fname)[0]
-                aocs.append(AreaOfConcern(aoc_id=stem, name=stem,
-                                          mask_path=os.path.join(source, fname)))
+                aocs.append(
+                    AreaOfConcern(aoc_id=stem, name=stem, mask_path=os.path.join(source, fname))
+                )
         if not aocs:
             raise FileNotFoundError(f"No .tif masks found in {source}")
         return aocs
 
     ext = os.path.splitext(source)[1].lower()
     if ext in (".geojson", ".json"):
-        with open(source, "r") as fh:
+        with open(source) as fh:
             gj = json.load(fh)
         features = gj.get("features", [])
         return _features_to_aocs(features, id_field, name_field)
@@ -154,14 +159,12 @@ def load_aocs(source: str, id_field: str = "", name_field: str = "",
             import fiona
         except ImportError as exc:
             raise ImportError(
-                f"Reading {ext} needs fiona (in tito_env). "
-                "Alternatively provide a .geojson."
+                f"Reading {ext} needs fiona (in tito_env). Alternatively provide a .geojson."
             ) from exc
         kwargs = {"layer": layer} if layer else {}
         with fiona.open(source, **kwargs) as coll:
             features = [
-                {"properties": dict(f["properties"]), "geometry": dict(f["geometry"])}
-                for f in coll
+                {"properties": dict(f["properties"]), "geometry": dict(f["geometry"])} for f in coll
             ]
         return _features_to_aocs(features, id_field, name_field)
 

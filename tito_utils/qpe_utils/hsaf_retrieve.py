@@ -5,7 +5,7 @@ HSAF Precipitation Retrieval Module (QPE - Quantitative Precipitation Estimate)
 
 Description:
 ------------
-Downloads HSAF (EUMETSAT Hydrological Satellite Application Facility) H40B 
+Downloads HSAF (EUMETSAT Hydrological Satellite Application Facility) H40B
 product from MeteoAM FTP server, decompresses .nc.gz files, converts NetCDF
 to GeoTIFF format, and prepares data for EF5 hydrologic model ingestion.
 Provides 10-minute instantaneous rain rate estimates from multi-satellite
@@ -21,17 +21,17 @@ Standalone Usage:
 
    from datetime import datetime
    from hsaf_retrieve import get_new_hsaf_precip
-   
+
    # Define domain bounds
    xmin, ymin, xmax, ymax = -85.0, 10.0, -60.0, 25.0
-   
+
    # Your HSAF credentials
    ftp_user = "your_hsaf_username"
    ftp_pass = "your_hsaf_password"
-   
+
    # Current timestamp for data retrieval
    current_time = datetime.utcnow()
-   
+
    # Download HSAF data
    get_new_hsaf_precip(
        current_timestamp=current_time,
@@ -78,11 +78,11 @@ Required Packages:
     Windows: Download from https://curl.se/windows/
     Linux: sudo apt-get install curl
     macOS: brew install curl
-  
+
   - gzip: For .nc.gz decompression
     Usually pre-installed on Unix/Linux/macOS
     Windows: Use 7-Zip or Git Bash
-  
+
   - GDAL command-line tools: For NetCDF to GeoTIFF conversion
     conda install -c conda-forge gdal
     Required tools: gdalwarp, gdal_translate
@@ -131,11 +131,10 @@ Notes:
 ================================================================================
 """
 
-import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -155,15 +154,17 @@ def _format_stderr(stderr_text, max_lines=12):
 
 
 def _curl_head_exists(url, user, password):
-    result = _run_cmd([
-        "curl",
-        "--fail",
-        "--silent",
-        "--head",
-        "--user",
-        f"{user}:{password}",
-        url,
-    ])
+    result = _run_cmd(
+        [
+            "curl",
+            "--fail",
+            "--silent",
+            "--head",
+            "--user",
+            f"{user}:{password}",
+            url,
+        ]
+    )
     return result.returncode == 0
 
 
@@ -196,13 +197,13 @@ def _convert_netcdf_to_geotiff(nc_file, xmin, ymin, xmax, ymax):
     """
     # Resolve input to the .nc path regardless of whether caller passed .nc.gz or .nc
     if nc_file.suffix == ".gz":
-        nc_gz  = nc_file
-        nc_path = nc_file.with_suffix("")          # strip .gz  -> .nc
+        nc_gz = nc_file
+        nc_path = nc_file.with_suffix("")  # strip .gz  -> .nc
     else:
-        nc_gz  = None
+        nc_gz = None
         nc_path = nc_file
 
-    tif_path      = nc_path.with_suffix(".tif")
+    tif_path = nc_path.with_suffix(".tif")
     unscaled_path = nc_path.with_suffix(".tif.unscaled")
 
     if tif_path.exists():
@@ -228,16 +229,31 @@ def _convert_netcdf_to_geotiff(nc_file, xmin, ymin, xmax, ymax):
     # ------------------------------------------------------------------
     src = f'NETCDF:"{nc_path.resolve()}"://rr'
     warp_cmd = [
-        "gdalwarp", "-overwrite",
-        "-of", "GTiff", "-ot", "Float32",
-        "-t_srs", "EPSG:4326", "-r", "bilinear",
-        "-wo", "NUM_THREADS=ALL_CPUS",
-        "-co", "COMPRESS=DEFLATE",
-        "-dstnodata", "-9999",
-        "-te", str(xmin), str(ymin), str(xmax), str(ymax),
-        src, str(unscaled_path),
+        "gdalwarp",
+        "-overwrite",
+        "-of",
+        "GTiff",
+        "-ot",
+        "Float32",
+        "-t_srs",
+        "EPSG:4326",
+        "-r",
+        "bilinear",
+        "-wo",
+        "NUM_THREADS=ALL_CPUS",
+        "-co",
+        "COMPRESS=DEFLATE",
+        "-dstnodata",
+        "-9999",
+        "-te",
+        str(xmin),
+        str(ymin),
+        str(xmax),
+        str(ymax),
+        src,
+        str(unscaled_path),
     ]
-    result = subprocess.run(warp_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(warp_cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"    gdalwarp failed for {nc_path.name}")
         print(f"    cmd: {' '.join(warp_cmd)}")
@@ -249,11 +265,17 @@ def _convert_netcdf_to_geotiff(nc_file, xmin, ymin, xmax, ymax):
     # ------------------------------------------------------------------
     translate_cmd = [
         "gdal_translate",
-        "-of", "GTiff", "-ot", "Float32",
-        "-unscale", "-co", "COMPRESS=DEFLATE",
-        str(unscaled_path), str(tif_path),
+        "-of",
+        "GTiff",
+        "-ot",
+        "Float32",
+        "-unscale",
+        "-co",
+        "COMPRESS=DEFLATE",
+        str(unscaled_path),
+        str(tif_path),
     ]
-    result = subprocess.run(translate_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(translate_cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"    gdal_translate failed for {nc_path.name}")
         print(f"    stderr:\n{_format_stderr(result.stderr)}")
@@ -305,8 +327,7 @@ def get_new_hsaf_precip(
     # the caller passed a timezone-aware datetime (real-time mode) or a naive
     # datetime (hindcast mode).
     if getattr(current_timestamp, "tzinfo", None) is not None:
-        from datetime import timezone as _tz
-        current_timestamp = current_timestamp.astimezone(_tz.utc).replace(tzinfo=None)
+        current_timestamp = current_timestamp.astimezone(UTC).replace(tzinfo=None)
 
     precip_dir = Path(precipFolder)
     precip_dir.mkdir(parents=True, exist_ok=True)
@@ -317,10 +338,14 @@ def get_new_hsaf_precip(
     ftp_base = "ftp://ftphsaf.meteoam.it/h40B/h40_cur_mon_data"
     start_time = current_timestamp - timedelta(hours=lookback_hours)
     start_time = start_time.replace(minute=(start_time.minute // 10) * 10, second=0, microsecond=0)
-    end_time = current_timestamp.replace(minute=(current_timestamp.minute // 10) * 10, second=0, microsecond=0)
+    end_time = current_timestamp.replace(
+        minute=(current_timestamp.minute // 10) * 10, second=0, microsecond=0
+    )
 
     latest_safe_time = current_timestamp - timedelta(minutes=latency_minutes)
-    latest_safe_time = latest_safe_time.replace(minute=(latest_safe_time.minute // 10) * 10, second=0, microsecond=0)
+    latest_safe_time = latest_safe_time.replace(
+        minute=(latest_safe_time.minute // 10) * 10, second=0, microsecond=0
+    )
 
     expected_times = []
     t = start_time
@@ -336,7 +361,11 @@ def get_new_hsaf_precip(
         local_nc_gz = hsaf_work_dir / remote_name
         # Skip if we already have the .nc.gz, the decompressed .nc, OR the final .tif
         local_tif = hsaf_work_dir / remote_name.replace(".nc.gz", ".tif")
-        if local_nc_gz.exists() or (hsaf_work_dir / remote_name.replace(".gz", "")).exists() or local_tif.exists():
+        if (
+            local_nc_gz.exists()
+            or (hsaf_work_dir / remote_name.replace(".gz", "")).exists()
+            or local_tif.exists()
+        ):
             continue
         if not _curl_head_exists(remote_url, ftp_user, ftp_pass):
             continue

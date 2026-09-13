@@ -12,7 +12,7 @@ outputs_root: outputs
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/Guatemala_SantaInesPetapa_aoc.geojson
-store: fim_store/fim_store_SantaInesPetapa_v1.zarr
+store: fim_store/Guatemala/fim_store_SantaInesPetapa_v1.zarr
 # Overridden at runtime by tito_hook to cycle-first + chain tag:
 #   outputs/<cycle>/<rkey>/fim/<chain>/   e.g. .../fim/stream_sat_stormlab/
 products_root: outputs/fim/Guatemala_SantaInesPetapa

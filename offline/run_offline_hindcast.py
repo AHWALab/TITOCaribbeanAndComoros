@@ -12,6 +12,7 @@ Or via launcher:
 Monkey-patches prepare_cycle_precip only for this process; core TITO code
 paths are unchanged.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -58,8 +59,8 @@ def main(argv=None) -> int:
     print(f"  window : {args.start} → {args.end}")
     print(f"  regions: {args.regions}")
     print(f"  archive: {os.environ['TITO_OFFLINE_PRECIP']}")
-    print(f"  PYTHONPATH includes offline/sitecustomize (no downloads)")
-    print(f"  warmup : forced off via staged states (set warmup_enabled=False in config)")
+    print("  PYTHONPATH includes offline/sitecustomize (no downloads)")
+    print("  warmup : forced off via staged states (set warmup_enabled=False in config)")
 
     cfg_py = args.config if args.config.endswith(".py") else args.config + ".py"
     cmd = [
@@ -73,6 +74,7 @@ def main(argv=None) -> int:
     ]
     # Pass env with TITO_OFFLINE to children
     import subprocess
+
     return int(subprocess.call(cmd, cwd=str(ROOT), env=os.environ.copy()))
 
 

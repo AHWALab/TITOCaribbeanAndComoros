@@ -5,7 +5,7 @@ SCaMPR Precipitation Retrieval Module (QPE - Quantitative Precipitation Estimate
 
 Description:
 ------------
-Downloads NOAA Enterprise Rain Rate (SCaMPR / RRQPE - Self-Calibrating 
+Downloads NOAA Enterprise Rain Rate (SCaMPR / RRQPE - Self-Calibrating
 Multivariate Precipitation Retrieval) files from AWS S3, converts NetCDF
 to GeoTIFF format, and prepares data for EF5 hydrologic model ingestion.
 Provides 10-minute instantaneous rain rate estimates over the entire globe.
@@ -18,13 +18,13 @@ Standalone Usage:
 
    from datetime import datetime
    from scampr_retrieve import get_new_scampr_precip
-   
+
    # Define domain bounds (e.g., Caribbean region)
    xmin, ymin, xmax, ymax = -85.0, 10.0, -60.0, 25.0
-   
+
    # Current timestamp for data retrieval
    current_time = datetime.utcnow()
-   
+
    # Download SCaMPR data
    get_new_scampr_precip(
        current_timestamp=current_time,
@@ -39,7 +39,7 @@ Standalone Usage:
    import boto3
    from botocore import UNSIGNED
    from botocore.config import Config
-   
+
    s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
    response = s3.list_objects_v2(
        Bucket="noaa-enterprise-rainrate-pds",
@@ -121,7 +121,7 @@ Notes:
 
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 # HDF5 tries to acquire file locks via xattr syscalls, which fail on NFS with
@@ -132,11 +132,12 @@ os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 try:
     import boto3
     import numpy as np
-    import xarray as xr
     import rasterio
+    import xarray as xr
     from botocore import UNSIGNED
     from botocore.config import Config
     from rasterio.transform import from_bounds
+
     _BOTO3_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _BOTO3_AVAILABLE = False
@@ -144,33 +145,33 @@ except ImportError:  # pragma: no cover
 # ---------------------------------------------------------------------------
 # S3 constants (public bucket — no credentials needed)
 # ---------------------------------------------------------------------------
-_S3_BUCKET  = "noaa-enterprise-rainrate-pds"
-_S3_PREFIX  = "BLEND/RainRate-Blend-INST"
+_S3_BUCKET = "noaa-enterprise-rainrate-pds"
+_S3_PREFIX = "BLEND/RainRate-Blend-INST"
 
 # Global grid parameters published in the NetCDF global attributes
-_LAT_MAX =  70.0
+_LAT_MAX = 70.0
 _LAT_MIN = -60.0
 _LON_MIN = -180.0
-_LON_MAX =  180.0
-_RES     =   0.02   # degrees (~2 km)
-_N_ROWS  =  6501
-_N_COLS  = 18000
+_LON_MAX = 180.0
+_RES = 0.02  # degrees (~2 km)
+_N_ROWS = 6501
+_N_COLS = 18000
 
 # EF5-facing filename pattern.
 # TITO will use this in the EF5 control template:
 #   NAME=scampr.qpe.YYYYMMDDHHUU.mmhInst.tif
-_SCAMPR_EF5_NAME_TPL = "scampr.qpe.{ts}.mmhInst.tif"   # ts = YYYYMMDDHHMM
+_SCAMPR_EF5_NAME_TPL = "scampr.qpe.{ts}.mmhInst.tif"  # ts = YYYYMMDDHHMM
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _s3_client():
     if not _BOTO3_AVAILABLE:
         raise ImportError(
-            "boto3 is required for SCaMPR retrieval. "
-            "Install with: pip install boto3 botocore"
+            "boto3 is required for SCaMPR retrieval. Install with: pip install boto3 botocore"
         )
     return boto3.client("s3", config=Config(signature_version=UNSIGNED))
 
@@ -184,9 +185,7 @@ def _list_nc_keys_for_hour(s3, dt: datetime, hour: int) -> list:
     resp = s3.list_objects_v2(Bucket=_S3_BUCKET, Prefix=prefix)
     if resp.get("KeyCount", 0) == 0:
         return []
-    return sorted(
-        obj["Key"] for obj in resp.get("Contents", []) if obj["Key"].endswith(".nc")
-    )
+    return sorted(obj["Key"] for obj in resp.get("Contents", []) if obj["Key"].endswith(".nc"))
 
 
 def _assign_coordinates(ds):
@@ -199,7 +198,9 @@ def _assign_coordinates(ds):
     return ds
 
 
-def _nc_to_geotiff(nc_path: Path, tif_path: Path, xmin: float, ymin: float, xmax: float, ymax: float) -> bool:
+def _nc_to_geotiff(
+    nc_path: Path, tif_path: Path, xmin: float, ymin: float, xmax: float, ymax: float
+) -> bool:
     """Convert a single SCaMPR NetCDF to a clipped GeoTIFF (Band 1 = rain rate mm/h).
 
     Returns True on success, False on failure.
@@ -210,15 +211,15 @@ def _nc_to_geotiff(nc_path: Path, tif_path: Path, xmin: float, ymin: float, xmax
 
         # Clip to requested bounding box before writing to reduce file size.
         ds_clip = ds.sel(
-            latitude=slice(ymax + _RES, ymin - _RES),   # lat is descending
+            latitude=slice(ymax + _RES, ymin - _RES),  # lat is descending
             longitude=slice(xmin - _RES, xmax + _RES),
         )
 
         rr = ds_clip["RRQPE"].where(ds_clip["RRQPE"] >= 0).values.astype("float32")
         n_rows, n_cols = rr.shape
 
-        west  = float(ds_clip.longitude.min())
-        east  = float(ds_clip.longitude.max())
+        west = float(ds_clip.longitude.min())
+        east = float(ds_clip.longitude.max())
         south = float(ds_clip.latitude.min())
         north = float(ds_clip.latitude.max())
 
@@ -228,11 +229,19 @@ def _nc_to_geotiff(nc_path: Path, tif_path: Path, xmin: float, ymin: float, xmax
 
         tif_path.parent.mkdir(parents=True, exist_ok=True)
         with rasterio.open(
-            tif_path, mode="w", driver="GTiff",
-            height=n_rows, width=n_cols, count=1, dtype="float32",
-            crs="EPSG:4326", transform=transform,
+            tif_path,
+            mode="w",
+            driver="GTiff",
+            height=n_rows,
+            width=n_cols,
+            count=1,
+            dtype="float32",
+            crs="EPSG:4326",
+            transform=transform,
             nodata=float("nan"),
-            compress="deflate", predictor=2, BIGTIFF="IF_SAFER",
+            compress="deflate",
+            predictor=2,
+            BIGTIFF="IF_SAFER",
         ) as dst:
             dst.write(rr, 1)
             dst.update_tags(1, long_name="SCaMPR Rain Rate", units="mm/h", valid_min="0")
@@ -261,6 +270,7 @@ def _parse_scampr_nc_timestamp(nc_key: str) -> datetime | None:
                                       ^^^^^^^^^^^^^^^ ← 15 digits
     """
     import re
+
     m = re.search(r"_s(\d{15})_", nc_key)
     if not m:
         return None
@@ -281,6 +291,7 @@ def _ef5_name(ts: datetime) -> str:
 # ---------------------------------------------------------------------------
 # Public API — single entry point called by the orchestrator
 # ---------------------------------------------------------------------------
+
 
 def get_new_scampr_precip(
     current_timestamp: datetime,
@@ -315,8 +326,7 @@ def get_new_scampr_precip(
     """
     # Normalise to naive UTC.
     if getattr(current_timestamp, "tzinfo", None) is not None:
-        from datetime import timezone as _tz
-        current_timestamp = current_timestamp.astimezone(_tz.utc).replace(tzinfo=None)
+        current_timestamp = current_timestamp.astimezone(UTC).replace(tzinfo=None)
 
     precip_dir = Path(precipFolder)
     precip_dir.mkdir(parents=True, exist_ok=True)
@@ -328,7 +338,7 @@ def get_new_scampr_precip(
 
     # Build the list of expected 10-minute timestamps.
     start_time = _round_to_10min(current_timestamp - timedelta(hours=lookback_hours))
-    end_time   = _round_to_10min(current_timestamp)
+    end_time = _round_to_10min(current_timestamp)
     latest_safe = _round_to_10min(current_timestamp - timedelta(minutes=latency_minutes))
 
     expected_times = []
@@ -338,32 +348,42 @@ def get_new_scampr_precip(
         t += timedelta(minutes=10)
 
     # Identify which hours we need to query from S3 (deduplicated).
-    hours_needed = sorted({(t.year, t.month, t.day, t.hour) for t in expected_times if t <= latest_safe})
+    hours_needed = sorted(
+        {(t.year, t.month, t.day, t.hour) for t in expected_times if t <= latest_safe}
+    )
 
     if not hours_needed:
-        print(f"    SCaMPR: all expected slots are within the latency window — nothing to query.")
+        print("    SCaMPR: all expected slots are within the latency window — nothing to query.")
         return
 
-    print(f"    SCaMPR: querying {len(hours_needed)} hour(s) from S3 "
-          f"({start_time.strftime('%Y-%m-%d %H:%M')} → {latest_safe.strftime('%H:%M')} UTC)")
+    print(
+        f"    SCaMPR: querying {len(hours_needed)} hour(s) from S3 "
+        f"({start_time.strftime('%Y-%m-%d %H:%M')} → {latest_safe.strftime('%H:%M')} UTC)"
+    )
 
     # Build a map of  scan_start_10min → raw GeoTIFF path  from S3 downloads.
     scampr_tif_by_ts: dict[datetime, Path] = {}
     total_s3_keys = 0
 
-    for (year, month, day, hour) in hours_needed:
+    for year, month, day, hour in hours_needed:
         slot_dt = datetime(year, month, day, hour)
         nc_keys = _list_nc_keys_for_hour(s3, slot_dt, hour)
         total_s3_keys += len(nc_keys)
         if not nc_keys:
-            print(f"    SCaMPR: no S3 files found for {year:04d}-{month:02d}-{day:02d} {hour:02d}:xx UTC "
-                  f"(bucket may have latency > {lookback_hours}h or data not yet published)")
+            print(
+                f"    SCaMPR: no S3 files found for {year:04d}-{month:02d}-{day:02d} {hour:02d}:xx UTC "
+                f"(bucket may have latency > {lookback_hours}h or data not yet published)"
+            )
             continue
-        print(f"    SCaMPR: found {len(nc_keys)} file(s) for {year:04d}-{month:02d}-{day:02d} {hour:02d}:xx UTC")
+        print(
+            f"    SCaMPR: found {len(nc_keys)} file(s) for {year:04d}-{month:02d}-{day:02d} {hour:02d}:xx UTC"
+        )
         for nc_key in nc_keys:
             file_ts = _parse_scampr_nc_timestamp(nc_key)
             if file_ts is None:
-                print(f"    SCaMPR: could not parse timestamp from key: {Path(nc_key).name!r} — skipping")
+                print(
+                    f"    SCaMPR: could not parse timestamp from key: {Path(nc_key).name!r} — skipping"
+                )
                 continue
             file_ts_10 = _round_to_10min(file_ts)
             if file_ts_10 < start_time or file_ts_10 > latest_safe:
@@ -371,8 +391,8 @@ def get_new_scampr_precip(
             if file_ts_10 in scampr_tif_by_ts:
                 continue  # already have this slot
 
-            local_nc   = raw_dir / Path(nc_key).name
-            local_tif  = local_nc.with_suffix(".tif")
+            local_nc = raw_dir / Path(nc_key).name
+            local_tif = local_nc.with_suffix(".tif")
 
             if local_tif.exists():
                 scampr_tif_by_ts[file_ts_10] = local_tif
@@ -390,7 +410,7 @@ def get_new_scampr_precip(
             if _nc_to_geotiff(local_nc, local_tif, xmin, ymin, xmax, ymax):
                 scampr_tif_by_ts[file_ts_10] = local_tif
                 try:
-                    local_nc.unlink()   # reclaim disk space after conversion
+                    local_nc.unlink()  # reclaim disk space after conversion
                 except OSError:
                     pass
 

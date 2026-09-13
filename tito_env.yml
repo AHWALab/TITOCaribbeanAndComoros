@@ -42,3 +42,4 @@ dependencies:
       - click
       - python-dateutil
       - pytz
+      - ruff>=0.12

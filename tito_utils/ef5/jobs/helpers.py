@@ -6,12 +6,26 @@ import glob
 import os
 import re
 import shutil
+from collections.abc import Sequence
 from datetime import datetime, timedelta
-from typing import List, Optional, Tuple
 
 
 def with_sep(path: str) -> str:
     return os.path.join(path, "")
+
+
+def as_source_list(val: str | Sequence[str] | None) -> list[str]:
+    """Normalize qpe_source / qpf_source which may be a string or a list."""
+    if val is None or val == "":
+        return []
+    if isinstance(val, (list, tuple)):
+        return [str(x).strip().upper() for x in val if str(x).strip()]
+    s = str(val).strip().upper()
+    return [s] if s else []
+
+
+def has_source(val: str | Sequence[str] | None, name: str) -> bool:
+    return str(name).strip().upper() in as_source_list(val)
 
 
 def copy_tifs_from_shared(shared_folder: str, dest_folder: str) -> None:
@@ -25,7 +39,7 @@ def copy_tifs_from_shared(shared_folder: str, dest_folder: str) -> None:
             print(f"    Warning: copy {os.path.basename(src)}: {exc}")
 
 
-def resolve_cold_start_window(config, sim_end: datetime) -> Tuple[datetime, datetime]:
+def resolve_cold_start_window(config, sim_end: datetime) -> tuple[datetime, datetime]:
     """Return ``(cold_start_begin, cold_start_warm_end)`` for IMERG-only EF5."""
     imerg_post = timedelta(hours=2)
     imerg_warmup = timedelta(hours=6)
@@ -45,19 +59,17 @@ def resolve_cold_start_window(config, sim_end: datetime) -> Tuple[datetime, date
 def parse_streamsat_tif_window(
     ens_p1_dir: str,
     tif_pattern: str = "streamsat",
-) -> Optional[Tuple[datetime, datetime, List[datetime]]]:
+) -> tuple[datetime, datetime, list[datetime]] | None:
     """
     Parse STREAM-Sat GeoTIFF timestamps from ``ensP1``.
 
     Returns ``(ss_start, ss_end, all_timestamps)`` or ``None`` if none found.
     """
-    tif_files = sorted(
-        glob.glob(os.path.join(ens_p1_dir, f"{tif_pattern}.qpe.*.mmhInst.tif"))
-    )
+    tif_files = sorted(glob.glob(os.path.join(ens_p1_dir, f"{tif_pattern}.qpe.*.mmhInst.tif")))
     if not tif_files:
         return None
 
-    timestamps: List[datetime] = []
+    timestamps: list[datetime] = []
     for tf in tif_files:
         m = re.search(r"qpe\.(\d{12})\.", os.path.basename(tf))
         if m:
@@ -76,8 +88,33 @@ def resolve_region_resolution(
     region_resolution_map,
 ) -> str:
     if isinstance(region_resolution_map, dict):
-        return region_resolution_map.get(region_name, model_resolution)
+        val = region_resolution_map.get(region_name, model_resolution)
+        # A region may list several resolutions; singular callers use the first.
+        if isinstance(val, (list, tuple)):
+            val = val[0] if val else model_resolution
+        return val
     return model_resolution
+
+
+def resolve_region_resolutions(
+    region_name: str,
+    model_resolution: str,
+    region_resolution_map,
+) -> list[str]:
+    """All resolutions for a region (string or list value), deduped in order."""
+    default = [str(model_resolution).strip()]
+    if not isinstance(region_resolution_map, dict):
+        return default
+    val = region_resolution_map.get(region_name, model_resolution)
+    if isinstance(val, (list, tuple)):
+        out: list[str] = []
+        for x in val:
+            s = str(x).strip()
+            if s and s not in out:
+                out.append(s)
+        return out or default
+    s = str(val).strip()
+    return [s] if s else default
 
 
 def region_path_key(region_name: str, model_resolution: str) -> str:

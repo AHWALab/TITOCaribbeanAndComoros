@@ -1,6 +1,7 @@
-import os
 import errno
+import os
 from os import makedirs
+
 
 def is_non_zero_file(fpath):
     """Function that checks if a file exists and is not empty
@@ -15,6 +16,7 @@ def is_non_zero_file(fpath):
         return True
     else:
         return False
+
 
 def mkdir_p(path):
     """Function that makes a new directory.
@@ -31,6 +33,7 @@ def mkdir_p(path):
             pass
         else:
             raise
+
 
 def newline(n=1):
     """Print n blank lines."""

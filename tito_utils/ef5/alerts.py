@@ -2,8 +2,8 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-def send_mail(smtp_server, smtp_port, account_address, account_password,
-              sender, to, subject, text):
+
+def send_mail(smtp_server, smtp_port, account_address, account_password, sender, to, subject, text):
     """
     Envía un correo electrónico con un mensaje de texto plano.
 
@@ -18,9 +18,9 @@ def send_mail(smtp_server, smtp_port, account_address, account_password,
         text (str): cuerpo del mensaje
     """
     msg = MIMEMultipart()
-    msg['From'] = sender
-    msg['To'] = to
-    msg['Subject'] = subject
+    msg["From"] = sender
+    msg["To"] = to
+    msg["Subject"] = subject
     msg.attach(MIMEText(text))
 
     try:

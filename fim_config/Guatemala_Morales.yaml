@@ -28,7 +28,7 @@ outputs_root: outputs/Guatemala
 cycle_format: "%Y%m%d.%H%M%S"
 
 aoc_geojson: fim_config/aoc/Guatemala_Morales_aoc.geojson    # to create, step 3
-store: fim_store/fim_store_Morales_v1.zarr                   # to build, step 1
+store: fim_store/Guatemala/fim_store_Morales_v1.zarr
 products_root: outputs/Guatemala/fim_Morales
 
 member:

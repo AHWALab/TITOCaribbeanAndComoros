@@ -29,9 +29,9 @@ RUN_DIR_RE = re.compile(
 class EF5Run:
     region: str
     model: str
-    qpe_source: str            # e.g. imerg, scampr, hsaf ("" if unlabeled)
-    qpf_source: str            # e.g. gfs, arome, wrf ("" for QPE-only runs)
-    cycle: str                 # e.g. "20240704.090000"
+    qpe_source: str  # e.g. imerg, scampr, hsaf ("" if unlabeled)
+    qpf_source: str  # e.g. gfs, arome, wrf ("" for QPE-only runs)
+    cycle: str  # e.g. "20240704.090000"
     folder: str
     files: dict = field(default_factory=dict)  # role -> absolute path (existing only)
 
@@ -53,8 +53,7 @@ def _parse_run_dir(name: str):
     m = RUN_DIR_RE.match(name)
     if not m:
         return None
-    return (m.group("model") or "", (m.group("qpe") or "").lower(),
-            (m.group("qpf") or "").lower())
+    return (m.group("model") or "", (m.group("qpe") or "").lower(), (m.group("qpf") or "").lower())
 
 
 def _cycles_in(run_dir: str, cycle_format: str) -> list:
@@ -78,8 +77,12 @@ def _fmt_to_strptime(cycle_format: str) -> str:
     return cycle_format
 
 
-def latest_cycle(outputs_root: str, region: str, run_dir_glob: str = "tmp_output_*",
-                 cycle_format: str = "%Y%m%d.%H%M%S") -> str:
+def latest_cycle(
+    outputs_root: str,
+    region: str,
+    run_dir_glob: str = "tmp_output_*",
+    cycle_format: str = "%Y%m%d.%H%M%S",
+) -> str:
     """Most recent cycle string found in any run folder for the region."""
     region_dir = os.path.join(outputs_root, region)
     latest = ""
@@ -90,12 +93,17 @@ def latest_cycle(outputs_root: str, region: str, run_dir_glob: str = "tmp_output
     return latest
 
 
-def discover_runs(outputs_root: str, region: str, cycle: str = None,
-                  run_dir_glob: str = "tmp_output_*",
-                  cycle_format: str = "%Y%m%d.%H%M%S",
-                  file_templates: dict = None,
-                  qpe_sources: list = None, qpf_sources: list = None,
-                  require_qpf: bool = True) -> list:
+def discover_runs(
+    outputs_root: str,
+    region: str,
+    cycle: str = None,
+    run_dir_glob: str = "tmp_output_*",
+    cycle_format: str = "%Y%m%d.%H%M%S",
+    file_templates: dict = None,
+    qpe_sources: list = None,
+    qpf_sources: list = None,
+    require_qpf: bool = True,
+) -> list:
     """Find all EF5 runs (ensemble members) for a region and cycle.
 
     cycle=None uses the latest cycle available. Filters:
@@ -137,8 +145,15 @@ def discover_runs(outputs_root: str, region: str, cycle: str = None,
                 files[role] = candidate
         if "uq" not in files:
             continue
-        run = EF5Run(region=region, model=model, qpe_source=qpe,
-                     qpf_source=qpf, cycle=cycle, folder=cycle_dir, files=files)
+        run = EF5Run(
+            region=region,
+            model=model,
+            qpe_source=qpe,
+            qpf_source=qpf,
+            cycle=cycle,
+            folder=cycle_dir,
+            files=files,
+        )
         if require_qpf and not run.has_qpf:
             continue
         runs.append(run)

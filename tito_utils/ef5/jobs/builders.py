@@ -16,17 +16,17 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
-from tito_utils.file_utils.file_handling import mkdir_p
 from tito_utils.ef5.ef5_routines import prepare_ef5
-from tito_utils.logging_utils import setup_run_log, console
 from tito_utils.ef5.jobs.helpers import (
-    with_sep,
-    resolve_cold_start_window,
     parse_streamsat_tif_window,
+    resolve_cold_start_window,
     resolve_region_resolution,
+    with_sep,
 )
+from tito_utils.file_utils.file_handling import mkdir_p
+from tito_utils.logging_utils import setup_run_log
 
 
 class JobBatch:
@@ -34,12 +34,12 @@ class JobBatch:
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.staged_precip_folders: Set[str] = set()
-        self.imerg_jobs: List[dict] = []
-        self.lr_jobs: List[dict] = []
-        self.streamsat_jobs: List[dict] = []       # Phase A
-        self.streamsat_gap_jobs: List[dict] = []   # Phase B gap fill (save states)
-        self.streamsat_lr_jobs: List[dict] = []    # Phase C forecast (StormLab / legacy)
+        self.staged_precip_folders: set[str] = set()
+        self.imerg_jobs: list[dict] = []
+        self.lr_jobs: list[dict] = []
+        self.streamsat_jobs: list[dict] = []  # Phase A
+        self.streamsat_gap_jobs: list[dict] = []  # Phase B gap fill (save states)
+        self.streamsat_lr_jobs: list[dict] = []  # Phase C forecast (StormLab / legacy)
 
 
 def _copy_state_tifs(src_dir: str, dst_dir: str) -> int:
@@ -111,11 +111,11 @@ def _cycle_product_dir(config: Any, cfg: dict, product: str, *parts: str) -> str
 def build_imerg_job(
     region: str,
     *,
-    region_configs: Dict[str, dict],
+    region_configs: dict[str, dict],
     shared: Any,
     batch: JobBatch,
     config: Any,
-    ctx: Dict[str, Any],
+    ctx: dict[str, Any],
 ) -> None:
     """
     Phase A — IMERG QPE + dry-run tail; save states under states/imerg/.
@@ -161,21 +161,29 @@ def build_imerg_job(
             r_imerg_end - timedelta(days=7),
             cfg["region_current_time"],
             ctx["systemName"],
-            ctx["SEND_ALERTS"], ctx["alert_recipients"], ctx["smtp_config"],
+            ctx["SEND_ALERTS"],
+            ctx["alert_recipients"],
+            ctx["smtp_config"],
             with_sep(tmp_out),
             with_sep(log_dir),
-            region, ctx["systemModel"],
-            ctx["templatePath"], cfg["region_template"],
+            region,
+            ctx["systemModel"],
+            ctx["templatePath"],
+            cfg["region_template"],
             r_imerg_end,
             cold_warm_end,
             r_imerg_end,
             dry_end,
             ctx["LR_TimeStep"],
             False,  # QPE only — never Simulation_QPF / PRECIPFORECAST
-            region, resolve_region_resolution(
-                region, ctx["model_resolution"], ctx["region_resolution_map"]),
-            ctx["basicPath"], ctx["parametersPath"],
-            "IMERG", "none",
+            region,
+            resolve_region_resolution(
+                region, ctx["model_resolution"], ctx["region_resolution_map"]
+            ),
+            ctx["basicPath"],
+            ctx["parametersPath"],
+            "IMERG",
+            "none",
             stage_precip=True,
             output_timestamp_str=cfg["output_timestamp_str"],
             qpf_store_forcing_path=cfg["region_qpf_store"],
@@ -185,9 +193,7 @@ def build_imerg_job(
             verbose=True,
             run_log=job_log,
         )
-        dry_note = (
-            f" +{dry_h}h dry→{dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
-        )
+        dry_note = f" +{dry_h}h dry→{dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
         print(
             f"    {region} [IMERG]: {eff_start.strftime('%Y%m%d_%H%M')} → "
             f"{r_imerg_end.strftime('%Y%m%d_%H%M')} "
@@ -195,9 +201,9 @@ def build_imerg_job(
         )
         with batch.lock:
             batch.staged_precip_folders.add(staging)
-            batch.imerg_jobs.append(_job_dict(
-                region, ctx["ef5Path"], run_path, ctrl_file,
-                cfg["output_timestamp_str"]))
+            batch.imerg_jobs.append(
+                _job_dict(region, ctx["ef5Path"], run_path, ctrl_file, cfg["output_timestamp_str"])
+            )
     except Exception as exc:
         print(f"    !!! {region} IMERG EF5 prep failed: {exc}")
 
@@ -205,11 +211,11 @@ def build_imerg_job(
 def build_imerg_gap_jobs(
     region: str,
     *,
-    region_configs: Dict[str, dict],
+    region_configs: dict[str, dict],
     shared: Any,
     batch: JobBatch,
     config: Any,
-    ctx: Dict[str, Any],
+    ctx: dict[str, Any],
 ) -> None:
     """
     Phase B (ops only) — SCaMPR gap as QPE + dry-run; states under states/scampr_det/.
@@ -246,7 +252,10 @@ def build_imerg_gap_jobs(
         job_log = setup_run_log(log_dir, f"ef5_gap_scampr_{rkey}")
         job_log.info(
             "SCaMPR gap QPE — region=%s load_imerg=%s save=%s copied=%d",
-            region, imerg_states, gap_states, n,
+            region,
+            imerg_states,
+            gap_states,
+            n,
         )
         _, ctrl_file, run_path = prepare_ef5(
             staging,
@@ -257,21 +266,29 @@ def build_imerg_gap_jobs(
             r_imerg_end - timedelta(hours=48),
             ct,
             ctx["systemName"],
-            ctx["SEND_ALERTS"], ctx["alert_recipients"], ctx["smtp_config"],
+            ctx["SEND_ALERTS"],
+            ctx["alert_recipients"],
+            ctx["smtp_config"],
             with_sep(tmp_out),
             with_sep(log_dir),
-            region, ctx["systemModel"],
-            ctx["templatePath"], cfg["region_template"],
+            region,
+            ctx["systemModel"],
+            ctx["templatePath"],
+            cfg["region_template"],
             ct,
             ct,
             ct,
             dry_end,
             ctx["LR_TimeStep"],
             False,  # QPE only
-            region, resolve_region_resolution(
-                region, ctx["model_resolution"], ctx["region_resolution_map"]),
-            ctx["basicPath"], ctx["parametersPath"],
-            "SCAMPR", "none",
+            region,
+            resolve_region_resolution(
+                region, ctx["model_resolution"], ctx["region_resolution_map"]
+            ),
+            ctx["basicPath"],
+            ctx["parametersPath"],
+            "SCAMPR",
+            "none",
             stage_precip=True,
             output_timestamp_str=cfg["output_timestamp_str"],
             qpf_store_forcing_path=cfg["region_qpf_store"],
@@ -279,9 +296,7 @@ def build_imerg_gap_jobs(
             verbose=True,
             run_log=job_log,
         )
-        dry_note = (
-            f" +{dry_h}h dry→{dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
-        )
+        dry_note = f" +{dry_h}h dry→{dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
         print(
             f"    {region} [SCaMPR gap]: state@IMERG → QPE→T="
             f"{ct.strftime('%Y%m%d_%H%M')} (state@{ct.strftime('%Y%m%d_%H%M')})"
@@ -289,9 +304,9 @@ def build_imerg_gap_jobs(
         )
         with batch.lock:
             batch.staged_precip_folders.add(staging)
-            batch.lr_jobs.append(_job_dict(
-                region, ctx["ef5Path"], run_path, ctrl_file,
-                cfg["output_timestamp_str"]))
+            batch.lr_jobs.append(
+                _job_dict(region, ctx["ef5Path"], run_path, ctrl_file, cfg["output_timestamp_str"])
+            )
     except Exception as exc:
         print(f"    !!! {region} SCaMPR gap EF5 prep failed: {exc}")
 
@@ -299,11 +314,11 @@ def build_imerg_gap_jobs(
 def build_imerg_forecast_qpe_jobs(
     region: str,
     *,
-    region_configs: Dict[str, dict],
+    region_configs: dict[str, dict],
     shared: Any,
     batch: JobBatch,
     config: Any,
-    ctx: Dict[str, Any],
+    ctx: dict[str, Any],
     load_from_gap: bool = False,
 ) -> None:
     """
@@ -320,7 +335,7 @@ def build_imerg_forecast_qpe_jobs(
     dry_h = int(cfg.get("dry_run_hours", 0) or 0)
     if dry_h < 0:
         dry_h = 0
-    dry_end = (cfg.get("r_end_time") or (r_lr_end + timedelta(hours=dry_h)))
+    dry_end = cfg.get("r_end_time") or (r_lr_end + timedelta(hours=dry_h))
 
     if load_from_gap:
         load_states = os.path.join(_det_scampr_state_root(config), rkey, "")
@@ -329,7 +344,8 @@ def build_imerg_forecast_qpe_jobs(
         load_states = os.path.join(_imerg_state_root(config), rkey, "")
         fc_start = r_imerg_end
 
-    qpf_list = list(cfg.get("qpf_sources") or [])
+    qpf_list = [str(s).strip().upper() for s in (cfg.get("qpf_sources") or [])]
+    qpf_list = [s for s in qpf_list if s in ("STORMLAB", "GFS", "AROME", "WRF")]
     if not qpf_list:
         print(f"    !!! {region}: no forecast sources — skip Phase C")
         return
@@ -337,20 +353,101 @@ def build_imerg_forecast_qpe_jobs(
     for qpf_src in qpf_list:
         actual = str(qpf_src).upper()
         if actual == "STORMLAB":
-            print(f"    {region}: STORMLAB on IMERG path not supported here — skip")
+            sl_info = (getattr(shared, "stormlab_info", {}) or {}).get(region, {})
+            sl_tif_root = sl_info.get("tif_root") or ""
+            sl_ens = int(sl_info.get("ensemble_size", 0) or 0)
+            if "error" in sl_info or sl_ens < 1 or not sl_tif_root:
+                print(f"    !!! {region}: no StormLab TIFs for IMERG Phase C — skip")
+                continue
+            res = resolve_region_resolution(
+                region, ctx["model_resolution"], ctx["region_resolution_map"]
+            )
+            for sl_idx in range(1, sl_ens + 1):
+                sl_member_dir = os.path.join(sl_tif_root, f"ensQ{sl_idx}", "")
+                if not os.path.isdir(sl_member_dir):
+                    continue
+                tmp_out = _cycle_product_dir(config, cfg, "stormlab", f"ensOut{sl_idx}")
+                staging = os.path.join(
+                    ctx["precipEF5Folder"], rkey, f"imerg_fc_stormlab_sl{sl_idx:02d}"
+                )
+                log_dir = cfg.get("region_data_path") or tmp_out
+                mkdir_p(tmp_out)
+                mkdir_p(staging)
+                mkdir_p(log_dir)
+                try:
+                    job_log = setup_run_log(log_dir, f"ef5_stormlab_qpe_{rkey}_sl{sl_idx:02d}")
+                    _, ctrl_file, run_path = prepare_ef5(
+                        staging,
+                        sl_member_dir,
+                        with_sep(load_states),
+                        ctx["modelStates"],
+                        fc_start,
+                        fc_start - timedelta(hours=48),
+                        ct,
+                        ctx["systemName"],
+                        ctx["SEND_ALERTS"],
+                        ctx["alert_recipients"],
+                        ctx["smtp_config"],
+                        with_sep(tmp_out),
+                        with_sep(log_dir),
+                        region,
+                        ctx["systemModel"],
+                        ctx["templatePath"],
+                        cfg["region_template"],
+                        dry_end,
+                        fc_start,
+                        dry_end,
+                        dry_end,
+                        ctx["LR_TimeStep"],
+                        False,
+                        region,
+                        res,
+                        ctx["basicPath"],
+                        ctx["parametersPath"],
+                        "STORMLAB",
+                        "none",
+                        stage_precip=True,
+                        output_timestamp_str=cfg["output_timestamp_str"],
+                        qpf_store_forcing_path=cfg["region_qpf_store"],
+                        save_states=False,
+                        verbose=(sl_idx == 1),
+                        run_log=job_log,
+                    )
+                    if sl_idx == 1:
+                        print(
+                            f"    {region} [STORMLAB QPE × {sl_ens}]: state@"
+                            f"{fc_start.strftime('%Y%m%d_%H%M')} → "
+                            f"{r_lr_end.strftime('%Y%m%d_%H%M')} (no state save)"
+                        )
+                    with batch.lock:
+                        batch.staged_precip_folders.add(staging)
+                        batch.lr_jobs.append(
+                            _job_dict(
+                                region,
+                                ctx["ef5Path"],
+                                run_path,
+                                ctrl_file,
+                                cfg["output_timestamp_str"],
+                                member=sl_idx,
+                            )
+                        )
+                except Exception as exc:
+                    print(f"    !!! {region} STORMLAB sl{sl_idx:02d} QPE failed: {exc}")
             continue
         if actual == "WRF":
             wrf_path = getattr(config, "WRF_archive_path", "")
             if wrf_path:
                 try:
                     from tito_utils.qpf_utils.wrf_manager import WRF_searcher as _wrf
+
                     wrf_ok = _wrf(
-                        wrf_path, cfg["region_qpf_store"],
-                        fc_start, r_lr_end,
+                        wrf_path,
+                        cfg["region_qpf_store"],
+                        fc_start,
+                        r_lr_end,
                         ctx["LR_TimeStep"],
                         getattr(config, "WRF_var_name", "PREC_ACC_C"),
-                        getattr(config, "WRF_filename_template",
-                                "PREC_d01_YYYY-MM-DD_HH_mm_SS.nc"),
+                        getattr(config, "WRF_filename_template", "PREC_d01_YYYY-MM-DD_HH_mm_SS.nc"),
                     )
                     actual = "WRF" if wrf_ok else "GFS"
                     if not wrf_ok:
@@ -376,18 +473,18 @@ def build_imerg_forecast_qpe_jobs(
 
         tmp_out = _cycle_product_dir(config, cfg, actual.lower())
         log_dir = cfg.get("region_data_path") or tmp_out
-        staging = os.path.join(
-            ctx["precipEF5Folder"], rkey, f"imerg_fc_{actual.lower()}")
+        staging = os.path.join(ctx["precipEF5Folder"], rkey, f"imerg_fc_{actual.lower()}")
         mkdir_p(tmp_out)
         mkdir_p(staging)
         mkdir_p(log_dir)
 
         try:
-            job_log = setup_run_log(
-                log_dir, f"ef5_{actual.lower()}_qpe_{rkey}")
+            job_log = setup_run_log(log_dir, f"ef5_{actual.lower()}_qpe_{rkey}")
             job_log.info(
                 "%s as QPE — region=%s load=%s %s→%s dry→%s",
-                actual, region, load_states,
+                actual,
+                region,
+                load_states,
                 fc_start.strftime("%Y%m%d_%H%M"),
                 r_lr_end.strftime("%Y%m%d_%H%M"),
                 dry_end.strftime("%Y%m%d_%H%M"),
@@ -402,21 +499,29 @@ def build_imerg_forecast_qpe_jobs(
                 fc_start - timedelta(hours=48),
                 ct,
                 ctx["systemName"],
-                ctx["SEND_ALERTS"], ctx["alert_recipients"], ctx["smtp_config"],
+                ctx["SEND_ALERTS"],
+                ctx["alert_recipients"],
+                ctx["smtp_config"],
                 with_sep(tmp_out),
                 with_sep(log_dir),
-                region, ctx["systemModel"],
-                ctx["templatePath"], cfg["region_template"],
+                region,
+                ctx["systemModel"],
+                ctx["templatePath"],
+                cfg["region_template"],
                 dry_end,
                 fc_start,
                 dry_end,
                 dry_end,
                 ctx["LR_TimeStep"],
                 False,  # never long-range
-                region, resolve_region_resolution(
-                    region, ctx["model_resolution"], ctx["region_resolution_map"]),
-                ctx["basicPath"], ctx["parametersPath"],
-                actual, "none",
+                region,
+                resolve_region_resolution(
+                    region, ctx["model_resolution"], ctx["region_resolution_map"]
+                ),
+                ctx["basicPath"],
+                ctx["parametersPath"],
+                actual,
+                "none",
                 stage_precip=True,
                 output_timestamp_str=cfg["output_timestamp_str"],
                 qpf_store_forcing_path=cfg["region_qpf_store"],
@@ -424,9 +529,7 @@ def build_imerg_forecast_qpe_jobs(
                 verbose=True,
                 run_log=job_log,
             )
-            dry_note = (
-                f" +{dry_h}h dry→{dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
-            )
+            dry_note = f" +{dry_h}h dry→{dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
             print(
                 f"    {region} [{actual} QPE]: state@"
                 f"{fc_start.strftime('%Y%m%d_%H%M')} → "
@@ -434,9 +537,11 @@ def build_imerg_forecast_qpe_jobs(
             )
             with batch.lock:
                 batch.staged_precip_folders.add(staging)
-                batch.lr_jobs.append(_job_dict(
-                    region, ctx["ef5Path"], run_path, ctrl_file,
-                    cfg["output_timestamp_str"]))
+                batch.lr_jobs.append(
+                    _job_dict(
+                        region, ctx["ef5Path"], run_path, ctrl_file, cfg["output_timestamp_str"]
+                    )
+                )
         except Exception as exc:
             print(f"    !!! {region} {actual} QPE EF5 prep failed: {exc}")
 
@@ -444,17 +549,17 @@ def build_imerg_forecast_qpe_jobs(
 def build_streamsat_ensemble_jobs(
     region: str,
     *,
-    region_configs: Dict[str, dict],
+    region_configs: dict[str, dict],
     shared: Any,
     batch: JobBatch,
     config: Any,
-    ctx: Dict[str, Any],
+    ctx: dict[str, Any],
     hindcast_mode: bool,
     stream_sat_gap_mode: str,
     stream_sat_state_root: str,
     stream_sat_output_root: str,
-    master_log: Optional[Any] = None,
-    phases: Optional[tuple] = None,
+    master_log: Any | None = None,
+    phases: tuple | None = None,
 ) -> None:
     """Build Phase A/B/C EF5 jobs for one STREAM-Sat region.
 
@@ -504,16 +609,22 @@ def build_streamsat_ensemble_jobs(
             win_h = int(getattr(config, "stream_sat_window_hours", 48))
             ss_start = min(t for t in valid if t >= ss_end - timedelta(hours=win_h))
             if "A" in want:
-                print(f"    {region} [STREAM_SAT]: window {ss_start.strftime('%Y%m%d_%H%M')} → "
-                      f"{ss_end.strftime('%Y%m%d_%H%M')} (hindcast clamp to T="
-                      f"{ct.strftime('%Y%m%d_%H%M')}), {ens_size} members")
+                print(
+                    f"    {region} [STREAM_SAT]: window {ss_start.strftime('%Y%m%d_%H%M')} → "
+                    f"{ss_end.strftime('%Y%m%d_%H%M')} (hindcast clamp to T="
+                    f"{ct.strftime('%Y%m%d_%H%M')}), {ens_size} members"
+                )
         else:
-            print(f"    !!! {region}: no STREAM-Sat TIFs <= hindcast T "
-                  f"{ct.strftime('%Y%m%d_%H%M')} in {ens_p1_dir}")
+            print(
+                f"    !!! {region}: no STREAM-Sat TIFs <= hindcast T "
+                f"{ct.strftime('%Y%m%d_%H%M')} in {ens_p1_dir}"
+            )
             return
     elif "A" in want:
-        print(f"    {region} [STREAM_SAT]: window {ss_start.strftime('%Y%m%d_%H%M')} → "
-              f"{ss_end.strftime('%Y%m%d_%H%M')} (driven by actual data), {ens_size} members")
+        print(
+            f"    {region} [STREAM_SAT]: window {ss_start.strftime('%Y%m%d_%H%M')} → "
+            f"{ss_end.strftime('%Y%m%d_%H%M')} (driven by actual data), {ens_size} members"
+        )
 
     gap_mode = _normalize_gap_mode(stream_sat_gap_mode)
     if hindcast_mode:
@@ -549,27 +660,28 @@ def build_streamsat_ensemble_jobs(
     sl_ens = int(sl_region.get("ensemble_size", 0) or 0)
     sl_tif_root = sl_region.get("tif_root", "")
 
-    res = resolve_region_resolution(
-        region, ctx["model_resolution"], ctx["region_resolution_map"])
-    log_parent = cfg.get("region_data_path") or _cycle_product_dir(
-        config, cfg, "stream_sat")
+    res = resolve_region_resolution(region, ctx["model_resolution"], ctx["region_resolution_map"])
+    log_parent = cfg.get("region_data_path") or _cycle_product_dir(config, cfg, "stream_sat")
 
     for member_idx in range(1, ens_size + 1):
         member_precip = os.path.join(tif_root, f"ensP{member_idx}", "")
-        ss_states = os.path.join(
-            stream_sat_state_root, f"ensS{member_idx}", rkey, "")
+        ss_states = os.path.join(stream_sat_state_root, f"ensS{member_idx}", rkey, "")
         # outputs/<cycle>/<rkey>/stream_sat/ensOutN/
-        member_tmp = _cycle_product_dir(
-            config, cfg, "stream_sat", f"ensOut{member_idx}")
+        member_tmp = _cycle_product_dir(config, cfg, "stream_sat", f"ensOut{member_idx}")
 
         mkdir_p(member_precip)
         mkdir_p(ss_states)
         mkdir_p(member_tmp)
 
         is_first = member_idx == 1
-        run_log = setup_run_log(
-            log_parent, f"ef5_ens{member_idx:02d}",
-        ) if not is_first else None
+        run_log = (
+            setup_run_log(
+                log_parent,
+                f"ef5_ens{member_idx:02d}",
+            )
+            if not is_first
+            else None
+        )
 
         # Dry-run tail after each phase: TIME_END += dry_h; TIME_STATE stays
         # at the physical phase end (ss_end / T / not saved for StormLab).
@@ -579,8 +691,7 @@ def build_streamsat_ensemble_jobs(
 
         # ── Phase A: STREAM-Sat ──────────────────────────────────────
         if "A" in want:
-            staging_a = os.path.join(
-                ctx["precipEF5Folder"], rkey, f"streamsat_ens{member_idx:02d}")
+            staging_a = os.path.join(ctx["precipEF5Folder"], rkey, f"streamsat_ens{member_idx:02d}")
             mkdir_p(staging_a)
             ss_dry_end = ss_end + timedelta(hours=dry_h)
             try:
@@ -594,17 +705,27 @@ def build_streamsat_ensemble_jobs(
                     ss_end - timedelta(hours=48),
                     ct,
                     ctx["systemName"],
-                    ctx["SEND_ALERTS"], ctx["alert_recipients"], ctx["smtp_config"],
+                    ctx["SEND_ALERTS"],
+                    ctx["alert_recipients"],
+                    ctx["smtp_config"],
                     with_sep(member_tmp),
                     with_sep(log_parent),
-                    region, ctx["systemModel"],
-                    ctx["templatePath"], cfg["region_template"],
-                    ss_end, ss_end, ss_end, ss_dry_end,
+                    region,
+                    ctx["systemModel"],
+                    ctx["templatePath"],
+                    cfg["region_template"],
+                    ss_end,
+                    ss_end,
+                    ss_end,
+                    ss_dry_end,
                     ctx["LR_TimeStep"],
                     False,
-                    region, res,
-                    ctx["basicPath"], ctx["parametersPath"],
-                    "STREAM_SAT", "none",
+                    region,
+                    res,
+                    ctx["basicPath"],
+                    ctx["parametersPath"],
+                    "STREAM_SAT",
+                    "none",
                     stage_precip=True,
                     output_timestamp_str=cfg["output_timestamp_str"],
                     qpf_store_forcing_path=cfg["region_qpf_store"],
@@ -617,51 +738,55 @@ def build_streamsat_ensemble_jobs(
                 if master_log:
                     master_log.info(
                         "    %s [SS ens%02d]: %s → %s dry→%s, ctrl=%s",
-                        region, member_idx,
+                        region,
+                        member_idx,
                         eff_start.strftime("%Y%m%d_%H%M"),
                         ss_end.strftime("%Y%m%d_%H%M"),
-                        ss_dry_end.strftime("%Y%m%d_%H%M"), ctrl_file)
+                        ss_dry_end.strftime("%Y%m%d_%H%M"),
+                        ctrl_file,
+                    )
                 if is_first:
                     dry_note = (
-                        f" +{dry_h}h dry→{ss_dry_end.strftime('%Y%m%d_%H%M')}"
-                        if dry_h else ""
+                        f" +{dry_h}h dry→{ss_dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
                     )
-                    print(f"    {region} [SS ens{member_idx:02d}]: "
-                          f"{eff_start.strftime('%Y%m%d_%H%M')} → "
-                          f"{ss_end.strftime('%Y%m%d_%H%M')} "
-                          f"(state@{ss_end.strftime('%Y%m%d_%H%M')}){dry_note}")
+                    print(
+                        f"    {region} [SS ens{member_idx:02d}]: "
+                        f"{eff_start.strftime('%Y%m%d_%H%M')} → "
+                        f"{ss_end.strftime('%Y%m%d_%H%M')} "
+                        f"(state@{ss_end.strftime('%Y%m%d_%H%M')}){dry_note}"
+                    )
                 with batch.lock:
                     batch.staged_precip_folders.add(staging_a)
-                    batch.streamsat_jobs.append(_job_dict(
-                        region, ctx["ef5Path"], run_path, ctrl_file,
-                        cfg["output_timestamp_str"], member=member_idx))
+                    batch.streamsat_jobs.append(
+                        _job_dict(
+                            region,
+                            ctx["ef5Path"],
+                            run_path,
+                            ctrl_file,
+                            cfg["output_timestamp_str"],
+                            member=member_idx,
+                        )
+                    )
             except Exception as exc:
                 print(f"    !!! {region} [SS ens{member_idx:02d}] EF5 prep failed: {exc}")
                 continue
 
         # Forecast warm-start: gap states (ops) or STREAM-Sat states (hindcast)
         forecast_states = ss_states
-        forecast_qpe = "STREAM_SAT"
-        forecast_qpe_folder = member_precip
         if do_gap_fill:
-            forecast_states = os.path.join(
-                gap_state_root, f"ensS{member_idx}", rkey, "")
-            forecast_qpe = gap_qpe
-            forecast_qpe_folder = gap_precip
+            forecast_states = os.path.join(gap_state_root, f"ensS{member_idx}", rkey, "")
 
         # ── Phase B: gap fill (ops only), save states separately ─────
         if "B" in want and do_gap_fill:
-            gap_states = os.path.join(
-                gap_state_root, f"ensS{member_idx}", rkey, "")
+            gap_states = os.path.join(gap_state_root, f"ensS{member_idx}", rkey, "")
             gap_prod = "scampr" if gap_qpe != "HSAF" else "hsaf"
-            gap_tmp = _cycle_product_dir(
-                config, cfg, gap_prod, f"ensOut{member_idx}")
+            gap_tmp = _cycle_product_dir(config, cfg, gap_prod, f"ensOut{member_idx}")
             mkdir_p(gap_states)
             mkdir_p(gap_tmp)
 
             staging_b = os.path.join(
-                ctx["precipEF5Folder"], rkey,
-                f"streamsat_ens{member_idx:02d}_gap_{gap_qpe.lower()}")
+                ctx["precipEF5Folder"], rkey, f"streamsat_ens{member_idx:02d}_gap_{gap_qpe.lower()}"
+            )
             mkdir_p(staging_b)
             gap_dry_end = ct + timedelta(hours=dry_h)
             try:
@@ -671,19 +796,31 @@ def build_streamsat_ensemble_jobs(
                     gap_precip,
                     with_sep(gap_states),
                     ctx["modelStates"],
-                    ss_end, ss_end - timedelta(hours=48), ct,
+                    ss_end,
+                    ss_end - timedelta(hours=48),
+                    ct,
                     ctx["systemName"],
-                    ctx["SEND_ALERTS"], ctx["alert_recipients"], ctx["smtp_config"],
+                    ctx["SEND_ALERTS"],
+                    ctx["alert_recipients"],
+                    ctx["smtp_config"],
                     with_sep(gap_tmp),
                     with_sep(log_parent),
-                    region, ctx["systemModel"],
-                    ctx["templatePath"], cfg["region_template"],
-                    ct, ct, ct, gap_dry_end,
+                    region,
+                    ctx["systemModel"],
+                    ctx["templatePath"],
+                    cfg["region_template"],
+                    ct,
+                    ct,
+                    ct,
+                    gap_dry_end,
                     ctx["LR_TimeStep"],
                     False,
-                    region, res,
-                    ctx["basicPath"], ctx["parametersPath"],
-                    gap_qpe, "none",
+                    region,
+                    res,
+                    ctx["basicPath"],
+                    ctx["parametersPath"],
+                    gap_qpe,
+                    "none",
                     stage_precip=True,
                     output_timestamp_str=cfg["output_timestamp_str"],
                     qpf_store_forcing_path=cfg["region_qpf_store"],
@@ -691,28 +828,39 @@ def build_streamsat_ensemble_jobs(
                     verbose=is_first,
                     run_log=run_log,
                 )
-                dry_note = (
-                    f" +{dry_h}h dry→{gap_dry_end.strftime('%Y%m%d_%H%M')}"
-                    if dry_h else ""
+                dry_note = f" +{dry_h}h dry→{gap_dry_end.strftime('%Y%m%d_%H%M')}" if dry_h else ""
+                print(
+                    f"    {region} [gap ens{member_idx:02d} {gap_qpe}]: "
+                    f"state@SS_end → QPE→T={ct.strftime('%Y%m%d_%H%M')} "
+                    f"(state@{ct.strftime('%Y%m%d_%H%M')}){dry_note}"
                 )
-                print(f"    {region} [gap ens{member_idx:02d} {gap_qpe}]: "
-                      f"state@SS_end → QPE→T={ct.strftime('%Y%m%d_%H%M')} "
-                      f"(state@{ct.strftime('%Y%m%d_%H%M')}){dry_note}")
                 if master_log:
                     master_log.info(
                         "    %s [gap ens%02d %s]: %s → %s dry→%s, ctrl=%s",
-                        region, member_idx, gap_qpe,
+                        region,
+                        member_idx,
+                        gap_qpe,
                         ss_end.strftime("%Y%m%d_%H%M"),
                         ct.strftime("%Y%m%d_%H%M"),
-                        gap_dry_end.strftime("%Y%m%d_%H%M"), ctrl_b)
+                        gap_dry_end.strftime("%Y%m%d_%H%M"),
+                        ctrl_b,
+                    )
                 with batch.lock:
                     batch.staged_precip_folders.add(staging_b)
-                    batch.streamsat_gap_jobs.append(_job_dict(
-                        region, ctx["ef5Path"], run_b, ctrl_b,
-                        cfg["output_timestamp_str"], member=member_idx))
+                    batch.streamsat_gap_jobs.append(
+                        _job_dict(
+                            region,
+                            ctx["ef5Path"],
+                            run_b,
+                            ctrl_b,
+                            cfg["output_timestamp_str"],
+                            member=member_idx,
+                        )
+                    )
             except Exception as exc:
-                print(f"    !!! {region} [gap ens{member_idx:02d} {gap_qpe}] "
-                      f"EF5 prep failed: {exc}")
+                print(
+                    f"    !!! {region} [gap ens{member_idx:02d} {gap_qpe}] EF5 prep failed: {exc}"
+                )
 
         if "C" not in want:
             continue
@@ -732,12 +880,12 @@ def build_streamsat_ensemble_jobs(
                     continue
 
                 sl_tmp = _cycle_product_dir(
-                    config, cfg, "stormlab",
-                    f"ensOut{member_idx}_sl{sl_idx}")
+                    config, cfg, "stormlab", f"ensOut{member_idx}_sl{sl_idx}"
+                )
                 mkdir_p(sl_tmp)
                 staging_c = os.path.join(
-                    ctx["precipEF5Folder"], rkey,
-                    f"stormlab_ens{member_idx:02d}_sl{sl_idx:02d}")
+                    ctx["precipEF5Folder"], rkey, f"stormlab_ens{member_idx:02d}_sl{sl_idx:02d}"
+                )
                 mkdir_p(staging_c)
                 try:
                     # QPE-only: stage StormLab TIFs into precipEF5 (EF5 sibling
@@ -748,19 +896,31 @@ def build_streamsat_ensemble_jobs(
                         sl_member_dir,
                         with_sep(forecast_states),
                         ctx["modelStates"],
-                        fc_start, fc_start - timedelta(hours=48), ct,
+                        fc_start,
+                        fc_start - timedelta(hours=48),
+                        ct,
                         ctx["systemName"],
-                        ctx["SEND_ALERTS"], ctx["alert_recipients"], ctx["smtp_config"],
+                        ctx["SEND_ALERTS"],
+                        ctx["alert_recipients"],
+                        ctx["smtp_config"],
                         with_sep(sl_tmp),
                         with_sep(log_parent),
-                        region, ctx["systemModel"],
-                        ctx["templatePath"], cfg["region_template"],
-                        dry_end, fc_start, dry_end, dry_end,
+                        region,
+                        ctx["systemModel"],
+                        ctx["templatePath"],
+                        cfg["region_template"],
+                        dry_end,
+                        fc_start,
+                        dry_end,
+                        dry_end,
                         ctx["LR_TimeStep"],
                         False,  # no long-range — Simulation_QPE only
-                        region, res,
-                        ctx["basicPath"], ctx["parametersPath"],
-                        "STORMLAB", "none",
+                        region,
+                        res,
+                        ctx["basicPath"],
+                        ctx["parametersPath"],
+                        "STORMLAB",
+                        "none",
                         stage_precip=True,
                         output_timestamp_str=cfg["output_timestamp_str"],
                         qpf_store_forcing_path=cfg["region_qpf_store"],
@@ -771,85 +931,133 @@ def build_streamsat_ensemble_jobs(
                     if is_first and sl_idx == 1:
                         dry_note = (
                             f" +{dry_h}h dry→{dry_end.strftime('%Y%m%d_%H%M')}"
-                            if dry_h > 0 and dry_end != fc_end else ""
+                            if dry_h > 0 and dry_end != fc_end
+                            else ""
                         )
-                        print(f"    {region} [SS ens{member_idx:02d} × SL "
-                              f"{sl_ens}]: state@T → STORMLAB QPE→"
-                              f"{fc_end.strftime('%Y%m%d_%H%M')}{dry_note} "
-                              f"(no LR, no state save)")
+                        print(
+                            f"    {region} [SS ens{member_idx:02d} × SL "
+                            f"{sl_ens}]: state@T → STORMLAB QPE→"
+                            f"{fc_end.strftime('%Y%m%d_%H%M')}{dry_note} "
+                            f"(no LR, no state save)"
+                        )
                     if master_log:
                         master_log.info(
                             "    %s [SS ens%02d SL%02d]: STORMLAB QPE→%s "
                             "dry_end=%s (no state), ctrl=%s",
-                            region, member_idx, sl_idx,
+                            region,
+                            member_idx,
+                            sl_idx,
                             fc_end.strftime("%Y%m%d_%H%M"),
-                            dry_end.strftime("%Y%m%d_%H%M"), ctrl_c)
+                            dry_end.strftime("%Y%m%d_%H%M"),
+                            ctrl_c,
+                        )
                     job = _job_dict(
-                        region, ctx["ef5Path"], run_c, ctrl_c,
-                        cfg["output_timestamp_str"], member=member_idx)
+                        region,
+                        ctx["ef5Path"],
+                        run_c,
+                        ctrl_c,
+                        cfg["output_timestamp_str"],
+                        member=member_idx,
+                    )
                     job["stormlab_member"] = sl_idx
                     with batch.lock:
                         batch.staged_precip_folders.add(staging_c)
                         batch.streamsat_lr_jobs.append(job)
                 except Exception as exc:
-                    print(f"    !!! {region} [SS ens{member_idx:02d} SL{sl_idx:02d}] "
-                          f"EF5 prep failed: {exc}")
+                    print(
+                        f"    !!! {region} [SS ens{member_idx:02d} SL{sl_idx:02d}] "
+                        f"EF5 prep failed: {exc}"
+                    )
 
-        elif legacy_qpf:
+        if legacy_qpf:
             fc_start = ct if do_gap_fill else ss_end
             dry_end = cfg.get("r_end_time", cfg["r_end_lr"]) or cfg["r_end_lr"]
+            sub_map = {"GFS": "gfs_data", "AROME": "arome_data", "WRF": "wrf_data"}
             for qpf_src in legacy_qpf:
                 actual_qpf = "GFS" if qpf_src == "WRF" else qpf_src
+                precip_src = os.path.join(
+                    cfg["region_qpf_store"], sub_map.get(actual_qpf, "gfs_data")
+                )
+                if not os.path.isdir(precip_src) or not glob.glob(
+                    os.path.join(precip_src, "*.tif")
+                ):
+                    print(f"    !!! {region}: no {actual_qpf} TIFs in {precip_src} — skip")
+                    continue
                 staging_h = os.path.join(
-                    ctx["precipEF5Folder"], rkey,
-                    f"streamsat_ens{member_idx:02d}_qpf_{actual_qpf.lower()}")
+                    ctx["precipEF5Folder"],
+                    rkey,
+                    f"streamsat_ens{member_idx:02d}_qpe_{actual_qpf.lower()}",
+                )
                 mkdir_p(staging_h)
-                # STREAM-Sat + GFS/AROME: one forecast folder per SS member
                 member_tmp_h = _cycle_product_dir(
-                    config, cfg, actual_qpf.lower(), f"ensOut{member_idx}")
+                    config, cfg, actual_qpf.lower(), f"ensOut{member_idx}"
+                )
                 mkdir_p(member_tmp_h)
                 try:
                     _, ctrl_h, run_h = prepare_ef5(
                         staging_h,
-                        forecast_qpe_folder,
+                        precip_src,
                         with_sep(forecast_states),
                         ctx["modelStates"],
-                        fc_start, fc_start - timedelta(hours=48), ct,
+                        fc_start,
+                        fc_start - timedelta(hours=48),
+                        ct,
                         ctx["systemName"],
-                        ctx["SEND_ALERTS"], ctx["alert_recipients"], ctx["smtp_config"],
+                        ctx["SEND_ALERTS"],
+                        ctx["alert_recipients"],
+                        ctx["smtp_config"],
                         with_sep(member_tmp_h),
                         with_sep(log_parent),
-                        region, ctx["systemModel"],
-                        ctx["templatePath"], cfg["region_template"],
-                        fc_start, fc_start, dry_end, dry_end,
+                        region,
+                        ctx["systemModel"],
+                        ctx["templatePath"],
+                        cfg["region_template"],
+                        dry_end,
+                        fc_start,
+                        dry_end,
+                        dry_end,
                         ctx["LR_TimeStep"],
-                        True,
-                        region, res,
-                        ctx["basicPath"], ctx["parametersPath"],
-                        forecast_qpe, actual_qpf,
-                        stage_precip=False,
+                        False,
+                        region,
+                        res,
+                        ctx["basicPath"],
+                        ctx["parametersPath"],
+                        actual_qpf,
+                        "none",
+                        stage_precip=True,
                         output_timestamp_str=cfg["output_timestamp_str"],
                         qpf_store_forcing_path=cfg["region_qpf_store"],
                         save_states=False,
                         verbose=is_first,
                         run_log=run_log,
                     )
-                    print(f"    {region} [SS ens{member_idx:02d} QPF+{actual_qpf}]: "
-                          f"→ {cfg['r_end_lr'].strftime('%Y%m%d_%H%M')} "
-                          f"dry→{dry_end.strftime('%Y%m%d_%H%M')}")
+                    print(
+                        f"    {region} [SS ens{member_idx:02d} {actual_qpf} QPE]: "
+                        f"→ {cfg['r_end_lr'].strftime('%Y%m%d_%H%M')} "
+                        f"dry→{dry_end.strftime('%Y%m%d_%H%M')}"
+                    )
                     with batch.lock:
                         batch.staged_precip_folders.add(staging_h)
-                        batch.streamsat_lr_jobs.append(_job_dict(
-                            region, ctx["ef5Path"], run_h, ctrl_h,
-                            cfg["output_timestamp_str"], member=member_idx))
+                        batch.streamsat_lr_jobs.append(
+                            _job_dict(
+                                region,
+                                ctx["ef5Path"],
+                                run_h,
+                                ctrl_h,
+                                cfg["output_timestamp_str"],
+                                member=member_idx,
+                            )
+                        )
                 except Exception as exc:
-                    print(f"    !!! {region} [SS ens{member_idx:02d}] QPF ({actual_qpf}) "
-                          f"EF5 prep failed: {exc}")
+                    print(
+                        f"    !!! {region} [SS ens{member_idx:02d}] {actual_qpf} QPE "
+                        f"EF5 prep failed: {exc}"
+                    )
 
 
 def seed_gap_states_from_streamsat(
-    regions: List[str],
-    region_configs: Dict[str, dict],
+    regions: list[str],
+    region_configs: dict[str, dict],
     shared: Any,
     config: Any,
     stream_sat_state_root: str,
@@ -887,7 +1095,7 @@ def seed_gap_states_from_streamsat(
 
 
 def build_streamsat_jobs_parallel(
-    regions: List[str],
+    regions: list[str],
     **kwargs,
 ) -> None:
     if not regions:
@@ -895,16 +1103,13 @@ def build_streamsat_jobs_parallel(
     phases = kwargs.get("phases") or ("A", "B", "C")
     try:
         from tito_utils.logging_utils import debug_print, is_debug
+
         if is_debug():
-            debug_print(
-                f"***_________Building STREAM-Sat EF5 jobs phases={phases}_________***")
+            debug_print(f"***_________Building STREAM-Sat EF5 jobs phases={phases}_________***")
     except Exception:
         pass
     with ThreadPoolExecutor(max_workers=len(regions)) as ex:
-        futures = {
-            ex.submit(build_streamsat_ensemble_jobs, r, **kwargs): r
-            for r in regions
-        }
+        futures = {ex.submit(build_streamsat_ensemble_jobs, r, **kwargs): r for r in regions}
         for future in as_completed(futures):
             r = futures[future]
             try:
@@ -913,7 +1118,7 @@ def build_streamsat_jobs_parallel(
                 print(f"    !!! {r} STREAM-Sat EF5 prep raised: {exc}")
 
 
-def build_jobs_parallel(builder_fn, regions: List[str], **kwargs) -> None:
+def build_jobs_parallel(builder_fn, regions: list[str], **kwargs) -> None:
     with ThreadPoolExecutor(max_workers=len(regions) or 1) as ex:
         futures = {ex.submit(builder_fn, r, **kwargs): r for r in regions}
         for future in as_completed(futures):

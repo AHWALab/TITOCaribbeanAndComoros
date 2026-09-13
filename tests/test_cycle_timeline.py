@@ -19,11 +19,11 @@ from tito_utils.cycle.timeline import (
     round_cycle_time,
 )
 
-
 T = datetime(2026, 7, 22, 12, 0, 0)
 
 
 # ── round_cycle_time ───────────────────────────────────────────────────────
+
 
 def test_round_cycle_time_hourly():
     assert round_cycle_time(datetime(2026, 7, 22, 12, 37, 15)) == datetime(2026, 7, 22, 12, 0)
@@ -36,12 +36,14 @@ def test_round_cycle_time_half_hour():
 
 # ── IMERG latency constant ─────────────────────────────────────────────────
 
+
 def test_imerg_latency_is_four_hours_not_four_point_five():
     assert IMERG_LATENCY == timedelta(hours=4)
     assert IMERG_LATENCY != timedelta(hours=4, minutes=30)
 
 
 # ── Operational STREAM_SAT ─────────────────────────────────────────────────
+
 
 def test_operational_stream_sat_windows():
     plan = build_cycle_plan(
@@ -53,7 +55,7 @@ def test_operational_stream_sat_windows():
     )
 
     assert plan.cycle_time == T
-    assert plan.qpe_end == T - IMERG_LATENCY          # T−4h
+    assert plan.qpe_end == T - IMERG_LATENCY  # T−4h
     assert plan.scampr_end == T
     assert plan.lr_end == T + timedelta(hours=24)
 
@@ -116,15 +118,16 @@ def test_operational_stream_sat_data_driven_ss_end():
 
 # ── Hindcast STREAM_SAT ────────────────────────────────────────────────────
 
+
 def test_hindcast_stream_sat_no_latency_stormlab():
     plan = build_cycle_plan(
         T,
         mode="hindcast",
         qpe_source="STREAM_SAT",
-        qpf_sources=["STORMLAB", "AROME"],
+        qpf_sources=["STORMLAB"],
     )
 
-    assert plan.qpe_end == T                          # no latency
+    assert plan.qpe_end == T  # no latency
     assert plan.phases[0].name == "stream_sat"
     assert plan.phases[0].end == T
     assert plan.phases[0].state_save_time == T
@@ -142,13 +145,25 @@ def test_hindcast_stream_sat_legacy_gfs():
         T,
         mode="hindcast",
         qpe_source="STREAM_SAT",
-        qpf_sources=["GFS", "AROME"],
+        qpf_sources=["GFS"],
     )
     assert plan.phases[1].name == "forecast_qpf"
-    assert plan.phases[1].qpf_sources == ("GFS",)  # AROME dropped
+    assert plan.phases[1].qpf_sources == ("GFS",)
+
+
+def test_hindcast_arome_rejected():
+    """AROME has no hindcast archive — config must fail fast."""
+    with pytest.raises(RuntimeError, match="AROME cannot be used in hindcast"):
+        build_cycle_plan(
+            T,
+            mode="hindcast",
+            qpe_source="STREAM_SAT",
+            qpf_sources=["GFS", "AROME"],
+        )
 
 
 # ── State chaining across hourly cycles ────────────────────────────────────
+
 
 def test_hindcast_state_chaining_hour_to_hour():
     """Hour N saves at T; hour N+1 must find that state inside 48h lookback."""
@@ -176,7 +191,8 @@ def test_operational_state_chaining_hour_to_hour():
     t1 = t0 + timedelta(hours=1)
 
     plan0 = build_cycle_plan(
-        t0, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"])
+        t0, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"]
+    )
     saved = plan0.primary_state_time
     assert saved == t0  # gap_fill state at cycle time
 
@@ -184,7 +200,8 @@ def test_operational_state_chaining_hour_to_hour():
     assert expected == saved
 
     plan1 = build_cycle_plan(
-        t1, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"])
+        t1, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"]
+    )
     assert plan1.state_lookback_start <= expected
     assert plan1.qpe_end == t1 - IMERG_LATENCY
 
@@ -206,6 +223,7 @@ def test_multi_hour_hindcast_chain():
 
 # ── Warmup placement ───────────────────────────────────────────────────────
 
+
 def test_warmup_states_inside_48h_lookback():
     plan = build_cycle_plan(T, mode="operational", qpe_source="STREAM_SAT", warmup_days=5)
     # Warmup states at T−40h must be ≥ lookback start T−48h
@@ -221,6 +239,7 @@ def test_warmup_duration():
 
 
 # ── IMERG operational ──────────────────────────────────────────────────────
+
 
 def test_imerg_operational_saves_at_t_minus_4():
     plan = build_cycle_plan(
@@ -242,7 +261,7 @@ def test_imerg_operational_saves_at_t_minus_4():
 
 
 def test_imerg_hindcast_no_scampr_gap():
-    plan = build_cycle_plan(T, mode="hindcast", qpe_source="IMERG", qpf_sources=["GFS", "AROME"])
+    plan = build_cycle_plan(T, mode="hindcast", qpe_source="IMERG", qpf_sources=["GFS"])
     assert plan.qpe_end == T
     assert plan.phases[0].state_save_time == T
     assert plan.phases[1].name == "hindcast_qpf"
@@ -250,6 +269,7 @@ def test_imerg_hindcast_no_scampr_gap():
 
 
 # ── Guatemala / no AROME ───────────────────────────────────────────────────
+
 
 def test_guatemala_stormlab_qpf():
     plan = build_cycle_plan(
@@ -263,6 +283,7 @@ def test_guatemala_stormlab_qpf():
 
 # ── LR disabled ────────────────────────────────────────────────────────────
 
+
 def test_no_lr_stream_sat_plus_gap_only():
     """run_lr=False skips forecast; gap fill (QPE) still runs in ops."""
     plan = build_cycle_plan(T, mode="operational", qpe_source="STREAM_SAT", run_lr=False)
@@ -274,9 +295,11 @@ def test_no_lr_stream_sat_plus_gap_only():
 
 # ── Phase ordering invariants ──────────────────────────────────────────────
 
+
 def test_phases_are_contiguous_for_stream_sat_operational():
     plan = build_cycle_plan(
-        T, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"])
+        T, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"]
+    )
     ss, gap, fc = plan.phases
     assert ss.end == gap.start
     assert gap.end == fc.start
@@ -285,7 +308,8 @@ def test_phases_are_contiguous_for_stream_sat_operational():
 
 def test_primary_state_is_last_save():
     plan = build_cycle_plan(
-        T, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"])
+        T, mode="operational", qpe_source="STREAM_SAT", qpf_sources=["STORMLAB"]
+    )
     # Last save is gap_fill at T (not STREAM-Sat at T−4h)
     assert plan.primary_state_time == plan.phases[1].state_save_time
     assert plan.primary_state_time == T

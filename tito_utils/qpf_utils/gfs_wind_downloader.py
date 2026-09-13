@@ -28,8 +28,7 @@ import sys
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from datetime import UTC, datetime, timedelta
 
 # ── Suppress noisy third-party warnings ───────────────────────────────────
 warnings.filterwarnings("ignore", message=".*datetime.datetime.utcnow.*")
@@ -42,12 +41,14 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 os.environ["HDF5_DISABLE_VERSION_CHECK"] = "1"
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
+
 # ── Filter HDF5 C-library noise from stderr ───────────────────────────────
 # netCDF4/HDF5 writes "HDF5-DIAG:" blocks directly to stderr at the C level,
 # completely bypassing Python's warning system.  These multi-line blocks are
 # triggered by parallel file-access races during staging and are harmless.
 class _CleanStderr:
     """stderr wrapper that drops HDF5-DIAG diagnostic blocks."""
+
     def __init__(self, real_stderr):
         self._real = real_stderr
         self._in_block = False
@@ -78,13 +79,14 @@ class _CleanStderr:
     def __getattr__(self, name):
         return getattr(self._real, name)
 
+
 sys.stderr = _CleanStderr(sys.stderr)
 
-import numpy as np
-import requests
-import xarray as xr
-from netCDF4 import Dataset, date2num
-from scipy.interpolate import RegularGridInterpolator
+import numpy as np  # noqa: E402
+import requests  # noqa: E402
+import xarray as xr  # noqa: E402
+from netCDF4 import Dataset, date2num  # noqa: E402
+from scipy.interpolate import RegularGridInterpolator  # noqa: E402
 
 # ── Configuration ─────────────────────────────────────────────────────────
 AUTO_HOURS = 120
@@ -95,29 +97,47 @@ PARALLEL_WORKERS = 6
 OUT_RES = 0.1
 LEVEL_HPA = 850
 
+
 # ── URL builders ──────────────────────────────────────────────────────────
 def _aws_url(dt: datetime, cycle_hr: int, fxx: int) -> str:
-    return (f"https://noaa-gfs-bdp-pds.s3.amazonaws.com/"
-            f"gfs.{dt:%Y%m%d}/{cycle_hr:02d}/atmos/"
-            f"gfs.t{cycle_hr:02d}z.pgrb2.0p25.f{fxx:03d}")
+    return (
+        f"https://noaa-gfs-bdp-pds.s3.amazonaws.com/"
+        f"gfs.{dt:%Y%m%d}/{cycle_hr:02d}/atmos/"
+        f"gfs.t{cycle_hr:02d}z.pgrb2.0p25.f{fxx:03d}"
+    )
 
-def _nomads_url(dt: datetime, cycle_hr: int, fxx: int,
-                lat_min: float, lat_max: float, lon_min: float, lon_max: float) -> str:
-    return (f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?"
-            f"dir=%2Fgfs.{dt:%Y%m%d}%2F{cycle_hr:02d}%2Fatmos&"
-            f"file=gfs.t{cycle_hr:02d}z.pgrb2.0p25.f{fxx:03d}&"
-            f"lev_850_mb=on&var_UGRD=on&var_VGRD=on&"
-            f"subregion=&toplat={lat_max}&leftlon={lon_min}&"
-            f"rightlon={lon_max}&bottomlat={lat_min}")
+
+def _nomads_url(
+    dt: datetime,
+    cycle_hr: int,
+    fxx: int,
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+) -> str:
+    return (
+        f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?"
+        f"dir=%2Fgfs.{dt:%Y%m%d}%2F{cycle_hr:02d}%2Fatmos&"
+        f"file=gfs.t{cycle_hr:02d}z.pgrb2.0p25.f{fxx:03d}&"
+        f"lev_850_mb=on&var_UGRD=on&var_VGRD=on&"
+        f"subregion=&toplat={lat_max}&leftlon={lon_min}&"
+        f"rightlon={lon_max}&bottomlat={lat_min}"
+    )
+
 
 def _gcs_url(dt: datetime, cycle_hr: int, fxx: int) -> str:
-    return (f"https://storage.googleapis.com/global-forecast-system/"
-            f"gfs.{dt:%Y%m%d}/{cycle_hr:02d}/atmos/"
-            f"gfs.t{cycle_hr:02d}z.pgrb2.0p25.f{fxx:03d}")
+    return (
+        f"https://storage.googleapis.com/global-forecast-system/"
+        f"gfs.{dt:%Y%m%d}/{cycle_hr:02d}/atmos/"
+        f"gfs.t{cycle_hr:02d}z.pgrb2.0p25.f{fxx:03d}"
+    )
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
+
 
 def _gfs_cycle(dt: datetime) -> datetime:
     if dt.tzinfo is not None:
@@ -127,13 +147,15 @@ def _gfs_cycle(dt: datetime) -> datetime:
         base -= timedelta(hours=1)
     return base
 
-def _forecast_hours(max_hours: int) -> List[int]:
+
+def _forecast_hours(max_hours: int) -> list[int]:
     if max_hours <= 0:
         return []
     limit = min(max_hours, 384)
     if limit <= 120:
         return list(range(0, limit + 1))
     return list(range(0, 121)) + list(range(123, limit + 1, 3))
+
 
 # ── Fast cycle probe ──────────────────────────────────────────────────────
 def _cycle_available(dt: datetime, cycle_hr: int, fxx: int = 0, timeout: int = 10) -> bool:
@@ -143,6 +165,7 @@ def _cycle_available(dt: datetime, cycle_hr: int, fxx: int = 0, timeout: int = 1
         return requests.head(url, timeout=timeout).status_code == 200
     except Exception:
         return False
+
 
 # ── File download (U/V 850 only — never full multi-100MB GFS by default) ──
 def _is_grib_file(path: str, min_bytes: int = 200) -> bool:
@@ -176,10 +199,10 @@ def _download_file(url: str, outpath: str, max_retries: int = 2, timeout: int = 
             elif r.status_code == 404:
                 return False
             if attempt < max_retries:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
         except requests.exceptions.RequestException:
             if attempt < max_retries:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
     return False
 
 
@@ -205,8 +228,9 @@ def _parse_grib_idx_uv850(idx_text: str):
     return ranges
 
 
-def _download_grib_idx_subset(grib_url: str, outpath: str,
-                              max_retries: int = 2, timeout: int = 90) -> bool:
+def _download_grib_idx_subset(
+    grib_url: str, outpath: str, max_retries: int = 2, timeout: int = 90
+) -> bool:
     """HTTP Range pull of 850 hPa U/V messages only (~1–3 MB vs ~500 MB full)."""
     idx_url = grib_url + ".idx"
     for attempt in range(max_retries + 1):
@@ -216,7 +240,7 @@ def _download_grib_idx_subset(grib_url: str, outpath: str,
                 return False
             if ir.status_code != 200:
                 if attempt < max_retries:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
                 continue
             ranges = _parse_grib_idx_uv850(ir.text)
             if len(ranges) < 2:
@@ -237,25 +261,34 @@ def _download_grib_idx_subset(grib_url: str, outpath: str,
                 except OSError:
                     pass
                 if attempt < max_retries:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
                 continue
             os.replace(tmp, outpath)
             return True
         except requests.exceptions.RequestException:
             if attempt < max_retries:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
     return False
 
 
-def _download_grib(dt: datetime, cycle_hr: int, fxx: int, outpath: str,
-                   lat_min: float, lat_max: float, lon_min: float, lon_max: float) -> bool:
+def _download_grib(
+    dt: datetime,
+    cycle_hr: int,
+    fxx: int,
+    outpath: str,
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+) -> bool:
     """Download 850 hPa U/V only: NOMADS → AWS idx → GCS idx (no full GRIB)."""
     if _is_grib_file(outpath):
         return True
     # 1) NOMADS domain+var subset (smallest)
     if _download_file(
         _nomads_url(dt, cycle_hr, fxx, lat_min, lat_max, lon_min, lon_max),
-        outpath, timeout=90,
+        outpath,
+        timeout=90,
     ):
         return True
     # 2) AWS .idx byte-range (U/V 850 messages only)
@@ -273,6 +306,7 @@ def _download_grib(dt: datetime, cycle_hr: int, fxx: int, outpath: str,
             return True
     return False
 
+
 # ── GRIB extraction ───────────────────────────────────────────────────────
 def _read_uv850(grib_path: str):
     """Read U/V at 850 hPa from GRIB2. Returns (u, v, lats, lons) or Nones.
@@ -282,10 +316,14 @@ def _read_uv850(grib_path: str):
     v_result = None
 
     # ── Read U ──
-    for query in ({"shortName": "u"}, {"shortName": "u", "typeOfLevel": "isobaricInhPa", "level": LEVEL_HPA}):
+    for query in (
+        {"shortName": "u"},
+        {"shortName": "u", "typeOfLevel": "isobaricInhPa", "level": LEVEL_HPA},
+    ):
         try:
-            ds = xr.open_dataset(grib_path, engine="cfgrib",
-                                 backend_kwargs={"filter_by_keys": query})
+            ds = xr.open_dataset(
+                grib_path, engine="cfgrib", backend_kwargs={"filter_by_keys": query}
+            )
             if isinstance(ds, list):
                 ds = ds[0] if ds else None
             if ds is not None and "u" in ds.data_vars:
@@ -303,10 +341,14 @@ def _read_uv850(grib_path: str):
         return None, None, None, None
 
     # ── Read V ──
-    for query in ({"shortName": "v"}, {"shortName": "v", "typeOfLevel": "isobaricInhPa", "level": LEVEL_HPA}):
+    for query in (
+        {"shortName": "v"},
+        {"shortName": "v", "typeOfLevel": "isobaricInhPa", "level": LEVEL_HPA},
+    ):
         try:
-            ds = xr.open_dataset(grib_path, engine="cfgrib",
-                                 backend_kwargs={"filter_by_keys": query})
+            ds = xr.open_dataset(
+                grib_path, engine="cfgrib", backend_kwargs={"filter_by_keys": query}
+            )
             if isinstance(ds, list):
                 ds = ds[0] if ds else None
             if ds is not None and "v" in ds.data_vars:
@@ -323,33 +365,63 @@ def _read_uv850(grib_path: str):
 
     return u_result, v_result, lats, lons
 
+
 # ── Regrid ────────────────────────────────────────────────────────────────
-def _regrid(data_2d: np.ndarray, src_lats: np.ndarray, src_lons: np.ndarray,
-            lat_min: float, lat_max: float, lon_min: float, lon_max: float,
-            out_res: float = OUT_RES):
+def _regrid(
+    data_2d: np.ndarray,
+    src_lats: np.ndarray,
+    src_lons: np.ndarray,
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+    out_res: float = OUT_RES,
+):
     lats_out = np.arange(lat_min + out_res / 2, lat_max, out_res)
     lons_out = np.arange(lon_min + out_res / 2, lon_max, out_res)
     if src_lats[0] > src_lats[-1]:
-        src_lats = src_lats[::-1]; data_2d = data_2d[::-1, :]
+        src_lats = src_lats[::-1]
+        data_2d = data_2d[::-1, :]
     if src_lons[0] > src_lons[-1]:
-        src_lons = src_lons[::-1]; data_2d = data_2d[:, ::-1]
+        src_lons = src_lons[::-1]
+        data_2d = data_2d[:, ::-1]
     if src_lons.max() > 180:
         src_lons = np.where(src_lons > 180, src_lons - 360, src_lons)
-        idx = np.argsort(src_lons); src_lons = src_lons[idx]; data_2d = data_2d[:, idx]
+        idx = np.argsort(src_lons)
+        src_lons = src_lons[idx]
+        data_2d = data_2d[:, idx]
     buf = 0.5
     lm = (src_lats >= lat_min - buf) & (src_lats <= lat_max + buf)
     lnm = (src_lons >= lon_min - buf) & (src_lons <= lon_max + buf)
     interp = RegularGridInterpolator(
-        (src_lats[lm], src_lons[lnm]), data_2d[np.ix_(lm, lnm)],
-        method="linear", bounds_error=False, fill_value=None)
+        (src_lats[lm], src_lons[lnm]),
+        data_2d[np.ix_(lm, lnm)],
+        method="linear",
+        bounds_error=False,
+        fill_value=None,
+    )
     lg, latg = np.meshgrid(lons_out, lats_out)
-    return interp(np.column_stack([latg.ravel(), lg.ravel()])).reshape(
-        len(lats_out), len(lons_out)).astype(np.float32), lats_out, lons_out
+    return (
+        interp(np.column_stack([latg.ravel(), lg.ravel()]))
+        .reshape(len(lats_out), len(lons_out))
+        .astype(np.float32),
+        lats_out,
+        lons_out,
+    )
+
 
 # ── Single forecast-hour worker ───────────────────────────────────────────
-def _process_one_fxx(dt: datetime, cycle_hr: int, fxx: int,
-                     lat_min: float, lat_max: float, lon_min: float, lon_max: float,
-                     tmp_dir: str, out_dir: str) -> Optional[str]:
+def _process_one_fxx(
+    dt: datetime,
+    cycle_hr: int,
+    fxx: int,
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+    tmp_dir: str,
+    out_dir: str,
+) -> str | None:
     valid_time = datetime(dt.year, dt.month, dt.day, cycle_hr, 0) + timedelta(hours=fxx)
     out_path = os.path.join(out_dir, f"gfs_wind.{valid_time:%Y%m%d%H%M}.nc")
 
@@ -379,14 +451,19 @@ def _process_one_fxx(dt: datetime, cycle_hr: int, fxx: int,
         tv[:] = date2num([valid_time], tv.units, calendar="gregorian")
         for name, arr in [("lat", lats_out), ("lon", lons_out)]:
             v = nc.createVariable(name, "f4", (name,), zlib=True)
-            v.units = "degrees_north" if name == "lat" else "degrees_east"; v[:] = arr
-        uv = nc.createVariable("U_MV", "f4", ("lat", "lon", "time"),
-                               zlib=True, least_significant_digit=3)
-        uv.units = "m/s"; uv.long_name = f"eastward wind at {LEVEL_HPA} hPa"
+            v.units = "degrees_north" if name == "lat" else "degrees_east"
+            v[:] = arr
+        uv = nc.createVariable(
+            "U_MV", "f4", ("lat", "lon", "time"), zlib=True, least_significant_digit=3
+        )
+        uv.units = "m/s"
+        uv.long_name = f"eastward wind at {LEVEL_HPA} hPa"
         uv[:, :, 0] = u_reg
-        vv = nc.createVariable("V_MV", "f4", ("lat", "lon", "time"),
-                               zlib=True, least_significant_digit=3)
-        vv.units = "m/s"; vv.long_name = f"northward wind at {LEVEL_HPA} hPa"
+        vv = nc.createVariable(
+            "V_MV", "f4", ("lat", "lon", "time"), zlib=True, least_significant_digit=3
+        )
+        vv.units = "m/s"
+        vv.long_name = f"northward wind at {LEVEL_HPA} hPa"
         vv[:, :, 0] = v_reg
         nc.title = f"GFS {LEVEL_HPA} hPa wind — {valid_time:%Y-%m-%d %H:%M} UTC"
         nc.source = f"NCEP GFS 0.25 deg regridded to {OUT_RES} deg"
@@ -400,26 +477,44 @@ def _process_one_fxx(dt: datetime, cycle_hr: int, fxx: int,
     sys.stderr.write(f"[OK] {out_path}\n")
     return out_path
 
+
 # ── Download full cycle ───────────────────────────────────────────────────
-def download_wind_cycle(cycle: datetime, hours: int,
-                        lat_min: float, lat_max: float,
-                        lon_min: float, lon_max: float,
-                        out_dir: str, workers: int = PARALLEL_WORKERS,
-                        out_res: float = OUT_RES,
-                        tmp_dir: Optional[str] = None) -> List[str]:
+def download_wind_cycle(
+    cycle: datetime,
+    hours: int,
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+    out_dir: str,
+    workers: int = PARALLEL_WORKERS,
+    out_res: float = OUT_RES,
+    tmp_dir: str | None = None,
+) -> list[str]:
     fxx_list = _forecast_hours(hours)
-    sys.stderr.write(f"[cycle] {cycle:%Y-%m-%d %H}z — {len(fxx_list)} wind hours, "
-                     f"{workers} workers\n")
+    sys.stderr.write(
+        f"[cycle] {cycle:%Y-%m-%d %H}z — {len(fxx_list)} wind hours, {workers} workers\n"
+    )
     cycle_hr = cycle.hour
     cycle_date = cycle.replace(hour=0, minute=0, second=0, microsecond=0)
     tmp = tmp_dir or os.path.join(out_dir, ".tmp_grib")
     os.makedirs(tmp, exist_ok=True)
 
-    results: List[str] = []
+    results: list[str] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_process_one_fxx, cycle_date, cycle_hr, fxx,
-                        lat_min, lat_max, lon_min, lon_max, tmp, out_dir): fxx
+            pool.submit(
+                _process_one_fxx,
+                cycle_date,
+                cycle_hr,
+                fxx,
+                lat_min,
+                lat_max,
+                lon_min,
+                lon_max,
+                tmp,
+                out_dir,
+            ): fxx
             for fxx in fxx_list
         }
         for future in as_completed(futures):
@@ -437,11 +532,14 @@ def download_wind_cycle(cycle: datetime, hours: int,
     sys.stderr.write(f"[cycle] {cycle:%Y-%m-%d %H}z — wrote {len(results)}/{len(fxx_list)} files\n")
     return results
 
+
 # ── Archive assembly ──────────────────────────────────────────────────────
-def assemble_winds_from_archive(archive_dir: str,
-                                start_time: datetime, end_time: datetime,
-                                out_path: str) -> Optional[str]:
-    from netCDF4 import Dataset, date2num as _d2n
+def assemble_winds_from_archive(
+    archive_dir: str, start_time: datetime, end_time: datetime, out_path: str
+) -> str | None:
+    from netCDF4 import Dataset
+    from netCDF4 import date2num as _d2n
+
     hourly_u, hourly_v = {}, {}
     lats = lons = None
     t = start_time.replace(minute=0, second=0, microsecond=0)
@@ -454,7 +552,8 @@ def assemble_winds_from_archive(archive_dir: str,
                 hourly_u[t] = np.squeeze(nc.variables["U_MV"][:]).astype(np.float32)
                 hourly_v[t] = np.squeeze(nc.variables["V_MV"][:]).astype(np.float32)
                 if lats is None:
-                    lats = nc.variables["lat"][:]; lons = nc.variables["lon"][:]
+                    lats = nc.variables["lat"][:]
+                    lons = nc.variables["lon"][:]
         except Exception:
             return None
         t += timedelta(hours=1)
@@ -468,9 +567,11 @@ def assemble_winds_from_archive(archive_dir: str,
     for i, t in enumerate(sorted_times):
         u_h[i], v_h[i] = hourly_u[t], hourly_v[t]
 
-    times_hh = []; t = sorted_times[0]
+    times_hh = []
+    t = sorted_times[0]
     while t <= sorted_times[-1]:
-        times_hh.append(t); t += timedelta(minutes=30)
+        times_hh.append(t)
+        t += timedelta(minutes=30)
     t0 = sorted_times[0]
     h_in = np.array([(t - t0).total_seconds() / 3600 for t in sorted_times])
     h_out = np.array([(t - t0).total_seconds() / 3600 for t in times_hh])
@@ -484,33 +585,42 @@ def assemble_winds_from_archive(archive_dir: str,
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     tunits = "hours since 1970-01-01 00:00:00 UTC"
     with Dataset(out_path, "w", format="NETCDF4", clobber=True) as nc:
-        nc.createDimension("lat", ny); nc.createDimension("lon", nx)
+        nc.createDimension("lat", ny)
+        nc.createDimension("lon", nx)
         nc.createDimension("time", len(times_hh))
         tv = nc.createVariable("time", "d", ("time",))
-        tv.units = tunits; tv.calendar = "gregorian"
+        tv.units = tunits
+        tv.calendar = "gregorian"
         tv[:] = _d2n(times_hh, tunits, calendar="gregorian")
-        for name, arr in [("lat", lats), ("lon", lons),
-                          ("latitude", lats), ("longitude", lons)]:
+        for name, arr in [("lat", lats), ("lon", lons), ("latitude", lats), ("longitude", lons)]:
             dim = "lat" if "lat" in name else "lon"
             v = nc.createVariable(name, "f4", (dim,), zlib=True)
-            v.units = "degrees_north" if "lat" in name else "degrees_east"; v[:] = arr
-        uv = nc.createVariable("U_MV", "f4", ("lat", "lon", "time"),
-                               zlib=True, least_significant_digit=3)
-        uv.units = "m/s"; uv[:, :, :] = np.transpose(u_hh, (1, 2, 0))
-        vv = nc.createVariable("V_MV", "f4", ("lat", "lon", "time"),
-                               zlib=True, least_significant_digit=3)
-        vv.units = "m/s"; vv[:, :, :] = np.transpose(v_hh, (1, 2, 0))
+            v.units = "degrees_north" if "lat" in name else "degrees_east"
+            v[:] = arr
+        uv = nc.createVariable(
+            "U_MV", "f4", ("lat", "lon", "time"), zlib=True, least_significant_digit=3
+        )
+        uv.units = "m/s"
+        uv[:, :, :] = np.transpose(u_hh, (1, 2, 0))
+        vv = nc.createVariable(
+            "V_MV", "f4", ("lat", "lon", "time"), zlib=True, least_significant_digit=3
+        )
+        vv.units = "m/s"
+        vv[:, :, :] = np.transpose(v_hh, (1, 2, 0))
         nc.title = "GFS 850 hPa Wind Components (from archive)"
         nc.source = f"NCEP GFS, assembled at {OUT_RES} deg"
         nc.created = _utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     sys.stderr.write(f"[archive] assembled {len(times_hh)} steps → {out_path}\n")
     return out_path
 
+
 # ── Auto mode ─────────────────────────────────────────────────────────────
 BACKFILL_HOURS = 72  # cover STREAM-Sat's typical 60h ingest window + margin
 
-def _backfill_archive(out_dir: str, lat_min: float, lat_max: float,
-                      lon_min: float, lon_max: float, workers: int):
+
+def _backfill_archive(
+    out_dir: str, lat_min: float, lat_max: float, lon_min: float, lon_max: float, workers: int
+):
     """On startup, fill archive with recent cycles so STREAM-Sat can use it
     immediately.  Downloads f000-f011 (12 h) from each available cycle going back
     BACKFILL_HOURS."""
@@ -518,8 +628,10 @@ def _backfill_archive(out_dir: str, lat_min: float, lat_max: float,
     latest = _gfs_cycle(now)
     start_cycle = latest - timedelta(hours=BACKFILL_HOURS)
 
-    sys.stderr.write(f"[backfill] filling archive from {start_cycle:%Y-%m-%d %H}z "
-                     f"to {latest:%Y-%m-%d %H}z ({BACKFILL_HOURS}h)\n")
+    sys.stderr.write(
+        f"[backfill] filling archive from {start_cycle:%Y-%m-%d %H}z "
+        f"to {latest:%Y-%m-%d %H}z ({BACKFILL_HOURS}h)\n"
+    )
 
     cycle = start_cycle
     total = 0
@@ -532,7 +644,8 @@ def _backfill_archive(out_dir: str, lat_min: float, lat_max: float,
             os.makedirs(staging, exist_ok=True)
 
             results = download_wind_cycle(
-                cycle, 11, lat_min, lat_max, lon_min, lon_max, staging, workers)
+                cycle, 11, lat_min, lat_max, lon_min, lon_max, staging, workers
+            )
             if results:
                 # Always overwrite — the most recent download for a given
                 # valid hour comes from the latest cycle, which has the
@@ -542,7 +655,9 @@ def _backfill_archive(out_dir: str, lat_min: float, lat_max: float,
                     dst = os.path.join(out_dir, f)
                     shutil.move(src, dst)
                 total += len(results)
-                sys.stderr.write(f"[backfill] {cycle:%Y-%m-%d %H}z → {len(results)} files added to archive\n")
+                sys.stderr.write(
+                    f"[backfill] {cycle:%Y-%m-%d %H}z → {len(results)} files added to archive\n"
+                )
             try:
                 shutil.rmtree(staging, ignore_errors=True)
             except Exception:
@@ -570,25 +685,33 @@ def _backfill_archive(out_dir: str, lat_min: float, lat_max: float,
         sys.stderr.write(f"[backfill] pruned {pruned} files older than {cutoff:%Y-%m-%d %H}:00\n")
 
 
-def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
-              poll_seconds: int = AUTO_POLL_SECONDS,
-              workers: int = PARALLEL_WORKERS,
-              max_back: int = MAX_CYCLES_BACK,
-              lat_min: float = -90, lat_max: float = 90,
-              lon_min: float = -180, lon_max: float = 180):
+def auto_mode(
+    out_dir: str,
+    hours: int = AUTO_HOURS,
+    poll_seconds: int = AUTO_POLL_SECONDS,
+    workers: int = PARALLEL_WORKERS,
+    max_back: int = MAX_CYCLES_BACK,
+    lat_min: float = -90,
+    lat_max: float = 90,
+    lon_min: float = -180,
+    lon_max: float = 180,
+):
     os.makedirs(out_dir, exist_ok=True)
 
     # ── Initial backfill: populate archive with recent history ──
     _backfill_archive(out_dir, lat_min, lat_max, lon_min, lon_max, workers)
 
-    last_cycle: Optional[datetime] = None
+    last_cycle: datetime | None = None
 
     while True:
         try:
             now = _utcnow()
             latest = _gfs_cycle(now)
-            target = latest - timedelta(hours=6) if now <= latest + timedelta(
-                minutes=AUTO_CYCLE_GRACE_MINUTES) else latest
+            target = (
+                latest - timedelta(hours=6)
+                if now <= latest + timedelta(minutes=AUTO_CYCLE_GRACE_MINUTES)
+                else latest
+            )
 
             if last_cycle is not None and target <= last_cycle:
                 sys.stderr.write(f"[auto] cycle {target:%Y-%m-%d %H}z already processed\n")
@@ -604,7 +727,9 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
                 if _cycle_available(trial_date, trial.hour):
                     sys.stderr.write(f"[auto] ✅ cycle {trial:%Y-%m-%d %H}z on AWS — downloading\n")
                 else:
-                    sys.stderr.write(f"[auto] ⏳ cycle {trial:%Y-%m-%d %H}z not yet on AWS — skipping\n")
+                    sys.stderr.write(
+                        f"[auto] ⏳ cycle {trial:%Y-%m-%d %H}z not yet on AWS — skipping\n"
+                    )
                     continue
 
                 # ── Stage to .staging, then merge (don't clear old files!) ──
@@ -621,7 +746,8 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
                 # _forecast_hours is inclusive, so 11 -> [0..11] = 12 files.
                 cycle_hours = min(hours, 11)
                 results = download_wind_cycle(
-                    trial, cycle_hours, lat_min, lat_max, lon_min, lon_max, staging, workers)
+                    trial, cycle_hours, lat_min, lat_max, lon_min, lon_max, staging, workers
+                )
                 if results:
                     # Always overwrite — the most recent download for a given
                     # valid hour comes from the latest cycle (shortest forecast
@@ -636,7 +762,9 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
                         pass
 
                     last_cycle = trial
-                    sys.stderr.write(f"[auto] ✅ {trial:%Y-%m-%d %H}z — {len(results)} files added to archive\n")
+                    sys.stderr.write(
+                        f"[auto] ✅ {trial:%Y-%m-%d %H}z — {len(results)} files added to archive\n"
+                    )
 
                     # ── Prune files older than BACKFILL_HOURS ──
                     cutoff = _utcnow() - timedelta(hours=BACKFILL_HOURS)
@@ -653,14 +781,16 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
                         except (ValueError, OSError):
                             pass
                     if pruned:
-                        sys.stderr.write(f"[auto] pruned {pruned} files older than {cutoff:%Y-%m-%d %H}:00\n")
+                        sys.stderr.write(
+                            f"[auto] pruned {pruned} files older than {cutoff:%Y-%m-%d %H}:00\n"
+                        )
 
                     success = True
                     break
                 sys.stderr.write(f"[auto] ❌ download failed for {trial:%Y-%m-%d %H}z\n")
 
             if not success:
-                sys.stderr.write(f"[auto] ⚠ no available cycle, retrying after poll\n")
+                sys.stderr.write("[auto] ⚠ no available cycle, retrying after poll\n")
         except Exception as e:
             sys.stderr.write(f"[auto] error: {e}\n")
         try:
@@ -668,6 +798,7 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
         except KeyboardInterrupt:
             sys.stderr.write("[auto] stopped.\n")
             return
+
 
 # ── CLI ───────────────────────────────────────────────────────────────────
 def main():
@@ -688,8 +819,11 @@ def main():
         if args.auto_once:
             now = _utcnow()
             latest = _gfs_cycle(now)
-            target = latest - timedelta(hours=6) if now <= latest + timedelta(
-                minutes=AUTO_CYCLE_GRACE_MINUTES) else latest
+            target = (
+                latest - timedelta(hours=6)
+                if now <= latest + timedelta(minutes=AUTO_CYCLE_GRACE_MINUTES)
+                else latest
+            )
             os.makedirs(args.auto_out, exist_ok=True)
             for back in range(args.max_back + 1):
                 trial = target - timedelta(hours=6 * back)
@@ -698,19 +832,35 @@ def main():
                     sys.stderr.write(f"Cycle {trial:%Y-%m-%d %H}z not on AWS — skipping\n")
                     continue
                 results = download_wind_cycle(
-                    trial, args.auto_hours, args.lat_min, args.lat_max,
-                    args.lon_min, args.lon_max, args.auto_out, args.workers)
+                    trial,
+                    args.auto_hours,
+                    args.lat_min,
+                    args.lat_max,
+                    args.lon_min,
+                    args.lon_max,
+                    args.auto_out,
+                    args.workers,
+                )
                 if results:
                     print(f"Wrote {len(results)} wind files for {trial:%Y-%m-%d %H}z")
                     return
             print("No available cycles found.")
             sys.exit(2)
         else:
-            auto_mode(args.auto_out, args.auto_hours, args.poll_seconds,
-                      args.workers, args.max_back,
-                      args.lat_min, args.lat_max, args.lon_min, args.lon_max)
+            auto_mode(
+                args.auto_out,
+                args.auto_hours,
+                args.poll_seconds,
+                args.workers,
+                args.max_back,
+                args.lat_min,
+                args.lat_max,
+                args.lon_min,
+                args.lon_max,
+            )
     else:
         p.print_help()
+
 
 if __name__ == "__main__":
     main()

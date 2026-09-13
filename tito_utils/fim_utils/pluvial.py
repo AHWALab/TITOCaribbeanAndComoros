@@ -11,12 +11,18 @@ TITO QPE-only chain (no long-range / qpfaccum):
   e.g. STREAM-Sat + StormLab, or IMERG (+ SCaMPR gap) + GFS forecast.
 """
 
-from .ensemble import zone_stat, grid_path, resolve_component_dir
+from .ensemble import grid_path, resolve_component_dir, zone_stat
 
 
-def member_rain_total(run_dir: str, cycle: str, bounds, files: dict,
-                      grid_role: str = "qpe_accum",
-                      expand_steps_km=(0, 2, 5, 10, 15), min_valid_cells: int = 50):
+def member_rain_total(
+    run_dir: str,
+    cycle: str,
+    bounds,
+    files: dict,
+    grid_role: str = "qpe_accum",
+    expand_steps_km=(0, 2, 5, 10, 15),
+    min_valid_cells: int = 50,
+):
     """Zone-mean rainfall total of one run over the AOC. Returns (mm, flags)."""
     gpath = grid_path(run_dir, grid_role, cycle, files)
     if not gpath:
@@ -53,8 +59,7 @@ def member_rain_total_components(
             flags.append(f"skipped_qpf_{name}")
             continue
         try:
-            run_dir = resolve_component_dir(
-                outputs_root, comp["template"], member_keys, cycle)
+            run_dir = resolve_component_dir(outputs_root, comp["template"], member_keys, cycle)
         except (KeyError, TypeError):
             run_dir = ""
         gpath = grid_path(run_dir, grid_role, cycle, files) if run_dir else ""
@@ -65,8 +70,11 @@ def member_rain_total_components(
                 ok = False
             continue
         zs = zone_stat(
-            gpath, bounds, comp.get("stat", "mean"),
-            expand_steps_km, min_valid_cells,
+            gpath,
+            bounds,
+            comp.get("stat", "mean"),
+            expand_steps_km,
+            min_valid_cells,
         )
         parts[name] = None if zs.value != zs.value else float(zs.value)
         flags.extend(zs.flags)

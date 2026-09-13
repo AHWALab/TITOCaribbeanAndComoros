@@ -68,9 +68,9 @@ Examples
 
 import argparse
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
-import subprocess
 
 
 def _parse_dt(text: str, label: str) -> datetime:
@@ -79,7 +79,7 @@ def _parse_dt(text: str, label: str) -> datetime:
     except ValueError:
         raise ValueError(
             f"Invalid datetime for {label}: '{text}'. Expected format YYYY-MM-DD HH:MM"
-        )
+        ) from None
 
 
 def _round_to_hour(dt: datetime) -> datetime:
@@ -141,7 +141,7 @@ def main() -> None:
     args = parser.parse_args()
 
     start_dt = _round_to_hour(_parse_dt(args.start_date, "start_date"))
-    end_dt   = _round_to_hour(_parse_dt(args.end_date,   "end_date"))
+    end_dt = _round_to_hour(_parse_dt(args.end_date, "end_date"))
     if end_dt < start_dt:
         print(
             f"ERROR: end_date ({end_dt.strftime('%Y-%m-%d %H:%M')}) must be >= "
@@ -157,8 +157,10 @@ def main() -> None:
 
     # Default under outputs/ — /app itself is read-only inside Apptainer SIFs;
     # outputs/ is bind-mounted writable by tito-run.sh (Docker and Apptainer).
-    log_dir = os.path.abspath(args.log_dir) if args.log_dir else os.path.abspath(
-        os.path.join("outputs", "logs")
+    log_dir = (
+        os.path.abspath(args.log_dir)
+        if args.log_dir
+        else os.path.abspath(os.path.join("outputs", "logs"))
     )
     if not args.dry_run:
         os.makedirs(log_dir, exist_ok=True)
@@ -203,7 +205,7 @@ def main() -> None:
         print(f"\n[{idx:>3}/{total}] {date_str} UTC", end="")
 
         if args.dry_run:
-            print(f"  [DRY-RUN]")
+            print("  [DRY-RUN]")
             print(f"    CMD : {' '.join(cmd)}")
             print(f"    LOG : {log_file}")
             continue
@@ -236,10 +238,7 @@ def main() -> None:
             print("-" * 60)
 
         if returncode != 0:
-            print(
-                f"    FAILED (exit code {returncode}). "
-                f"See log for details: {log_file}"
-            )
+            print(f"    FAILED (exit code {returncode}). See log for details: {log_file}")
             errors.append((date_str, returncode))
             if args.stop_on_error:
                 print("    --stop-on-error is set. Aborting.")

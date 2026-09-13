@@ -1,4 +1,4 @@
-# FIM integration (TITO Guatemala Training)
+# FIM integration (TITO Guatemala)
 
 Scenario-library flood inundation mapping runs **after each EF5 cycle** when
 `fim_enabled = True` in `Caribbean_Comoros_config.py`.
@@ -16,7 +16,7 @@ Scenario-library flood inundation mapping runs **after each EF5 cycle** when
 ## Toggle & rules
 
 ```python
-fim_enabled = True          # False = skip FIM
+fim_enabled = True  # False = skip FIM
 fim_config_dir = "fim_config"
 ```
 
@@ -48,6 +48,7 @@ After EF5 finishes, orchestrator STEP 8 calls:
 
 ```python
 from tito_utils.fim_utils import run_fim_for_cycle
+
 run_fim_for_cycle(regions_to_run=..., cycle="YYYYMMDD.HHMMSS", config=config)
 ```
 

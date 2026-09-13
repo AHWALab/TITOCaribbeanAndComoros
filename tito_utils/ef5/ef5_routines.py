@@ -13,18 +13,18 @@ simulations to run; this module does the work for each job:
     → run_EF5()                    # docker / apptainer container
 """
 
-import os
-import shutil
-import re
 import glob
+import os
+import re
+import shutil
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from shutil import rmtree
-import datetime
 from datetime import timedelta
-import subprocess
-from tito_utils.file_utils.file_handling import is_non_zero_file, mkdir_p
+from shutil import rmtree
+
 from tito_utils.ef5.alerts import send_mail
+from tito_utils.file_utils.file_handling import is_non_zero_file, mkdir_p
 
 
 def _as_posix(path):
@@ -74,8 +74,21 @@ def _resolve_region_paths(region_name, model_resolution, basicPath, parametersPa
 
     wm_file = _select_file(crest_abs, ["crest_Wm*.tif", "crest_wm*.tif"], fallback="crest_Wm.tif")
     b_file = _select_file(crest_abs, ["crest_b*.tif"], fallback="crest_b.tif")
-    fc_file = _select_file(crest_abs, ["crest_Fc*.tif", "crest_fc*.tif"], fallback="crest_Fc_Ksat.tif")
-    im_file = _select_file(crest_abs, ["crest_im*.tif", "crest_Im*.tif", "crest_IM*.tif", "*_IM_final.tif", "*_IM*.tif"], fallback=None)
+    fc_file = _select_file(
+        crest_abs, ["crest_Fc*.tif", "crest_fc*.tif"], fallback="crest_Fc_Ksat.tif"
+    )
+    im_file = _select_file(
+        crest_abs,
+        [
+            "crest_im*.tif",
+            "crest_Im*.tif",
+            "crest_IM*.tif",
+            "*_IM_final.tif",
+            "*_IM*.tif",
+            "IM*.tif",
+        ],
+        fallback=None,
+    )
 
     alpha_file = _select_file(
         kw_abs,
@@ -83,7 +96,9 @@ def _resolve_region_paths(region_name, model_resolution, basicPath, parametersPa
         exclude_tokens=["alpha0"],
     )
     beta_file = _select_file(kw_abs, ["KW_beta*.tif", "kw_beta*.tif"])
-    alpha0_file = _select_file(kw_abs, ["kw_alpha0*.tif", "KW_alpha0*.tif"], fallback="kw_alpha0.tif")
+    alpha0_file = _select_file(
+        kw_abs, ["kw_alpha0*.tif", "KW_alpha0*.tif"], fallback="kw_alpha0.tif"
+    )
 
     wm_path = os.path.join(crest_abs, wm_file) if wm_file else ""
     b_path = os.path.join(crest_abs, b_file) if b_file else ""
@@ -100,7 +115,9 @@ def _resolve_region_paths(region_name, model_resolution, basicPath, parametersPa
     if not fc_file or not os.path.isfile(fc_path):
         raise FileNotFoundError(f"Missing CREST fc file in: {crest_abs}")
     if not im_file or not os.path.isfile(im_path):
-        print(f"    Warning: Missing CREST im file in: {crest_abs} (impervious layer not available)")
+        print(
+            f"    Warning: Missing CREST im file in: {crest_abs} (impervious layer not available)"
+        )
         im_file = ""
         im_path = ""
     if not alpha_file or not os.path.isfile(alpha_path):
@@ -133,7 +150,7 @@ def _load_basin_lines(templatePath, region_name, model_resolution):
     if not os.path.isfile(basin_file):
         raise FileNotFoundError(f"Missing basin list file: {os.path.abspath(basin_file)}")
 
-    with open(basin_file, "r") as basin_fh:
+    with open(basin_file) as basin_fh:
         basin_lines = basin_fh.readlines()
 
     return [line if line.endswith("\n") else line + "\n" for line in basin_lines]
@@ -200,7 +217,11 @@ def _apply_hsaf_control_overrides(lines, precip_forcing_loc):
             while i < len(lines):
                 block_line = lines[i]
                 block_stripped = block_line.strip()
-                if i > 0 and block_stripped.startswith("[") and block_stripped != "[PrecipForcing IMERG]":
+                if (
+                    i > 0
+                    and block_stripped.startswith("[")
+                    and block_stripped != "[PrecipForcing IMERG]"
+                ):
                     break
                 if block_line.lstrip().startswith("#"):
                     out.append(block_line)
@@ -209,15 +230,17 @@ def _apply_hsaf_control_overrides(lines, precip_forcing_loc):
                 i += 1
 
             if not inserted_hsaf_block:
-                out.extend([
-                    "[PrecipForcing HSAF]\n",
-                    "TYPE=TIF\n",
-                    "UNIT=mm/h\n",
-                    "FREQ=10u\n",
-                    f"LOC={precip_forcing_loc}\n",
-                    "NAME=h40_YYYYMMDD_HHUU_fdk.tif\n",
-                    "\n",
-                ])
+                out.extend(
+                    [
+                        "[PrecipForcing HSAF]\n",
+                        "TYPE=TIF\n",
+                        "UNIT=mm/h\n",
+                        "FREQ=10u\n",
+                        f"LOC={precip_forcing_loc}\n",
+                        "NAME=h40_YYYYMMDD_HHUU_fdk.tif\n",
+                        "\n",
+                    ]
+                )
                 inserted_hsaf_block = True
             continue
 
@@ -261,7 +284,10 @@ def _apply_scampr_control_overrides(lines, precip_forcing_loc):
         elif stripped == "[Task Simulation_QPF]":
             in_qpf_task = True
             in_qpe_task = False
-        elif stripped.startswith("[") and stripped not in ("[Task Simulation_QPE]", "[Task Simulation_QPF]"):
+        elif stripped.startswith("[") and stripped not in (
+            "[Task Simulation_QPE]",
+            "[Task Simulation_QPF]",
+        ):
             in_qpe_task = False
             in_qpf_task = False
 
@@ -270,20 +296,26 @@ def _apply_scampr_control_overrides(lines, precip_forcing_loc):
             while i < len(lines):
                 block_line = lines[i]
                 block_stripped = block_line.strip()
-                if i > 0 and block_stripped.startswith("[") and block_stripped != "[PrecipForcing IMERG]":
+                if (
+                    i > 0
+                    and block_stripped.startswith("[")
+                    and block_stripped != "[PrecipForcing IMERG]"
+                ):
                     break
                 out.append(block_line if block_line.lstrip().startswith("#") else "#" + block_line)
                 i += 1
             if not inserted_scampr_block:
-                out.extend([
-                    "[PrecipForcing SCaMPR]\n",
-                    "TYPE=TIF\n",
-                    "UNIT=mm/h\n",
-                    "FREQ=10u\n",
-                    f"LOC={precip_forcing_loc}\n",
-                    "NAME=scampr.qpe.YYYYMMDDHHUU.mmhInst.tif\n",
-                    "\n",
-                ])
+                out.extend(
+                    [
+                        "[PrecipForcing SCaMPR]\n",
+                        "TYPE=TIF\n",
+                        "UNIT=mm/h\n",
+                        "FREQ=10u\n",
+                        f"LOC={precip_forcing_loc}\n",
+                        "NAME=scampr.qpe.YYYYMMDDHHUU.mmhInst.tif\n",
+                        "\n",
+                    ]
+                )
                 inserted_scampr_block = True
             continue
 
@@ -301,6 +333,7 @@ def _apply_scampr_control_overrides(lines, precip_forcing_loc):
         i += 1
 
     return out
+
 
 def rename_ef5_precip(precipEF5Folder, precipFolder, qpe_source="IMERG"):
     """
@@ -330,7 +363,7 @@ def rename_ef5_precip(precipEF5Folder, precipFolder, qpe_source="IMERG"):
 
     for search_dir in search_dirs:
         for filename in os.listdir(search_dir):
-            if filename.endswith('.tif'):
+            if filename.endswith(".tif"):
                 source_file = os.path.join(search_dir, filename)
                 dest_file = os.path.join(precipEF5Folder, filename)
                 try:
@@ -338,8 +371,8 @@ def rename_ef5_precip(precipEF5Folder, precipFolder, qpe_source="IMERG"):
                 except PermissionError as e:
                     print(f"PermissionError: {e}")
     for filename2 in os.listdir(precipEF5Folder):
-        if 'qpf' in filename2 and filename2.endswith('.tif'):
-            new_filename = filename2.replace('qpf', 'qpe')
+        if "qpf" in filename2 and filename2.endswith(".tif"):
+            new_filename = filename2.replace("qpf", "qpe")
             source_file = os.path.join(precipEF5Folder, filename2)
             dest_file = os.path.join(precipEF5Folder, new_filename)
             try:
@@ -384,7 +417,16 @@ def find_available_states(statesPath, modelStates, systemStartTime, failTime):
     return foundAllStates, realSystemStartTime
 
 
-def send_state_alerts(foundAllStates,realSystemStartTime,systemStartTime,currentTime,systemName,SEND_ALERTS,alert_recipients, smtp_config):
+def send_state_alerts(
+    foundAllStates,
+    realSystemStartTime,
+    systemStartTime,
+    currentTime,
+    systemName,
+    SEND_ALERTS,
+    alert_recipients,
+    smtp_config,
+):
     """
     Sends alert emails if necessary based on the availability of model states.
 
@@ -414,7 +456,7 @@ def send_state_alerts(foundAllStates,realSystemStartTime,systemStartTime,current
             f"Missing states from {realSystemStartTime.strftime('%Y%m%d_%H%M')} "
             f"to {systemStartTime.strftime('%Y%m%d_%H%M')}. Starting model with cold states."
         )
-    
+
     # If older states had to be used, notify about it
     elif realSystemStartTime != systemStartTime:
         subject = f"{systemName} warning for {currentTime.strftime('%Y%m%d_%H%M')}"
@@ -422,7 +464,7 @@ def send_state_alerts(foundAllStates,realSystemStartTime,systemStartTime,current
             f"Using states from {realSystemStartTime.strftime('%Y%m%d_%H%M')} "
             f"instead of {systemStartTime.strftime('%Y%m%d_%H%M')}."
         )
-    
+
     # If states were found and up to date, no alert needed
     else:
         return
@@ -430,15 +472,16 @@ def send_state_alerts(foundAllStates,realSystemStartTime,systemStartTime,current
     # Send the email to each recipient in the list
     for recipient in alert_recipients:
         send_mail(
-            smtp_server=smtp_config['smtp_server'],
-            smtp_port=smtp_config['smtp_port'],
-            account_address=smtp_config['account_address'],
-            account_password=smtp_config['account_password'],
-            sender=smtp_config['alert_sender'],
+            smtp_server=smtp_config["smtp_server"],
+            smtp_port=smtp_config["smtp_port"],
+            account_address=smtp_config["account_address"],
+            account_password=smtp_config["account_password"],
+            sender=smtp_config["alert_sender"],
             to=recipient,
             subject=subject,
-            text=message
+            text=message,
         )
+
 
 def write_control_file(
     tmpOutput,
@@ -474,7 +517,9 @@ def write_control_file(
     if not os.path.isfile(template_file):
         raise FileNotFoundError(f"Template file not found: {os.path.abspath(template_file)}")
 
-    region_placeholders = _resolve_region_paths(region_name, model_resolution, basicPath, parametersPath)
+    region_placeholders = _resolve_region_paths(
+        region_name, model_resolution, basicPath, parametersPath
+    )
     basin_lines = _load_basin_lines(templatePath, region_name, model_resolution)
 
     output_path = _with_trailing_slash(tmpOutput)
@@ -496,7 +541,7 @@ def write_control_file(
     for key, value in region_placeholders.items():
         substitutions[f"{{{key}}}"] = _as_posix(value)
 
-    with open(template_file, "r") as template_fh:
+    with open(template_file) as template_fh:
         raw_lines = template_fh.readlines()
 
     raw_lines = _inject_gauge_basin_block(raw_lines, basin_lines)
@@ -521,8 +566,7 @@ def write_control_file(
             if str(qpf_source).upper() == "STORMLAB":
                 line = line.replace("LOC=qpf_store/stormlab_data/", f"LOC={qpf_loc}")
             else:
-                line = line.replace(
-                    "LOC=qpf_store/stormlab_data/", f"LOC={qpf_loc}stormlab_data/")
+                line = line.replace("LOC=qpf_store/stormlab_data/", f"LOC={qpf_loc}stormlab_data/")
 
         if "task=Simulation_QPE" in line:
             if LR_run:
@@ -533,19 +577,19 @@ def write_control_file(
             else:
                 line = "#task=Simulation_QPF\n"
 
-        if LR_run and "PRECIPFORECAST=" in line and not line.lstrip().startswith('#'):
-            line = re.sub(r'PRECIPFORECAST=\w+', f'PRECIPFORECAST={qpf_source.upper()}', line)
+        if LR_run and "PRECIPFORECAST=" in line and not line.lstrip().startswith("#"):
+            line = re.sub(r"PRECIPFORECAST=\w+", f"PRECIPFORECAST={qpf_source.upper()}", line)
 
         # Comment TIME_WARMEND when states exist (normal QPE run) OR for any LR run
         # (no QPE warm-up in LR runs — the model loads the prior state directly).
         if (statesFound or LR_run) and "TIME_WARMEND=" in line:
-            if not line.lstrip().startswith('#'):
+            if not line.lstrip().startswith("#"):
                 line = "#" + line
 
         # When save_states=False (e.g. AROME secondary run) suppress state writes
         # so the primary run's (GFS) states are not overwritten.
         if not save_states and "TIME_STATE=" in line:
-            if not line.lstrip().startswith('#'):
+            if not line.lstrip().startswith("#"):
                 line = "#" + line
 
         rendered_lines.append(line)
@@ -562,10 +606,12 @@ def write_control_file(
         rendered_lines = _apply_gfs_qpe_control_overrides(rendered_lines, precip_loc)
     elif str(qpe_source).upper() == "AROME":
         rendered_lines = _apply_named_qpe_control_overrides(
-            rendered_lines, precip_loc, "AROME", timestep="60u")
+            rendered_lines, precip_loc, "AROME", timestep="60u"
+        )
     elif str(qpe_source).upper() == "WRF":
         rendered_lines = _apply_named_qpe_control_overrides(
-            rendered_lines, precip_loc, "WRF", timestep="60u")
+            rendered_lines, precip_loc, "WRF", timestep="60u"
+        )
 
     with open(controlFile, "w") as out_fh:
         out_fh.writelines(rendered_lines)
@@ -575,8 +621,7 @@ def write_control_file(
 
 def _apply_gfs_qpe_control_overrides(lines, precip_forcing_loc):
     """GFS as normal QPE (no long-range / PRECIPFORECAST) — same pattern as StormLab."""
-    return _apply_named_qpe_control_overrides(
-        lines, precip_forcing_loc, "GFS", timestep="60u")
+    return _apply_named_qpe_control_overrides(lines, precip_forcing_loc, "GFS", timestep="60u")
 
 
 def _apply_named_qpe_control_overrides(lines, precip_forcing_loc, forcing_name, timestep="60u"):
@@ -600,7 +645,8 @@ def _apply_named_qpe_control_overrides(lines, precip_forcing_loc, forcing_name, 
             in_qpf_task = True
             in_qpe_task = False
         elif stripped.startswith("[") and stripped not in (
-            "[Task Simulation_QPE]", "[Task Simulation_QPF]"
+            "[Task Simulation_QPE]",
+            "[Task Simulation_QPF]",
         ):
             in_qpe_task = False
             in_qpf_task = False
@@ -609,20 +655,26 @@ def _apply_named_qpe_control_overrides(lines, precip_forcing_loc, forcing_name, 
             while i < len(lines):
                 block_line = lines[i]
                 block_stripped = block_line.strip()
-                if i > 0 and block_stripped.startswith("[") and block_stripped != "[PrecipForcing IMERG]":
+                if (
+                    i > 0
+                    and block_stripped.startswith("[")
+                    and block_stripped != "[PrecipForcing IMERG]"
+                ):
                     break
                 out.append(block_line if block_line.lstrip().startswith("#") else "#" + block_line)
                 i += 1
             if not has_block and not inserted_block:
-                out.extend([
-                    f"{tag}\n",
-                    "TYPE=TIF\n",
-                    "UNIT=mm/h\n",
-                    "FREQ=1h\n",
-                    f"LOC={precip_forcing_loc}\n",
-                    f"NAME={forcing_name.lower()}.YYYYMMDDHH00.tif\n",
-                    "\n",
-                ])
+                out.extend(
+                    [
+                        f"{tag}\n",
+                        "TYPE=TIF\n",
+                        "UNIT=mm/h\n",
+                        "FREQ=1h\n",
+                        f"LOC={precip_forcing_loc}\n",
+                        f"NAME={forcing_name.lower()}.YYYYMMDDHH00.tif\n",
+                        "\n",
+                    ]
+                )
                 inserted_block = True
             continue
 
@@ -666,9 +718,7 @@ def _apply_stormlab_control_overrides(lines, precip_forcing_loc):
     - Simulation_QPE: PRECIP=STORMLAB, TIMESTEP=60u.
     - Execute QPE only (caller sets LR_run=False).
     """
-    has_stormlab_block = any(
-        ln.strip() == "[PrecipForcing STORMLAB]" for ln in lines
-    )
+    has_stormlab_block = any(ln.strip() == "[PrecipForcing STORMLAB]" for ln in lines)
     out = []
     i = 0
     inserted_block = False
@@ -686,7 +736,8 @@ def _apply_stormlab_control_overrides(lines, precip_forcing_loc):
             in_qpf_task = True
             in_qpe_task = False
         elif stripped.startswith("[") and stripped not in (
-            "[Task Simulation_QPE]", "[Task Simulation_QPF]"
+            "[Task Simulation_QPE]",
+            "[Task Simulation_QPF]",
         ):
             in_qpe_task = False
             in_qpf_task = False
@@ -695,21 +746,27 @@ def _apply_stormlab_control_overrides(lines, precip_forcing_loc):
             while i < len(lines):
                 block_line = lines[i]
                 block_stripped = block_line.strip()
-                if i > 0 and block_stripped.startswith("[") and block_stripped != "[PrecipForcing IMERG]":
+                if (
+                    i > 0
+                    and block_stripped.startswith("[")
+                    and block_stripped != "[PrecipForcing IMERG]"
+                ):
                     break
                 out.append(block_line if block_line.lstrip().startswith("#") else "#" + block_line)
                 i += 1
             # Only inject a STORMLAB block if the template does not already have one
             if not has_stormlab_block and not inserted_block:
-                out.extend([
-                    "[PrecipForcing STORMLAB]\n",
-                    "TYPE=TIF\n",
-                    "UNIT=mm/h\n",
-                    "FREQ=1h\n",
-                    f"LOC={precip_forcing_loc}\n",
-                    "NAME=stormlab.YYYYMMDDHH00.tif\n",
-                    "\n",
-                ])
+                out.extend(
+                    [
+                        "[PrecipForcing STORMLAB]\n",
+                        "TYPE=TIF\n",
+                        "UNIT=mm/h\n",
+                        "FREQ=1h\n",
+                        f"LOC={precip_forcing_loc}\n",
+                        "NAME=stormlab.YYYYMMDDHH00.tif\n",
+                        "\n",
+                    ]
+                )
                 inserted_block = True
             continue
 
@@ -770,7 +827,10 @@ def _apply_streamsat_control_overrides(lines, precip_forcing_loc):
         elif stripped == "[Task Simulation_QPF]":
             in_qpf_task = True
             in_qpe_task = False
-        elif stripped.startswith("[") and stripped not in ("[Task Simulation_QPE]", "[Task Simulation_QPF]"):
+        elif stripped.startswith("[") and stripped not in (
+            "[Task Simulation_QPE]",
+            "[Task Simulation_QPF]",
+        ):
             in_qpe_task = False
             in_qpf_task = False
 
@@ -778,20 +838,26 @@ def _apply_streamsat_control_overrides(lines, precip_forcing_loc):
             while i < len(lines):
                 block_line = lines[i]
                 block_stripped = block_line.strip()
-                if i > 0 and block_stripped.startswith("[") and block_stripped != "[PrecipForcing IMERG]":
+                if (
+                    i > 0
+                    and block_stripped.startswith("[")
+                    and block_stripped != "[PrecipForcing IMERG]"
+                ):
                     break
                 out.append(block_line if block_line.lstrip().startswith("#") else "#" + block_line)
                 i += 1
             if not inserted_block:
-                out.extend([
-                    "[PrecipForcing STREAM_SAT]\n",
-                    "TYPE=TIF\n",
-                    "UNIT=mm/h\n",
-                    "FREQ=30u\n",
-                    f"LOC={precip_forcing_loc}\n",
-                    "NAME=streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif\n",
-                    "\n",
-                ])
+                out.extend(
+                    [
+                        "[PrecipForcing STREAM_SAT]\n",
+                        "TYPE=TIF\n",
+                        "UNIT=mm/h\n",
+                        "FREQ=30u\n",
+                        f"LOC={precip_forcing_loc}\n",
+                        "NAME=streamsat.qpe.YYYYMMDDHHUU.mmhInst.tif\n",
+                        "\n",
+                    ]
+                )
                 inserted_block = True
             continue
 
@@ -809,6 +875,7 @@ def _apply_streamsat_control_overrides(lines, precip_forcing_loc):
         i += 1
 
     return out
+
 
 def _detect_container_runtime():
     """Detect which container runtime is available.
@@ -841,8 +908,7 @@ def _detect_container_runtime():
         if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return "local"
     raise RuntimeError(
-        "No EF5 runtime found. Set EF5_RUNTIME=local|docker|apptainer "
-        "or install Docker/Apptainer."
+        "No EF5 runtime found. Set EF5_RUNTIME=local|docker|apptainer or install Docker/Apptainer."
     )
 
 
@@ -1039,7 +1105,9 @@ def run_ef5_simulations_parallel(simulation_jobs, max_workers=None):
     if not simulation_jobs:
         return []
 
-    workers = max_workers if max_workers else min(len(simulation_jobs), max(1, (os.cpu_count() or 1)))
+    workers = (
+        max_workers if max_workers else min(len(simulation_jobs), max(1, (os.cpu_count() or 1)))
+    )
     errors = []
     timings = []
 
@@ -1075,16 +1143,47 @@ def run_ef5_simulations_parallel(simulation_jobs, max_workers=None):
 
     return timings
 
- 
-def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
-    systemStartTime, failTime, currentTime, systemName, SEND_ALERTS,
-    alert_recipients, smtp_config, tmpOutput, dataPath,
-    subdomain, systemModel, templatePath, template, systemStartLRTime,
-    systemWarmEndTime, systemStateEndTime, systemEndTime, LR_TimeStep, LR_run,
-    region_name, model_resolution, basicPath, parametersPath, qpe_source="IMERG", qpf_source="GFS",
-    stage_precip=True, output_timestamp_str=None, qpf_store_forcing_path="EF5_conf/qpf_store/",
-    save_states=True, cold_start_begin_time=None, cold_start_warm_end_time=None,
-    imerg_download_params=None, verbose=True, run_log=None):
+
+def prepare_ef5(
+    precipEF5Folder,
+    precipFolder,
+    statesPath,
+    modelStates,
+    systemStartTime,
+    failTime,
+    currentTime,
+    systemName,
+    SEND_ALERTS,
+    alert_recipients,
+    smtp_config,
+    tmpOutput,
+    dataPath,
+    subdomain,
+    systemModel,
+    templatePath,
+    template,
+    systemStartLRTime,
+    systemWarmEndTime,
+    systemStateEndTime,
+    systemEndTime,
+    LR_TimeStep,
+    LR_run,
+    region_name,
+    model_resolution,
+    basicPath,
+    parametersPath,
+    qpe_source="IMERG",
+    qpf_source="GFS",
+    stage_precip=True,
+    output_timestamp_str=None,
+    qpf_store_forcing_path="EF5_conf/qpf_store/",
+    save_states=True,
+    cold_start_begin_time=None,
+    cold_start_warm_end_time=None,
+    imerg_download_params=None,
+    verbose=True,
+    run_log=None,
+):
     """Prepare EF5 control file and stage precipitation.
 
     Parameters
@@ -1103,7 +1202,9 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
             print(msg)
 
     # Check to see if all the states for the current time step are available
-    foundAllStates, realSystemStartTime = find_available_states(statesPath, modelStates, systemStartTime, failTime)
+    foundAllStates, realSystemStartTime = find_available_states(
+        statesPath, modelStates, systemStartTime, failTime
+    )
 
     if foundAllStates:
         _say(f"    States found at {realSystemStartTime.strftime('%Y%m%d_%H%M')}")
@@ -1111,9 +1212,16 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
         _say("    No active states found within last 7 days — cold start")
 
     # send alerts if needed
-    send_state_alerts(foundAllStates, realSystemStartTime, systemStartTime,
-                      currentTime, systemName, SEND_ALERTS,
-                      alert_recipients, smtp_config)
+    send_state_alerts(
+        foundAllStates,
+        realSystemStartTime,
+        systemStartTime,
+        currentTime,
+        systemName,
+        SEND_ALERTS,
+        alert_recipients,
+        smtp_config,
+    )
 
     control_start_time = realSystemStartTime
     control_warm_end_time = systemWarmEndTime
@@ -1138,22 +1246,31 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
         else:
             _sim_start_for_backfill = None
 
-        if _sim_start_for_backfill is not None and _sim_start_for_backfill < _init_imerg_end - timedelta(minutes=30):
+        if (
+            _sim_start_for_backfill is not None
+            and _sim_start_for_backfill < _init_imerg_end - timedelta(minutes=30)
+        ):
             _dl_start = _sim_start_for_backfill - timedelta(minutes=30)
-            _dl_end   = _init_imerg_end - timedelta(minutes=30)
+            _dl_end = _init_imerg_end - timedelta(minutes=30)
             # Skip download if all required files already exist locally (e.g., from Phase 1 shared pre-download)
             if _imerg_files_present(imerg_download_params["precipFolder"], _dl_start, _dl_end):
-                print(f"    IMERG already present for {_dl_start.strftime('%Y%m%d_%H%M')} → "
-                      f"{_dl_end.strftime('%Y%m%d_%H%M')} UTC, skipping backfill")
+                print(
+                    f"    IMERG already present for {_dl_start.strftime('%Y%m%d_%H%M')} → "
+                    f"{_dl_end.strftime('%Y%m%d_%H%M')} UTC, skipping backfill"
+                )
             else:
-                _say(f"    Backfilling IMERG files from {_dl_start.strftime('%Y%m%d_%H%M')} "
-                      f"to {_dl_end.strftime('%Y%m%d_%H%M')} UTC "
-                      f"(simulation starts at {_sim_start_for_backfill.strftime('%Y%m%d_%H%M')})")
+                _say(
+                    f"    Backfilling IMERG files from {_dl_start.strftime('%Y%m%d_%H%M')} "
+                    f"to {_dl_end.strftime('%Y%m%d_%H%M')} UTC "
+                    f"(simulation starts at {_sim_start_for_backfill.strftime('%Y%m%d_%H%M')})"
+                )
                 from tito_utils.qpe_utils import get_gpm_files
+
                 try:
                     get_gpm_files(
                         imerg_download_params["precipFolder"],
-                        _dl_start, _dl_end,
+                        _dl_start,
+                        _dl_end,
                         imerg_download_params["server"],
                         imerg_download_params["email_gpm"],
                         imerg_download_params["xmin"],
@@ -1162,8 +1279,10 @@ def prepare_ef5(precipEF5Folder, precipFolder, statesPath, modelStates,
                         imerg_download_params["ymax"],
                     )
                 except Exception as _dl_exc:
-                    _say(f"    Warning: IMERG backfill failed ({_dl_exc}). "
-                          f"EF5 may fail or produce degraded results.")
+                    _say(
+                        f"    Warning: IMERG backfill failed ({_dl_exc}). "
+                        f"EF5 may fail or produce degraded results."
+                    )
 
     # Copy precipitation files into staging folder only once when requested.
     if stage_precip:

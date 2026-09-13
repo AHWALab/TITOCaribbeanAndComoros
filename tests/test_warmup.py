@@ -2,9 +2,8 @@
 
 from datetime import datetime, timedelta
 
+from tito_utils.cycle.timeline import STATE_LOOKBACK, WARMUP_STATE_OFFSET
 from tito_utils.cycle.warmup import decide_warmup, warmup_window
-from tito_utils.cycle.timeline import WARMUP_STATE_OFFSET, STATE_LOOKBACK
-
 
 T = datetime(2026, 7, 22, 12, 0)
 
@@ -25,8 +24,11 @@ def test_warmup_skipped_when_disabled():
 def test_warmup_skipped_when_states_exist():
     st = T - timedelta(hours=5)
     d = decide_warmup(
-        "Guatemala", T, qpe_source="STREAM_SAT",
-        states_found=True, states_time=st,
+        "Guatemala",
+        T,
+        qpe_source="STREAM_SAT",
+        states_found=True,
+        states_time=st,
     )
     assert d.needed is False
     assert "states_ok" in d.reason
@@ -34,8 +36,11 @@ def test_warmup_skipped_when_states_exist():
 
 def test_warmup_needed_without_states():
     d = decide_warmup(
-        "Guatemala", T, qpe_source="STREAM_SAT",
-        states_found=False, warmup_precip_source="IMERG",
+        "Guatemala",
+        T,
+        qpe_source="STREAM_SAT",
+        states_found=False,
+        warmup_precip_source="IMERG",
     )
     assert d.needed is True
     assert d.reason == "no_states_within_48h"

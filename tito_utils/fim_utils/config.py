@@ -20,6 +20,7 @@ class EF5Files:
 
     {cycle} is replaced with the cycle timestamp string, e.g. 20240704.090000.
     """
+
     uq: str = "maxunitq.{cycle}.tif"
     qpe_accum: str = "qpeaccum.{cycle}.tif"
     qpf_accum: str = "qpfaccum.{cycle}.tif"
@@ -36,30 +37,30 @@ class EF5Section:
     # used. Empty list = accept all. Example: qpf_sources: ["gfs", "arome"].
     qpe_sources: list = field(default_factory=list)
     qpf_sources: list = field(default_factory=list)
-    require_qpf: bool = True   # skip QPE-only state-building runs by default
+    require_qpf: bool = True  # skip QPE-only state-building runs by default
 
 
 @dataclass
 class AOCSection:
-    source: str = ""           # .geojson / .json / .shp / .gpkg or folder of mask .tif
-    id_field: str = ""         # attribute holding the unit id (default: index)
-    name_field: str = ""       # attribute holding a display name (optional)
-    layer: str = ""            # layer name for .gpkg (optional)
+    source: str = ""  # .geojson / .json / .shp / .gpkg or folder of mask .tif
+    id_field: str = ""  # attribute holding the unit id (default: index)
+    name_field: str = ""  # attribute holding a display name (optional)
+    layer: str = ""  # layer name for .gpkg (optional)
 
 
 @dataclass
 class TriggerSection:
-    uq_threshold: float = 1.0          # m3/s/km2
-    mode: str = "any_pixel"            # any_pixel (max within AOC) is the only mode for now
-    scope: str = "any_member"          # any_member | all_members
+    uq_threshold: float = 1.0  # m3/s/km2
+    mode: str = "any_pixel"  # any_pixel (max within AOC) is the only mode for now
+    scope: str = "any_member"  # any_member | all_members
 
 
 @dataclass
 class RainfallSection:
-    stat: str = "mean"                 # mean | max over the AOC
-    qpe_scale: float = 1.0             # unit conversion factors if ever needed
+    stat: str = "mean"  # mean | max over the AOC
+    qpe_scale: float = 1.0  # unit conversion factors if ever needed
     qpf_scale: float = 1.0
-    missing_qpf: str = "skip_member"   # skip_member | qpe_only
+    missing_qpf: str = "skip_member"  # skip_member | qpe_only
 
 
 @dataclass
@@ -82,8 +83,8 @@ class OutputsSection:
 @dataclass
 class FimConfig:
     region: str = ""
-    root: str = "."                    # repo root; relative paths resolve against it
-    catalog_path: str = ""             # folder with index.csv, maps/, extents/
+    root: str = "."  # repo root; relative paths resolve against it
+    catalog_path: str = ""  # folder with index.csv, maps/, extents/
     aoc: AOCSection = field(default_factory=AOCSection)
     ef5: EF5Section = field(default_factory=EF5Section)
     trigger: TriggerSection = field(default_factory=TriggerSection)
@@ -123,7 +124,7 @@ def load_config(path: str, root: str = None) -> FimConfig:
     root: repo root against which relative paths resolve. Defaults to the
     current working directory (TITO runs from the repo root).
     """
-    with open(path, "r") as fh:
+    with open(path) as fh:
         raw = yaml.safe_load(fh) or {}
 
     cfg = FimConfig()

@@ -21,33 +21,51 @@ Design rules:
   rasters, CSVs and a JSON decision log
 """
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
 
-from .config import FimConfig, load_config
 from .aoc import AreaOfConcern, load_aocs
-from .ef5_runs import EF5Run, discover_runs, latest_cycle
-from .trigger import evaluate_trigger, TriggerReport
-from .rainfall import member_totals
 from .catalog import Catalog, build_catalog
-from .matching import MatchRules, match_total, match_members, select_scenarios
+from .config import FimConfig, load_config
+from .ef5_runs import EF5Run, discover_runs, latest_cycle
+from .matching import MatchRules, match_members, match_total, select_scenarios
 from .pipeline import run_fim_cycle
-from .tito_hook import run_fim_for_cycle, discover_fim_configs
+from .rainfall import member_totals
+from .tito_hook import discover_fim_configs, run_fim_for_cycle, run_ibf_for_site
+from .trigger import TriggerReport, evaluate_trigger
 
 __all__ = [
-    "FimConfig", "load_config",
-    "AreaOfConcern", "load_aocs",
-    "EF5Run", "discover_runs", "latest_cycle",
-    "evaluate_trigger", "TriggerReport",
+    "FimConfig",
+    "load_config",
+    "AreaOfConcern",
+    "load_aocs",
+    "EF5Run",
+    "discover_runs",
+    "latest_cycle",
+    "evaluate_trigger",
+    "TriggerReport",
     "member_totals",
-    "Catalog", "build_catalog",
-    "MatchRules", "match_total", "match_members", "select_scenarios",
+    "Catalog",
+    "build_catalog",
+    "MatchRules",
+    "match_total",
+    "match_members",
+    "select_scenarios",
     "run_fim_cycle",
-    "run_fim_for_cycle", "discover_fim_configs",
+    "run_fim_for_cycle",
+    "run_ibf_for_site",
+    "discover_fim_configs",
     # v0.2 ensemble/zarr API (lazy: needs zarr only when used)
-    "FimStore", "build_store", "run_ensemble_cycle", "load_ensemble_config",
+    "FimStore",
+    "build_store",
+    "run_ensemble_cycle",
+    "load_ensemble_config",
     # v0.4 pluvial + fluvial hazard API
-    "run_pf_cycle", "load_pf_config", "FluvialMatcher", "attach_fluvial_index",
-    "match_pluvial", "combined_depth",
+    "run_pf_cycle",
+    "load_pf_config",
+    "FluvialMatcher",
+    "attach_fluvial_index",
+    "match_pluvial",
+    "combined_depth",
 ]
 
 # Lazy imports resolved RELATIVE to this package, so fim_utils works no
@@ -70,6 +88,7 @@ _LAZY = {
 def __getattr__(name):
     if name in _LAZY:
         import importlib
+
         module, attr = _LAZY[name]
         return getattr(importlib.import_module(module, __package__), attr)
     raise AttributeError(name)

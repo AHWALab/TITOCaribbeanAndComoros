@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from tito_utils.cycle.region_plan import build_region_configs
 from tito_utils.cycle.timeline import IMERG_LATENCY
 
-
 T = datetime(2026, 7, 22, 12, 0)
 
 
@@ -43,14 +42,19 @@ def test_stream_sat_region_config_has_cycle_plan():
     assert cfg["region_slug"] == "guatemala"
     assert cfg["model_resolution"] == "90m"
     assert cfg["region_states_path"] == "states/guatemala_90m"
-    assert cfg["region_data_path"] == "outputs/guatemala_90m"
+    # Cycle-first outputs: outputs/<cycle>/<region_res>
+    assert cfg["region_data_path"] == f"outputs/{T:%Y%m%d.%H%M%S}/guatemala_90m"
     assert cfg["region_qpf_store"].replace("\\", "/").endswith("qpf_store/guatemala/")
     assert cfg["r_scampr_end"] == T
-    assert cfg["r_end_lr"] == T.replace(hour=12) + (T - T) + __import__("datetime").timedelta(hours=24)
+    assert cfg["r_end_lr"] == T.replace(hour=12) + (T - T) + __import__("datetime").timedelta(
+        hours=24
+    )
     assert cfg["cycle_plan"].qpe_end == T - IMERG_LATENCY
     assert cfg["cycle_plan"].phases[0].name == "stream_sat"
     assert [p.name for p in cfg["cycle_plan"].phases] == [
-        "stream_sat", "gap_fill", "forecast_qpf",
+        "stream_sat",
+        "gap_fill",
+        "forecast_qpf",
     ]
     assert cfg["cycle_plan"].primary_state_time == T  # gap_fill save
     # Legacy keys for STREAM_SAT stay at T (ss_end is data-driven later)
@@ -85,7 +89,7 @@ def test_hindcast_stream_sat_plan_attached():
         ["Guatemala"],
         {"Guatemala": T},
         {"Guatemala": "STREAM_SAT"},
-        {"Guatemala": ["GFS", "AROME"]},
+        {"Guatemala": ["GFS"]},
         config=_cfg(),
         hindcast_mode=True,
         lr_run=True,
@@ -129,5 +133,6 @@ def test_region_resolution_map_paths_and_template(tmp_path: Path):
     assert cfg["region_key"] == "guatemala_900m"
     assert cfg["model_resolution"] == "900m"
     assert cfg["region_states_path"] == "states/guatemala_900m"
-    assert cfg["region_data_path"] == "outputs/guatemala_900m"
+    # Cycle-first outputs: outputs/<cycle>/<region_res>
+    assert cfg["region_data_path"] == f"outputs/{T:%Y%m%d.%H%M%S}/guatemala_900m"
     assert cfg["region_template"] == "ef5_Guatemala_900m_control_template.txt"

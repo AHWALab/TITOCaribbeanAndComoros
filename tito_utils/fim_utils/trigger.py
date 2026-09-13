@@ -14,13 +14,14 @@ from .io_utils import read_grid
 @dataclass
 class TriggerReport:
     threshold: float
-    max_uq: dict = field(default_factory=dict)      # (aoc_id, member_id) -> value
+    max_uq: dict = field(default_factory=dict)  # (aoc_id, member_id) -> value
     triggered_aocs: list = field(default_factory=list)
     triggered: bool = False
 
     def aoc_max(self, aoc_id: str) -> float:
-        vals = [v for (a, _m), v in self.max_uq.items()
-                if a == aoc_id and v == v]  # v == v filters NaN
+        vals = [
+            v for (a, _m), v in self.max_uq.items() if a == aoc_id and v == v
+        ]  # v == v filters NaN
         return max(vals) if vals else float("nan")
 
     def to_dict(self) -> dict:
@@ -28,13 +29,15 @@ class TriggerReport:
             "threshold": self.threshold,
             "triggered": self.triggered,
             "triggered_aocs": self.triggered_aocs,
-            "max_uq": {f"{a}|{m}": (None if v != v else round(v, 4))
-                       for (a, m), v in self.max_uq.items()},
+            "max_uq": {
+                f"{a}|{m}": (None if v != v else round(v, 4)) for (a, m), v in self.max_uq.items()
+            },
         }
 
 
-def evaluate_trigger(runs, aocs, threshold: float = 1.0,
-                     scope: str = "any_member", fast: bool = False) -> TriggerReport:
+def evaluate_trigger(
+    runs, aocs, threshold: float = 1.0, scope: str = "any_member", fast: bool = False
+) -> TriggerReport:
     """Check maxunitq against the threshold inside each AOC.
 
     runs  : list of EF5Run (each one ensemble member)

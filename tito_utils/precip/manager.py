@@ -13,8 +13,9 @@ for precipitation.  Source-specific retrieve modules stay under
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any
 
 from tito_utils.file_utils.prepare_precip import prepare_all_precip
 
@@ -26,7 +27,7 @@ def prepare_cycle_precip(
     region_qpf_requested: Mapping[str, Sequence[str]],
     config: Any,
     *,
-    master_log: Optional[Any] = None,
+    master_log: Any | None = None,
 ):
     """
     Download / generate all precipitation for one cycle.
@@ -42,9 +43,11 @@ def prepare_cycle_precip(
         # (e.g. Apptainer --cleanenv before launcher fix).
         try:
             from offline.stage_offline_precips import install_offline_hook
+
             # install patches this function; call the patched path once
             install_offline_hook(config)
             import tito_utils.precip.manager as _self
+
             if _self.prepare_cycle_precip is not prepare_cycle_precip:
                 return _self.prepare_cycle_precip(
                     regions_to_run,
@@ -55,17 +58,19 @@ def prepare_cycle_precip(
                     master_log=master_log,
                 )
             # install failed to replace us — build shared directly
+            from pathlib import Path
+
             from offline.stage_offline_precips import (
                 _stage_from_ef5_layout,
                 build_shared_precip,
                 stage,
             )
-            from pathlib import Path
+
             root = Path(__file__).resolve().parents[2]
-            src = Path(os.environ.get(
-                "TITO_OFFLINE_PRECIP", str(root / "offline_precips")))
+            src = Path(os.environ.get("TITO_OFFLINE_PRECIP", str(root / "offline_precips")))
             # All region cycles must be in the training offline window
             from offline.stage_offline_precips import validate_offline_cycle
+
             for _r, _ct in region_cycle_times.items():
                 validate_offline_cycle(_ct.strftime("%Y%m%d%H%M"), src)
             ct0 = next(iter(region_cycle_times.values()))
@@ -75,19 +80,31 @@ def prepare_cycle_precip(
             print("==== TITO OFFLINE precip (hard guard, no downloads) ====")
             print(f"  cycle: {ck} (training archive only)")
             if src.is_dir() and any(src.iterdir()):
-                stage(project_root=root, source=src, ss_ens=ss, sl_ens=sl,
-                      cycle_key=ck)
+                from offline.stage_offline_precips import _stormlab_domain
+
+                region0 = next(iter(regions_to_run), "Antigua")
+                stage(
+                    project_root=root,
+                    source=src,
+                    ss_ens=ss,
+                    sl_ens=sl,
+                    cycle_key=ck,
+                    region_slug=_stormlab_domain(region0),
+                )
             else:
-                _stage_from_ef5_layout(
-                    root, ss_ens=ss, sl_ens=sl, cycle_key=ck)
+                _stage_from_ef5_layout(root, ss_ens=ss, sl_ens=sl, cycle_key=ck)
             return build_shared_precip(
-                config, list(regions_to_run), dict(region_cycle_times),
+                config,
+                list(regions_to_run),
+                dict(region_cycle_times),
                 dict(region_qpe_sources),
                 {k: list(v) for k, v in region_qpf_requested.items()},
             )
         except Exception as exc:
             print(f"    ERROR: TITO_OFFLINE=1 but offline staging failed: {exc}")
-            print("    Refusing to download while offline. Fix offline_precips/ or unset TITO_OFFLINE.")
+            print(
+                "    Refusing to download while offline. Fix offline_precips/ or unset TITO_OFFLINE."
+            )
             raise
 
     return prepare_all_precip(
@@ -100,7 +117,7 @@ def prepare_cycle_precip(
     )
 
 
-def summarize_shared_precip(shared) -> Dict[str, Any]:
+def summarize_shared_precip(shared) -> dict[str, Any]:
     """Small dict summary for logging / tests (no heavy I/O)."""
     return {
         "imerg_cycles": sorted(getattr(shared, "imerg_folders", {}) or {}),
@@ -109,7 +126,5 @@ def summarize_shared_precip(shared) -> Dict[str, Any]:
         "streamsat_regions": sorted(getattr(shared, "streamsat_info", {}) or {}),
         "stormlab_regions": sorted(getattr(shared, "stormlab_info", {}) or {}),
         "gfs_cycles": sorted(getattr(shared, "gfs_cache", {}) or {}),
-        "arome_keys": [
-            f"{ck}/{dom}" for ck, dom in (getattr(shared, "arome_cache", {}) or {})
-        ],
+        "arome_keys": [f"{ck}/{dom}" for ck, dom in (getattr(shared, "arome_cache", {}) or {})],
     }

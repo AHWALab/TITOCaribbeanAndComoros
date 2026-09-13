@@ -531,12 +531,17 @@ def process_event(event_key, event_cfg, max_workers=12):
         u, v, lats, lons = read_grib_uv850(grib_path)
         if u is None:
             continue
-
+        u = np.squeeze(np.asarray(u))
+        v = np.squeeze(np.asarray(v))
+        lats = np.squeeze(np.asarray(lats))
+        lons = np.squeeze(np.asarray(lons))
+        if u.ndim != 2 or u.shape != v.shape:
+            log.warning("  Skip %s: unexpected UV shape u=%s v=%s", grib_path.name, u.shape, v.shape)
+            continue
         if ref_lats is None:
             ref_lats = lats
             ref_lons = lons
-
-        hourly_data[item["valid_time"]] = (u, v)
+        hourly_data[item["valid_time"]] = (u, v, lats, lons)
 
     if not hourly_data:
         log.error("No data could be read from downloaded files.")
@@ -552,8 +557,8 @@ def process_event(event_key, event_cfg, max_workers=12):
     sorted_times = sorted(hourly_data.keys())
 
     # Regrid first field to get output grid dimensions
-    u0, v0 = hourly_data[sorted_times[0]]
-    _, lats_01, lons_01 = regrid_to_01deg(u0, ref_lats, ref_lons, **DOMAIN)
+    u0, v0, la0, lo0 = hourly_data[sorted_times[0]]
+    _, lats_01, lons_01 = regrid_to_01deg(u0, la0, lo0, **DOMAIN)
     n_lat = len(lats_01)
     n_lon = len(lons_01)
     log.info(f"Output grid: {n_lat} lat × {n_lon} lon (0.1°)")
@@ -562,15 +567,26 @@ def process_event(event_key, event_cfg, max_workers=12):
     u_hourly = np.zeros((len(sorted_times), n_lat, n_lon), dtype=np.float32)
     v_hourly = np.zeros((len(sorted_times), n_lat, n_lon), dtype=np.float32)
 
+    n_skip = 0
     for i, t in enumerate(sorted_times):
-        u, v = hourly_data[t]
-        u_01, _, _ = regrid_to_01deg(u, ref_lats, ref_lons, **DOMAIN)
-        v_01, _, _ = regrid_to_01deg(v, ref_lats, ref_lons, **DOMAIN)
+        u, v, la, lo = hourly_data[t]
+        try:
+            u_01, _, _ = regrid_to_01deg(u, la, lo, **DOMAIN)
+            v_01, _, _ = regrid_to_01deg(v, la, lo, **DOMAIN)
+        except Exception as exc:
+            n_skip += 1
+            log.warning("  Skip regrid %s (%s): %s", t, u.shape, exc)
+            if i > 0:
+                u_hourly[i] = u_hourly[i - 1]
+                v_hourly[i] = v_hourly[i - 1]
+            continue
         u_hourly[i] = u_01
         v_hourly[i] = v_01
 
         if (i + 1) % 24 == 0:
             log.info(f"  Regridded {i+1}/{len(sorted_times)} timesteps")
+    if n_skip:
+        log.warning("  Reused previous hour for %s mismatched GFS grids", n_skip)
 
     log.info(f"  Regridded {len(sorted_times)}/{len(sorted_times)} timesteps")
 

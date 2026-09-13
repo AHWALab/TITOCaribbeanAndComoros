@@ -11,14 +11,15 @@ Layout expected under offline_precips/ (or --source):
   imerg/*.tif
   qpf_store/_shared/<cycle_key>/gfs_data/*.tif
 """
+
 from __future__ import annotations
 
 import argparse
 import os
 import shutil
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
 
 try:
     import rasterio
@@ -37,15 +38,18 @@ def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def allowed_offline_cycles(source: Optional[Path] = None) -> List[str]:
+def allowed_offline_cycles(source: Path | None = None) -> list[str]:
     """Cycle keys (YYYYMMDDHHMM) permitted in --offline mode."""
     env = os.environ.get("TITO_OFFLINE_ALLOWED_CYCLES", "").strip()
     if env:
         return [c.strip() for c in env.split(",") if c.strip()]
     # Training defaults ∪ any GFS cycle folders present in the archive
     root = _project_root()
-    src = Path(source) if source else Path(
-        os.environ.get("TITO_OFFLINE_PRECIP", str(root / "offline_precips")))
+    src = (
+        Path(source)
+        if source
+        else Path(os.environ.get("TITO_OFFLINE_PRECIP", str(root / "offline_precips")))
+    )
     found = set(DEFAULT_OFFLINE_CYCLES)
     shared = src / "qpf_store" / "_shared"
     if shared.is_dir():
@@ -55,7 +59,7 @@ def allowed_offline_cycles(source: Optional[Path] = None) -> List[str]:
     return sorted(found)
 
 
-def validate_offline_cycle(cycle_key: str, source: Optional[Path] = None) -> None:
+def validate_offline_cycle(cycle_key: str, source: Path | None = None) -> None:
     """
     Refuse offline runs whose cycle is not in the training archive.
 
@@ -66,11 +70,13 @@ def validate_offline_cycle(cycle_key: str, source: Optional[Path] = None) -> Non
     ck = str(cycle_key).strip()
     if ck in allowed:
         return
+
     # pretty print
     def _fmt(k: str) -> str:
         if len(k) == 12 and k.isdigit():
             return f"{k[0:4]}-{k[4:6]}-{k[6:8]} {k[8:10]}:{k[10:12]} UTC"
         return k
+
     lines = [
         f"OFFLINE mode refused: cycle {ck} ({_fmt(ck)}) is not in the training archive.",
         "  This package only ships precip for:",
@@ -81,9 +87,7 @@ def validate_offline_cycle(cycle_key: str, source: Optional[Path] = None) -> Non
         '  Use e.g.:  ./tito-run.sh hindcast "2023-06-21 07:00" '
         '"2023-06-21 07:00" --regions Guatemala --offline'
     )
-    lines.append(
-        "  Or unset --offline to run online downloads for other times."
-    )
+    lines.append("  Or unset --offline to run online downloads for other times.")
     raise RuntimeError("\n".join(lines))
 
 
@@ -102,6 +106,7 @@ def _member_score(folder: Path) -> float:
         return float(sum(f.stat().st_size for f in tifs))
     # Optional accurate (slower) score — import numpy only here
     import numpy as np
+
     if len(tifs) <= 8:
         sample = tifs
     else:
@@ -124,10 +129,10 @@ def _member_score(folder: Path) -> float:
     return float(np.mean(vals)) if vals else float("-inf")
 
 
-def _rank_ens_dirs(parent: Path, prefix: str) -> List[Path]:
+def _rank_ens_dirs(parent: Path, prefix: str) -> list[Path]:
     """Return ens dirs sorted wettest-first (ensP* / ensQ*)."""
     dirs = [p for p in parent.iterdir() if p.is_dir() and p.name.startswith(prefix)]
-    scored: List[Tuple[float, Path]] = []
+    scored: list[tuple[float, Path]] = []
     for d in dirs:
         scored.append((_member_score(d), d))
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -150,7 +155,7 @@ def _link_or_copy_tree(src: Path, dst: Path) -> None:
     if dst.exists():
         shutil.rmtree(dst)
     dst.mkdir(parents=True, exist_ok=True)
-    for root, dirs, files in os.walk(src):
+    for root, _dirs, files in os.walk(src):
         rel = Path(root).relative_to(src)
         target_dir = dst / rel
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -170,7 +175,7 @@ def _copy_selected_members(
     dest_parent: Path,
     prefix: str,
     n_keep: int,
-) -> List[str]:
+) -> list[str]:
     """Copy top n_keep ranked folders → dest_parent/prefix1..n."""
     dest_parent.mkdir(parents=True, exist_ok=True)
     chosen = list(ranked[: max(1, n_keep)])
@@ -385,10 +390,12 @@ def install_offline_hook(config) -> None:
     import tito_utils.precip.manager as mgr
 
     root = _project_root()
-    source = Path(os.environ.get(
-        "TITO_OFFLINE_PRECIP",
-        str(root / "offline_precips"),
-    ))
+    source = Path(
+        os.environ.get(
+            "TITO_OFFLINE_PRECIP",
+            str(root / "offline_precips"),
+        )
+    )
     # If offline_precips empty, use live EF5_conf precip as archive source
     if not source.is_dir() or not any(source.iterdir()):
         source = root / "EF5_conf" / "precip"
@@ -400,8 +407,15 @@ def install_offline_hook(config) -> None:
     ss_ens = int(getattr(config, "stream_sat_ensemble_size", 10))
     sl_ens = int(getattr(config, "stormlab_ensemble_size", 5))
 
-    def _prepare(regions_to_run, region_cycle_times, region_qpe_sources,
-                 region_qpf_requested, config, *, master_log=None):
+    def _prepare(
+        regions_to_run,
+        region_cycle_times,
+        region_qpe_sources,
+        region_qpf_requested,
+        config,
+        *,
+        master_log=None,
+    ):
         print("==== TITO OFFLINE precip (no downloads) ====")
         # Build a staging source root:
         # Prefer offline_precips; else synthesize from EF5_conf
@@ -409,6 +423,7 @@ def install_offline_hook(config) -> None:
         if not src.is_dir() or not any(Path(src).iterdir()):
             # synthetic: use precip/ as stream_sat parent and point qpf
             src = root / "EF5_conf"
+
             # stage expects offline_precips/{stream_sat,stormlab,imerg,qpf_store}
             # map: EF5_conf/precip/* and EF5_conf/qpf_store
             class _Src:
@@ -426,16 +441,14 @@ def install_offline_hook(config) -> None:
         for _ct in region_cycle_times.values():
             validate_offline_cycle(
                 _ct.strftime("%Y%m%d%H%M"),
-                Path(os.environ.get(
-                    "TITO_OFFLINE_PRECIP", str(root / "offline_precips"))),
+                Path(os.environ.get("TITO_OFFLINE_PRECIP", str(root / "offline_precips"))),
             )
         ct0 = next(iter(region_cycle_times.values()))
         cycle_key = ct0.strftime("%Y%m%d%H%M")
 
         if os.environ.get("TITO_OFFLINE_USE_EF5_LAYOUT") == "1":
             # Source is EF5_conf — stage from precip/* and qpf_store
-            _stage_from_ef5_layout(
-                root, ss_ens=ss_ens, sl_ens=sl_ens, cycle_key=cycle_key)
+            _stage_from_ef5_layout(root, ss_ens=ss_ens, sl_ens=sl_ens, cycle_key=cycle_key)
         else:
             stage(
                 project_root=root,
@@ -446,7 +459,9 @@ def install_offline_hook(config) -> None:
             )
 
         shared = build_shared_precip(
-            config, list(regions_to_run), dict(region_cycle_times),
+            config,
+            list(regions_to_run),
+            dict(region_cycle_times),
             dict(region_qpe_sources),
             {k: list(v) for k, v in region_qpf_requested.items()},
         )
@@ -458,7 +473,7 @@ def install_offline_hook(config) -> None:
     mgr.prepare_cycle_precip = _prepare  # type: ignore[assignment]
 
 
-def _reorder_ens_in_place(parent: Path, prefix: str, n_keep: int) -> List[str]:
+def _reorder_ens_in_place(parent: Path, prefix: str, n_keep: int) -> list[str]:
     """
     Rename ensemble folders so wettest become prefix1..n_keep.
     Does not delete unused members (keeps disk I/O minimal on network FS).
@@ -523,7 +538,7 @@ def _stage_from_ef5_layout(root: Path, *, ss_ens: int, sl_ens: int, cycle_key: s
             print(f"  [offline] IMERG → _shared/{ck} ({n} new links/copies)")
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Stage offline training precip")
     ap.add_argument("--source", default=None, help="offline_precips dir")
     ap.add_argument("--ss-ens", type=int, default=2)
@@ -535,11 +550,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not src.is_dir() or not any(src.iterdir()):
         print(f"Source {src} empty — staging from live EF5_conf precip")
         _stage_from_ef5_layout(
-            root, ss_ens=args.ss_ens, sl_ens=args.sl_ens, cycle_key=args.cycle_key)
+            root, ss_ens=args.ss_ens, sl_ens=args.sl_ens, cycle_key=args.cycle_key
+        )
     else:
         stage(
-            project_root=root, source=src,
-            ss_ens=args.ss_ens, sl_ens=args.sl_ens, cycle_key=args.cycle_key)
+            project_root=root,
+            source=src,
+            ss_ens=args.ss_ens,
+            sl_ens=args.sl_ens,
+            cycle_key=args.cycle_key,
+        )
     return 0
 
 

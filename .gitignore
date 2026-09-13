@@ -6,6 +6,7 @@ __pycache__/
 .Python
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -41,6 +42,8 @@ outputs/fim/
 fim_out*/
 fim_store/*.zarr/
 fim_store/**/*.zarr/
+fim_store/**/*.zarr
+tito_utils/qpf_utils/StormLab-GFS-realtime/v1.1.zip
 
 # Offline precip archive (large; materialize locally)
 offline_precips/**/*.tif
@@ -57,6 +60,8 @@ offline_precips/**/*.nc
 !EF5_conf/parameters/**/*.tiff
 !EF5_conf/pet/**/*.tif
 !EF5_conf/pet/**/*.tiff
+!ibf_data/**/*.tif
+!ibf_data/**/*.tiff
 
 # ── Runtime data dirs: keep folder shells via .gitkeep, ignore contents ──
 EF5_conf/precip/**

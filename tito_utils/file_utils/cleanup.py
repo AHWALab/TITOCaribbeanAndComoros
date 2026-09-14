@@ -1,8 +1,9 @@
-import os            
-import re
-import shutil        
 import glob
-from datetime import datetime, timedelta, timezone  
+import os
+import re
+import shutil
+from datetime import datetime, timedelta
+
 from tito_utils.file_utils.datetime_utils import get_geotiff_datetime, to_naive_utc
 
 
@@ -137,7 +138,10 @@ def cleanup_staged_precip_folders(staging_folders):
             print(f"Error cleaning staged precip folder {folder}: {e}")
     return removed
 
-def cleanup_precip(current_datetime, precipFolder, qpf_store_path, keep_gap_fill=False, older_qpe_hours=6.5):
+
+def cleanup_precip(
+    current_datetime, precipFolder, qpf_store_path, keep_gap_fill=False, older_qpe_hours=6.5
+):
     """Function that cleans up the precip folder for the current EF5 run
 
     Arguments:
@@ -158,7 +162,6 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path, keep_gap_fill
     qpes = []
     qpfs = []
     older_QPE = current_naive_utc - timedelta(hours=older_qpe_hours)
-    imerg_Latency = current_naive_utc - timedelta(hours=4)
 
     try:
         # List all precip files
@@ -179,7 +182,11 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path, keep_gap_fill
             except Exception as e:
                 print(f"Error processing QPE file {qpe}: {e}")
 
-        print("    Copying all QPF files older than Current Time: ", current_naive_utc, " into qpf_store folder.")
+        print(
+            "    Copying all QPF files older than Current Time: ",
+            current_naive_utc,
+            " into qpf_store folder.",
+        )
         for qpf in qpfs:
             try:
                 geotiff_datetime = get_geotiff_datetime(precipFolder + qpf)
@@ -204,9 +211,9 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path, keep_gap_fill
 
         max_qpf = current_naive_utc - timedelta(hours=4)
         print(f"    Deleting all QPF files in store folder and subfolders older than: {max_qpf}")
-        
+
         qpf_stored_files = os.listdir(qpf_store_path)
-        qpf_stored_files = [f for f in qpf_stored_files if f.endswith('.tif')]
+        qpf_stored_files = [f for f in qpf_stored_files if f.endswith(".tif")]
         for qpf_stored in qpf_stored_files:
             try:
                 qpf_datetime = get_geotiff_datetime(qpf_store_path + qpf_stored)
@@ -214,7 +221,6 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path, keep_gap_fill
                     os.remove(qpf_store_path + qpf_stored)
             except Exception as e:
                 print(f"Error processing stored QPF file {qpf_stored}: {e}")
-
 
         # --- HSAF file cleanup (h40_*_fdk.tif in precipFolder and _hsaf_raw/) ---
         hsaf_raw_dir = os.path.join(precipFolder, "_hsaf_raw")
@@ -250,3 +256,59 @@ def cleanup_precip(current_datetime, precipFolder, qpf_store_path, keep_gap_fill
 
     except Exception as e:
         print(f"General error in cleanup_precip function: {e}")
+
+
+def clear_live_precip(config, cycle_time, master_log=None):
+    """Wipe live precip after the final resolution pass of a cycle.
+
+    Removes downloaded/derived forcing GeoTIFFs and EF5 staging so the next
+    cycle starts clean. Preserves the IMERG warmup archive (``_warmup``) and
+    never touches ``offline_precips/``.
+    """
+
+    def _say(msg):
+        print(msg)
+        if master_log:
+            master_log.info(msg)
+
+    def _rm(path):
+        try:
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+                return True
+            if os.path.isfile(path) or os.path.islink(path):
+                os.remove(path)
+                return True
+        except OSError as exc:
+            _say(f"    Warning: could not remove {path}: {exc}")
+        return False
+
+    def _wipe_dir(root):
+        """Remove contents of *root* but keep *root* itself."""
+        if not root or not os.path.isdir(root):
+            return
+        for name in os.listdir(root):
+            _rm(os.path.join(root, name))
+
+    # STREAM-Sat / StormLab GeoTIFF member trees (domain folders).
+    _wipe_dir(getattr(config, "stream_sat_precip_folder", "EF5_conf/precip/stream_sat/"))
+    _wipe_dir(getattr(config, "stormlab_precip_folder", "EF5_conf/precip/stormlab/"))
+
+    # IMERG: per-cycle _shared folders + flat tifs; keep _warmup archive.
+    imerg_root = getattr(config, "imerg_precip_folder", "EF5_conf/precip/imerg/")
+    if os.path.isdir(imerg_root):
+        for name in os.listdir(imerg_root):
+            p = os.path.join(imerg_root, name)
+            if name.endswith(".tif") or name.startswith("_shared"):
+                _rm(p)
+
+    # SCaMPR / HSAF, EF5 staging, and per-region qpf_store.
+    _wipe_dir(getattr(config, "scampr_precip_folder", "EF5_conf/precip/scampr/"))
+    _wipe_dir(getattr(config, "hsaf_precip_folder", "EF5_conf/precip/hsaf/"))
+    _wipe_dir(getattr(config, "precipEF5Folder", "EF5_conf/precipEF5/"))
+    _wipe_dir(getattr(config, "qpf_store_path", "EF5_conf/qpf_store/"))
+
+    _say(
+        "    Live precip cleared (stream_sat, stormlab, imerg/_shared, "
+        "scampr, hsaf, precipEF5, qpf_store)"
+    )

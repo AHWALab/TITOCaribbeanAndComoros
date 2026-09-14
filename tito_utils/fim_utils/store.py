@@ -5,7 +5,9 @@ storm and only that storm's depth chunk is read from disk. No netCDF, no
 whole-catalog loads, memory stays flat regardless of library size.
 
 Layout of  <store>.zarr :
-    depth        (storm, y, x)  float32, metres, chunks (1, ny, nx)
+    depth        (storm, y, x)  float32 metres, or uint16 centimetres with
+                                attrs depth_scale=0.01 (since v1.8.0); the
+                                reader always returns metres. chunks (1, ny, nx)
     extent       (storm, y, x)  uint8 0/1 (depth >= extent_threshold_m)
     magnitude_mm (storm,)       float64, 24-h rainfall of each storm
     storm_id     (storm,)       fixed-length strings
@@ -30,9 +32,9 @@ except ImportError as exc:  # pragma: no cover
 def _create_array(group, name, data, chunks):
     """zarr 2/3 compatibility."""
     kwargs = dict(shape=data.shape, dtype=data.dtype, chunks=chunks)
-    try:                      # zarr >= 3
+    try:  # zarr >= 3
         arr = group.create_array(name, **kwargs)
-    except (AttributeError, TypeError):   # zarr 2.x
+    except (AttributeError, TypeError):  # zarr 2.x
         arr = group.create_dataset(name, **kwargs)
     arr[...] = data
     return arr
@@ -73,10 +75,22 @@ class FimStore:
         return self.storm_id.index(str(storm_id))
 
     def depth(self, idx) -> np.ndarray:
-        """Depth map of one storm (reads exactly one chunk)."""
+        """Depth map of one storm in METRES float32 (reads exactly one chunk).
+
+        Since v1.8.0 a store may hold depth as quantized integers (uint16
+        centimetres) with a depth_scale attribute, which halves the raw
+        bytes and compresses better than float32 of the same values. The
+        scale is applied here, so every consumer keeps seeing metres.
+        Stores without the attribute (all pre-1.8 stores) pass through
+        unchanged.
+        """
         if isinstance(idx, str):
             idx = self.index_of(idx)
-        return np.asarray(self.root["depth"][idx])
+        a = np.asarray(self.root["depth"][idx])
+        scale = self.attrs.get("depth_scale")
+        if scale:
+            return a.astype("float32") * float(scale)
+        return a
 
     def extent(self, idx) -> np.ndarray:
         if isinstance(idx, str):
@@ -93,9 +107,15 @@ class FimStore:
 
     def match(self, total_mm: float, band=(0.9, 1.2), band_wide=(0.8, 1.3)):
         """Widening-band, round-up match. Returns a decision dict."""
-        d = {"total_mm": None if total_mm != total_mm else round(float(total_mm), 2),
-             "storm_id": "", "storm_index": -1, "storm_magnitude_mm": None,
-             "alt_storm_id": "", "rule_applied": "", "flags": []}
+        d = {
+            "total_mm": None if total_mm != total_mm else round(float(total_mm), 2),
+            "storm_id": "",
+            "storm_index": -1,
+            "storm_magnitude_mm": None,
+            "alt_storm_id": "",
+            "rule_applied": "",
+            "flags": [],
+        }
         if total_mm != total_mm:
             d["rule_applied"] = "no_total"
             d["flags"].append("missing_total")
@@ -107,36 +127,51 @@ class FimStore:
                 mags = self.magnitude[cand]
                 above = cand[mags >= total_mm]
                 if above.size:
-                    pick = int(above[0])                    # smallest above T
+                    pick = int(above[0])  # smallest above T
                 else:
-                    pick = int(cand[-1])                    # all below: largest
+                    pick = int(cand[-1])  # all below: largest
                     d["flags"].append("rounded_down")
-                d.update(storm_index=pick, storm_id=self.storm_id[pick],
-                         storm_magnitude_mm=round(float(self.magnitude[pick]), 2),
-                         rule_applied=rule)
+                d.update(
+                    storm_index=pick,
+                    storm_id=self.storm_id[pick],
+                    storm_magnitude_mm=round(float(self.magnitude[pick]), 2),
+                    rule_applied=rule,
+                )
                 return d
 
         if total_mm > float(np.nanmax(self.magnitude)):
             pick = self.n_storms - 1
-            d.update(storm_index=pick, storm_id=self.storm_id[pick],
-                     storm_magnitude_mm=round(float(self.magnitude[pick]), 2),
-                     alt_storm_id=self.storm_id[max(0, pick - 1)],
-                     rule_applied="beyond_catalog")
+            d.update(
+                storm_index=pick,
+                storm_id=self.storm_id[pick],
+                storm_magnitude_mm=round(float(self.magnitude[pick]), 2),
+                alt_storm_id=self.storm_id[max(0, pick - 1)],
+                rule_applied="beyond_catalog",
+            )
             d["flags"].append("beyond_catalog")
         else:
             pick = 0
-            d.update(storm_index=pick, storm_id=self.storm_id[pick],
-                     storm_magnitude_mm=round(float(self.magnitude[pick]), 2),
-                     rule_applied="below_catalog")
+            d.update(
+                storm_index=pick,
+                storm_id=self.storm_id[pick],
+                storm_magnitude_mm=round(float(self.magnitude[pick]), 2),
+                rule_applied="below_catalog",
+            )
             d["flags"].append("below_catalog")
         return d
 
 
-def build_store(depth_files: dict, out_path: str, magnitudes: dict,
-                extent_threshold_m: float = 0.05,
-                crs: str = "", transform=None, nodata=None,
-                magnitude_source: str = "provided",
-                extra_attrs: dict = None) -> str:
+def build_store(
+    depth_files: dict,
+    out_path: str,
+    magnitudes: dict,
+    extent_threshold_m: float = 0.05,
+    crs: str = "",
+    transform=None,
+    nodata=None,
+    magnitude_source: str = "provided",
+    extra_attrs: dict = None,
+) -> str:
     """Build the zarr store from {storm_id: depth_tif_path}.
 
     magnitudes: {storm_id: magnitude_mm} (NaN allowed but discouraged).
@@ -157,17 +192,24 @@ def build_store(depth_files: dict, out_path: str, magnitudes: dict,
         with rasterio.open(depth_files[storm]) as src:
             arr = src.read(1, masked=True).filled(0.0).astype("float32")
             arr[arr < 0] = 0.0
-            sig = (src.width, src.height, tuple(np.round(np.asarray(src.transform)[:6], 9)), str(src.crs))
+            sig = (
+                src.width,
+                src.height,
+                tuple(np.round(np.asarray(src.transform)[:6], 9)),
+                str(src.crs),
+            )
             if ref is None:
                 ref = sig
                 crs = crs or str(src.crs)
                 transform = transform or tuple(np.asarray(src.transform)[:6])
                 nodata = src.nodata
             elif sig != ref:
-                raise ValueError(f"{storm}: grid differs from the first map; all maps must share one grid")
+                raise ValueError(
+                    f"{storm}: grid differs from the first map; all maps must share one grid"
+                )
             stack.append(arr)
 
-    depth = np.stack(stack)                       # (n, ny, nx)
+    depth = np.stack(stack)  # (n, ny, nx)
     extent = (depth >= extent_threshold_m).astype("uint8")
     n, ny, nx = depth.shape
 
@@ -176,23 +218,29 @@ def build_store(depth_files: dict, out_path: str, magnitudes: dict,
     _create_array(root, "extent", extent, chunks=(1, ny, nx))
     _create_array(root, "magnitude_mm", mags, chunks=(n,))
     max_len = max(len(s) for s in ids)
-    _create_array(root, "storm_id",
-                  np.array([s.encode() for s in ids], dtype=f"S{max_len}"), chunks=(n,))
-    root.attrs.update({
-        "crs": crs, "transform": list(transform),
-        "extent_threshold_m": extent_threshold_m,
-        "source_nodata": None if nodata is None else float(nodata),
-        "magnitude_source": magnitude_source,
-        "n_storms": n, "grid_shape": [ny, nx],
-        **(extra_attrs or {}),
-    })
+    _create_array(
+        root, "storm_id", np.array([s.encode() for s in ids], dtype=f"S{max_len}"), chunks=(n,)
+    )
+    root.attrs.update(
+        {
+            "crs": crs,
+            "transform": list(transform),
+            "extent_threshold_m": extent_threshold_m,
+            "source_nodata": None if nodata is None else float(nodata),
+            "magnitude_source": magnitude_source,
+            "n_storms": n,
+            "grid_shape": [ny, nx],
+            **(extra_attrs or {}),
+        }
+    )
 
     # Companion CSV index for humans
     import csv
+
     with open(os.path.join(out_path, "index.csv"), "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["storm_index", "storm_id", "magnitude_mm"])
-        for i, (s, m) in enumerate(zip(ids, mags)):
+        for i, (s, m) in enumerate(zip(ids, mags, strict=False)):
             w.writerow([i, s, "" if m != m else round(m, 2)])
     with open(os.path.join(out_path, "meta.json"), "w") as fh:
         json.dump(dict(root.attrs), fh, indent=2)
@@ -209,8 +257,7 @@ def attach_magnitudes(store_path: str, magnitudes: dict, source: str = "rainyday
     this is a one-off cost of reading and writing each chunk once.
     """
     root = zarr.open_group(store_path, mode="r+")
-    ids = [s.decode() if isinstance(s, bytes) else str(s)
-           for s in np.asarray(root["storm_id"][:])]
+    ids = [s.decode() if isinstance(s, bytes) else str(s) for s in np.asarray(root["storm_id"][:])]
     mags = np.array([float(magnitudes.get(s, np.nan)) for s in ids], dtype="float64")
     order = np.argsort(mags, kind="stable")
 
@@ -233,10 +280,11 @@ def attach_magnitudes(store_path: str, magnitudes: dict, source: str = "rainyday
     sorted_ids = [ids[i] for i in order]
     sorted_mags = mags[order]
     import csv
+
     with open(os.path.join(store_path, "index.csv"), "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["storm_index", "storm_id", "magnitude_mm"])
-        for i, (s, m) in enumerate(zip(sorted_ids, sorted_mags)):
+        for i, (s, m) in enumerate(zip(sorted_ids, sorted_mags, strict=False)):
             w.writerow([i, s, "" if m != m else round(float(m), 2)])
     with open(os.path.join(store_path, "meta.json"), "w") as fh:
         json.dump(dict(root.attrs), fh, indent=2)

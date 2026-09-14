@@ -84,6 +84,9 @@ tito.sif
 EF5/*.sif
 EF5/*.tar
 
+# Local backup/transfer archive of the whole training dir (never commit)
+TITO_A&B_copy.zip
+
 # Nested upstream repo (StormLab under tito_utils/qpf_utils/)
 tito_utils/qpf_utils/StormLab-GFS-realtime/WMO.zip
 tito_utils/qpf_utils/StormLab-GFS-realtime/output/

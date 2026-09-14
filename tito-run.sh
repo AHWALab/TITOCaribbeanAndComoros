@@ -22,7 +22,7 @@
 # ── Hindcast ────────────────────────────────────────────────────────────────
 #   ./tito-run.sh hindcast "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
 #   Training offline (no downloads — uses offline_precips/ or staged EF5_conf precip):
-#   ./tito-run.sh hindcast "2023-06-21 07:00" "2023-06-21 08:00" --regions Guatemala --offline
+  #   TITO_RUNTIME=apptainer ./tito-run.sh hindcast "2010-10-30 00:00" "2010-10-30 00:00" --regions Barbados --offline
 #
 # ── Windows ─────────────────────────────────────────────────────────────────
 #   Prefer pure CMD (no PowerShell / execution-policy issues):

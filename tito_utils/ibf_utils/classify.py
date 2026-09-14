@@ -19,10 +19,9 @@ Two classifications are written side by side:
 import numpy as np
 import pandas as pd
 
-from .config import (RISK_LEVELS, RISK_COLORS, SEVERITY_LEVELS,
-                     LIKELIHOOD_LEVELS)
+from .config import LIKELIHOOD_LEVELS, RISK_COLORS, RISK_LEVELS
 
-SEVERITY_ORDER = ["minor", "significant", "severe"]   # severity idx 1, 2, 3
+SEVERITY_ORDER = ["minor", "significant", "severe"]  # severity idx 1, 2, 3
 
 
 def match_severity_layers(layers, cl_cfg, log=print):
@@ -40,15 +39,19 @@ def match_severity_layers(layers, cl_cfg, log=print):
         target = float(wanted[name])
         if not layers:
             break
-        best = min(layers, key=lambda l: abs(l.threshold_m - target))
+        best = min(layers, key=lambda lyr: abs(lyr.threshold_m - target))
         rel = abs(best.threshold_m - target) / target
         if rel > tol:
-            log(f"    ibf_utils.classify: no product within tolerance of "
-                f"{name} ({target} m); closest is {best.threshold_m} m - skipped")
+            log(
+                f"    ibf_utils.classify: no product within tolerance of "
+                f"{name} ({target} m); closest is {best.threshold_m} m - skipped"
+            )
             continue
         if rel > 1e-6:
-            log(f"    ibf_utils.classify: {name} axis ({target} m) served by "
-                f"{best.threshold_m} m product ({best.tag})")
+            log(
+                f"    ibf_utils.classify: {name} axis ({target} m) served by "
+                f"{best.threshold_m} m product ({best.tag})"
+            )
         out[name] = best
     return out
 
@@ -81,7 +84,7 @@ def classify_features(gdf, sev_layers, cl_cfg, all_layers=None):
         sev_idx = SEVERITY_ORDER.index(sev_name) + 1
         p = out[layer.field].fillna(0.0).values
         lik = np.array([likelihood_index(x, bands, rep) for x in p])
-        cells = np.array([matrix[l][sev_idx] if l >= 0 else 0 for l in lik])
+        cells = np.array([matrix[k][sev_idx] if k >= 0 else 0 for k in lik])
         risk = np.maximum(risk, cells)
         if sev_name == "minor":
             lik_minor = lik
@@ -89,13 +92,11 @@ def classify_features(gdf, sev_layers, cl_cfg, all_layers=None):
     out["risk_class"] = risk
     out["risk_level"] = [RISK_LEVELS[r] for r in risk]
     out["risk_color"] = [RISK_COLORS[r] for r in risk]
-    out["likelihood"] = [LIKELIHOOD_LEVELS[l] if l >= 0 else "none"
-                         for l in lik_minor]
+    out["likelihood"] = [LIKELIHOOD_LEVELS[k] if k >= 0 else "none" for k in lik_minor]
 
     # IBFv1.0 hazard_flag: highest threshold (sorted ascending across ALL
     # probability layers) with p >= cutoff; 0 = below cutoff everywhere.
-    layers_sorted = sorted(all_layers or sev_layers.values(),
-                           key=lambda l: l.threshold_m)
+    layers_sorted = sorted(all_layers or sev_layers.values(), key=lambda lyr: lyr.threshold_m)
     flag = np.zeros(n, dtype=int)
     for i, layer in enumerate(layers_sorted, start=1):
         p = out[layer.field].fillna(0.0).values
@@ -109,13 +110,19 @@ def _wide(df, admin_id, class_col, classes, metrics, prefix):
     if len(df) == 0:
         base = pd.DataFrame({admin_id: []})
     else:
-        agg = (df.dropna(subset=[class_col])
-                 .groupby([admin_id, class_col])
-                 .agg(**{name: (col, op) for name, (col, op) in metrics.items()})
-                 .reset_index())
-        base = agg.pivot_table(index=admin_id, columns=class_col,
-                               values=list(metrics.keys()),
-                               fill_value=0, aggfunc="sum")
+        agg = (
+            df.dropna(subset=[class_col])
+            .groupby([admin_id, class_col])
+            .agg(**{name: (col, op) for name, (col, op) in metrics.items()})
+            .reset_index()
+        )
+        base = agg.pivot_table(
+            index=admin_id,
+            columns=class_col,
+            values=list(metrics.keys()),
+            fill_value=0,
+            aggfunc="sum",
+        )
         cols = pd.MultiIndex.from_product([list(metrics.keys()), classes])
         base = base.reindex(columns=cols, fill_value=0)
         base.columns = [f"{prefix}_{int(c)}_{m}" for m, c in base.columns]
@@ -138,18 +145,21 @@ def iwf_flags(summary, iwf_cfg, n_hazard_classes: int):
         total = out[suffix].replace(0, np.nan)
         out[iwf_col] = 0
 
-        def affected(from_class):
+        def affected(from_class, suffix=suffix):
             cols = [f"hzrd_{c}_{suffix}" for c in range(from_class, top + 1)]
             cols = [c for c in cols if c in out.columns]
             return out[cols].sum(axis=1) if cols else pd.Series(0.0, index=out.index)
 
-        tiers = [(4, affected(top), m["severe"]),
-                 (3, affected(max(top - 1, 1)), m["lmh"]),
-                 (2, affected(max(top - 2, 1)), m["lmh"]),
-                 (1, affected(1), m["lmh"])]
+        tiers = [
+            (4, affected(top), m["severe"]),
+            (3, affected(max(top - 1, 1)), m["lmh"]),
+            (2, affected(max(top - 2, 1)), m["lmh"]),
+            (1, affected(1), m["lmh"]),
+        ]
         for value, aff, thr in tiers:
             hit = (out[iwf_col] == 0) & (
-                (aff >= thr["absolute"]) | (aff.div(total) >= thr["percentage"]))
+                (aff >= thr["absolute"]) | (aff.div(total) >= thr["percentage"])
+            )
             out.loc[hit, iwf_col] = value
     cols = list(iwf_cfg.keys())
     out["impact_flag"] = out[cols].max(axis=1)
@@ -171,16 +181,28 @@ def summarize_admin(admin, bldgs, roads, cfg, sev_layers):
     cl = cfg["classification"]
     adm_spec = cfg["receptors"]["admin"]
     aid = adm_spec["id_field"]
-    n_classes = max(int(bldgs["hazard_flag"].max()) + 1 if len(bldgs) else 1,
-                    int(roads["hazard_flag"].max()) + 1 if len(roads) else 1, 2)
+    n_classes = max(
+        int(bldgs["hazard_flag"].max()) + 1 if len(bldgs) else 1,
+        int(roads["hazard_flag"].max()) + 1 if len(roads) else 1,
+        2,
+    )
     hz_classes = list(range(n_classes))
 
-    hz_b = _wide(bldgs, aid, "hazard_flag", hz_classes,
-                 {"total_pop": ("population_per_building", "sum"),
-                  "bldg_count": ("feature_id", "count"),
-                  "bldg_area_m2": ("building_area_m2", "sum")}, "hzrd")
-    hz_r = _wide(roads, aid, "hazard_flag", hz_classes,
-                 {"rd_len_m": ("road_length_m", "sum")}, "hzrd")
+    hz_b = _wide(
+        bldgs,
+        aid,
+        "hazard_flag",
+        hz_classes,
+        {
+            "total_pop": ("population_per_building", "sum"),
+            "bldg_count": ("feature_id", "count"),
+            "bldg_area_m2": ("building_area_m2", "sum"),
+        },
+        "hzrd",
+    )
+    hz_r = _wide(
+        roads, aid, "hazard_flag", hz_classes, {"rd_len_m": ("road_length_m", "sum")}, "hzrd"
+    )
 
     summary = admin.drop(columns="geometry").copy()
     for extra in (hz_b, hz_r):

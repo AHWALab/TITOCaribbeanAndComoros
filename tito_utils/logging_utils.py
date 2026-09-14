@@ -33,8 +33,6 @@ import sys
 import threading
 import warnings
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 # ── Verbosity ───────────────────────────────────────────────────────────
 # "user"  = simplified operator console (default)
@@ -47,7 +45,7 @@ _PROGRESS_LOCK = threading.Lock()
 _PROGRESS_ACTIVE = False
 
 
-def configure_console_verbosity(level: Optional[str] = None) -> str:
+def configure_console_verbosity(level: str | None = None) -> str:
     """Set console verbosity. Env ``TITO_CONSOLE_VERBOSITY`` wins if set."""
     global _VERBOSITY
     env = os.environ.get("TITO_CONSOLE_VERBOSITY", "").strip().lower()
@@ -96,6 +94,7 @@ def suppress_third_party_noise() -> None:
 
     try:
         from osgeo import gdal
+
         gdal.UseExceptions()
         try:
             gdal.PushErrorHandler("CPLQuietErrorHandler")
@@ -146,7 +145,7 @@ def progress_line(msg: str) -> None:
             _PROGRESS_ACTIVE = False
 
 
-def progress_done(final_msg: Optional[str] = None) -> None:
+def progress_done(final_msg: str | None = None) -> None:
     """Finish an in-place progress line (newline)."""
     global _PROGRESS_ACTIVE
     with _PROGRESS_LOCK:
@@ -195,7 +194,7 @@ _SL_KEEP = re.compile(
 )
 
 
-def filter_streamsat_line(line: str) -> Optional[str]:
+def filter_streamsat_line(line: str) -> str | None:
     """Return a cleaned operator line for STREAM-Sat, or None to hide.
 
     Special return prefix ``\\r`` means the caller should use an in-place
@@ -229,8 +228,7 @@ def filter_streamsat_line(line: str) -> Optional[str]:
     if re.search(r"Generating\s+(\d+)-member", s2, re.I):
         return f"    {s2.strip()}"
     # GFS download progress → in-place single line
-    m_gfs = re.search(
-        r"GFS progress:\s*(\d+)/(\d+)\s*\(ok=(\d+)\s*fail=(\d+)\)", s2, re.I)
+    m_gfs = re.search(r"GFS progress:\s*(\d+)/(\d+)\s*\(ok=(\d+)\s*fail=(\d+)\)", s2, re.I)
     if m_gfs:
         return (
             f"\r    GFS winds: {m_gfs.group(1)}/{m_gfs.group(2)} "
@@ -264,7 +262,7 @@ def filter_streamsat_line(line: str) -> Optional[str]:
     return None
 
 
-def filter_stormlab_line(line: str) -> Optional[str]:
+def filter_stormlab_line(line: str) -> str | None:
     """Return a cleaned operator line for StormLab, or None to hide."""
     s = line.rstrip()
     if not s:
@@ -294,12 +292,14 @@ try:
     from rich.theme import Theme
     from rich.traceback import install as _install_tb
 
-    _RICH_THEME = Theme({
-        "logging.level.info": "dim cyan",
-        "logging.level.warning": "yellow",
-        "logging.level.error": "bold red",
-        "logging.level.critical": "bold white on red",
-    })
+    _RICH_THEME = Theme(
+        {
+            "logging.level.info": "dim cyan",
+            "logging.level.warning": "yellow",
+            "logging.level.error": "bold red",
+            "logging.level.critical": "bold white on red",
+        }
+    )
 
     _rich = _RichConsole(theme=_RICH_THEME, highlight=False)
     _install_tb(show_locals=False, width=None)
@@ -316,6 +316,7 @@ try:
 
     class _TitoConsole:
         """Wrapper adding .info/.warning/.error helpers to Rich Console."""
+
         def __init__(self, rc):
             self._rc = rc
             self._raw = rc
@@ -352,6 +353,7 @@ except ImportError:
 
     class _TitoConsole:
         """Minimal console mimicking Rich API with plain print."""
+
         def info(self, *args, **kwargs):
             print(*args, **kwargs)
 
@@ -401,16 +403,19 @@ def setup_run_log(output_dir: str, name: str = "ef5_run") -> logging.Logger:
 
     fh = logging.FileHandler(log_path, encoding="utf-8")
     fh.setLevel(logging.DEBUG)
-    fh.setFormatter(logging.Formatter(
-        "%(asctime)s %(levelname)-8s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    ))
+    fh.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
     logger.addHandler(fh)
 
     # Terminal: only WARNING+ in user mode; INFO+ in debug
     if _HAS_RICH and _RICH_RAW is not None:
-        rh = RichHandler(console=_RICH_RAW, show_time=False, show_level=False,
-                         show_path=False, markup=False)
+        rh = RichHandler(
+            console=_RICH_RAW, show_time=False, show_level=False, show_path=False, markup=False
+        )
         rh.setLevel(logging.DEBUG if is_debug() else logging.WARNING)
         rh.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(rh)

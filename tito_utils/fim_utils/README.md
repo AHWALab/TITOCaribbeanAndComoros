@@ -58,8 +58,8 @@ From the orchestrator, after the EF5 runs of a cycle finish:
 
 ```python
 from tito_utils.fim_utils import load_config, run_fim_cycle
-summary = run_fim_cycle(load_config(f"fim_config/{region}.yaml"),
-                        cycle=output_timestamp_str)
+
+summary = run_fim_cycle(load_config(f"fim_config/{region}.yaml"), cycle=output_timestamp_str)
 ```
 
 Exit codes for the CLI: 0 ok (triggered or quiet), 2 no EF5 runs found.
@@ -70,8 +70,8 @@ Exit codes for the CLI: 0 ok (triggered or quiet), 2 no EF5 runs found.
   the cycle is a member (QPE-only state runs are skipped via `require_qpf`).
 - Any cycle frequency: cycles are discovered from folder names.
 - File naming, thresholds, bands, selectors: all in the YAML config.
-- Areas of Concern: pilot basins (Haiti, Guatemala) and administrative
-  units (islands) go through the identical code path.
+- Areas of Concern: Antigua and Barbuda ADM1 units go through the same
+  code path as other basins.
 
 ## Catalog format
 
@@ -98,7 +98,7 @@ quiet cycle, beyond-catalog event). No real data needed.
   `fim_config/<Region>.yaml` for every region that has one, non-fatally.
   See `README_FIM.md` at the repo root for manual setup steps and cautions.
 
-## v0.2: ensembles, zarr store, probabilistic product (Guatemala pilot)
+## v0.2: ensembles, zarr store, probabilistic product
 
 Added for the operational ensemble chain (10 QPE members x 5 StormLab
 storms and any future layout):
@@ -114,7 +114,7 @@ storms and any future layout):
 - `probability.py`  P(max depth >= threshold) across members, IBF
   likelihood classes (Very Low / Low / Medium / High), GeoTIFF + PNG.
 - `pipeline_ensemble.py`  the cycle runner + CLI:
-  `python -m tito_utils.fim_utils.pipeline_ensemble --config fim_config/Guatemala_SantaInes.yaml`
+  `python -m tito_utils.fim_utils.pipeline_ensemble --config fim_config/Antigua_SaintGeorge.yaml`
 
 Requires `zarr` in addition to the base dependencies (pip install zarr).
 Verified on real TITO outputs (3 cycles, 70 runs each) with independent

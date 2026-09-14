@@ -1,7 +1,8 @@
 """Tests for EF5 job helpers (no EF5 / network)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 from tito_utils.ef5.jobs.helpers import (
     parse_streamsat_tif_window,
@@ -10,8 +11,6 @@ from tito_utils.ef5.jobs.helpers import (
     resolve_control_template,
     resolve_region_resolution,
 )
-from types import SimpleNamespace
-from datetime import timedelta
 
 
 def test_parse_streamsat_tif_window(tmp_path: Path):
@@ -45,30 +44,41 @@ def test_resolve_cold_start_window_defaults():
 
 def test_region_path_key_and_resolution_map():
     assert region_path_key("Guatemala", "900m") == "guatemala_900m"
-    assert resolve_region_resolution(
-        "Guatemala", "90m", {"Guatemala": "900m"}) == "900m"
+    assert resolve_region_resolution("Guatemala", "90m", {"Guatemala": "900m"}) == "900m"
     assert resolve_region_resolution("Haiti", "90m", {"Guatemala": "900m"}) == "90m"
 
 
 def test_resolve_control_template_prefers_resolution(tmp_path: Path):
     (tmp_path / "ef5_Guatemala_900m_control_template.txt").write_text("900")
     (tmp_path / "ef5_Guatemala_90m_control_template.txt").write_text("90")
-    assert resolve_control_template(
-        str(tmp_path), "Guatemala", "900m") == "ef5_Guatemala_900m_control_template.txt"
-    assert resolve_control_template(
-        str(tmp_path), "Guatemala", "90m") == "ef5_Guatemala_90m_control_template.txt"
+    assert (
+        resolve_control_template(str(tmp_path), "Guatemala", "900m")
+        == "ef5_Guatemala_900m_control_template.txt"
+    )
+    assert (
+        resolve_control_template(str(tmp_path), "Guatemala", "90m")
+        == "ef5_Guatemala_90m_control_template.txt"
+    )
 
 
 def test_resolve_control_template_override_and_fallback(tmp_path: Path):
     (tmp_path / "custom.txt").write_text("c")
     (tmp_path / "ef5_Haiti_control_template.txt").write_text("h")
-    assert resolve_control_template(
-        str(tmp_path),
-        "Haiti",
-        "90m",
-        region_template_map={"Haiti": "custom.txt"},
-    ) == "custom.txt"
-    assert resolve_control_template(
-        str(tmp_path), "Antigua", "90m",
-        default_template="ef5_Antigua_control_template.txt",
-    ) == "ef5_Antigua_control_template.txt"
+    assert (
+        resolve_control_template(
+            str(tmp_path),
+            "Haiti",
+            "90m",
+            region_template_map={"Haiti": "custom.txt"},
+        )
+        == "custom.txt"
+    )
+    assert (
+        resolve_control_template(
+            str(tmp_path),
+            "Antigua",
+            "90m",
+            default_template="ef5_Antigua_control_template.txt",
+        )
+        == "ef5_Antigua_control_template.txt"
+    )

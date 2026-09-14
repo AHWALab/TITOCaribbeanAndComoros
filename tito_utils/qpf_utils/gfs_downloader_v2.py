@@ -35,26 +35,25 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple, Union
+from datetime import UTC, datetime, timedelta
 
 # ---------------------------------------------------------------------------
 # Fix PROJ database path — must be set BEFORE importing rioxarray/rasterio.
 # The base conda has an old proj.db; use the env's copy.
 # ---------------------------------------------------------------------------
-_PROJ_ENV_DIR = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), 'share', 'proj')
+_PROJ_ENV_DIR = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "share", "proj")
 if os.path.isdir(_PROJ_ENV_DIR):
-    os.environ['PROJ_DATA'] = _PROJ_ENV_DIR
-    os.environ['PROJ_LIB'] = _PROJ_ENV_DIR
+    os.environ["PROJ_DATA"] = _PROJ_ENV_DIR
+    os.environ["PROJ_LIB"] = _PROJ_ENV_DIR
 
-import numpy as np
-import xarray as xr
-import rioxarray  # noqa: F401
+import numpy as np  # noqa: E402
+import rioxarray  # noqa: E402,F401
+import xarray as xr  # noqa: E402
 
 try:
     from herbie import Herbie
 except Exception:
-    raise ImportError("Herbie is required. Install with `pip install herbie-data`")
+    raise ImportError("Herbie is required. Install with `pip install herbie-data`") from None
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -64,28 +63,32 @@ AUTO_BBOX = (-180.0, 180.0, -90.0, 90.0)
 AUTO_HOURS = 120
 AUTO_POLL_SECONDS = 3600
 AUTO_CYCLE_GRACE_MINUTES = 120
-MAX_CYCLES_BACK = 4          # try up to 24h of previous cycles
-PARALLEL_WORKERS = 4         # concurrent downloads
+MAX_CYCLES_BACK = 4  # try up to 24h of previous cycles
+PARALLEL_WORKERS = 4  # concurrent downloads
 DNS_RETRY_MAX = 4
 DNS_RETRY_BASE_DELAY = 5.0
-DOWNLOAD_TIMEOUT = 300       # per-forecast-hour timeout (seconds)
-CYCLE_TIMEOUT = 3600         # max time for a full cycle download (seconds)
-SOCKET_TIMEOUT = 60          # low-level socket timeout (seconds)
+DOWNLOAD_TIMEOUT = 300  # per-forecast-hour timeout (seconds)
+CYCLE_TIMEOUT = 3600  # max time for a full cycle download (seconds)
+SOCKET_TIMEOUT = 60  # low-level socket timeout (seconds)
 
 # ---------------------------------------------------------------------------
 # DNS fallback (same as v1)
 # ---------------------------------------------------------------------------
 _original_getaddrinfo = socket.getaddrinfo
-_noaa_ip_cache: Optional[str] = None
+_noaa_ip_cache: str | None = None
 
 
-def _resolve_noaa_public() -> Optional[str]:
-    for dns in ('8.8.8.8', '1.1.1.1'):
+def _resolve_noaa_public() -> str | None:
+    for dns in ("8.8.8.8", "1.1.1.1"):
         try:
-            r = subprocess.run(['dig', f'@{dns}', '+short', 'nomads.ncep.noaa.gov'],
-                               capture_output=True, text=True, timeout=10)
-            for line in r.stdout.strip().split('\n'):
-                for part in line.strip().rstrip('.').split():
+            r = subprocess.run(
+                ["dig", f"@{dns}", "+short", "nomads.ncep.noaa.gov"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            for line in r.stdout.strip().split("\n"):
+                for part in line.strip().rstrip(".").split():
                     try:
                         socket.inet_pton(socket.AF_INET, part)
                         sys.stderr.write(f"[dns] nomads.ncep.noaa.gov → {part} via {dns}\n")
@@ -98,7 +101,7 @@ def _resolve_noaa_public() -> Optional[str]:
 
 
 def _patched_getaddrinfo(host, *args, **kwargs):
-    if host and 'ncep.noaa.gov' in str(host) and _noaa_ip_cache:
+    if host and "ncep.noaa.gov" in str(host) and _noaa_ip_cache:
         return _original_getaddrinfo(_noaa_ip_cache, *args, **kwargs)
     return _original_getaddrinfo(host, *args, **kwargs)
 
@@ -119,10 +122,16 @@ def _dns_fallback_disable():
 
 def _is_dns_error(exc: Exception) -> bool:
     msg = str(exc).lower()
-    return any(kw in msg for kw in (
-        'name resolution', 'servfail', 'temporary failure',
-        'name or service not known', 'nxdomain',
-    ))
+    return any(
+        kw in msg
+        for kw in (
+            "name resolution",
+            "servfail",
+            "temporary failure",
+            "name or service not known",
+            "nxdomain",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -149,8 +158,10 @@ def _retry_call(fn, max_retries: int = DNS_RETRY_MAX, base_delay: float = DNS_RE
                 if dns_fallback:
                     sys.stderr.write("[retry] DNS fallback enabled, retrying immediately...\n")
                     continue
-            delay = base_delay * (2 ** attempt)
-            sys.stderr.write(f"[retry] DNS error, attempt {attempt+1}/{max_retries+1}, sleeping {delay:.0f}s: {e}\n")
+            delay = base_delay * (2**attempt)
+            sys.stderr.write(
+                f"[retry] DNS error, attempt {attempt + 1}/{max_retries + 1}, sleeping {delay:.0f}s: {e}\n"
+            )
             time.sleep(delay)
     raise last_err  # type: ignore
 
@@ -168,7 +179,7 @@ def _gfs_cycle(dt: datetime) -> datetime:
     return base
 
 
-def _forecast_hours(max_hours: int) -> List[int]:
+def _forecast_hours(max_hours: int) -> list[int]:
     """GFS 0.25°: hourly 0..120, then 3-hourly beyond."""
     if max_hours <= 0:
         return []
@@ -185,23 +196,23 @@ def _standardize(da: xr.DataArray) -> xr.DataArray:
     rename = {}
     for d in da.dims:
         dl = d.lower()
-        if dl in ('latitude', 'y') and 'lat' not in da.dims:
-            rename[d] = 'lat'
-        if dl in ('longitude', 'x') and 'lon' not in da.dims:
-            rename[d] = 'lon'
+        if dl in ("latitude", "y") and "lat" not in da.dims:
+            rename[d] = "lat"
+        if dl in ("longitude", "x") and "lon" not in da.dims:
+            rename[d] = "lon"
     if rename:
         da = da.rename(rename)
     # Ensure coords
-    if 'lat' not in da.coords and 'latitude' in da.coords:
-        da = da.rename({'latitude': 'lat'})
-    if 'lon' not in da.coords and 'longitude' in da.coords:
-        da = da.rename({'longitude': 'lon'})
+    if "lat" not in da.coords and "latitude" in da.coords:
+        da = da.rename({"latitude": "lat"})
+    if "lon" not in da.coords and "longitude" in da.coords:
+        da = da.rename({"longitude": "lon"})
     # Wrap lon
-    if 'lon' in da.coords:
-        lon = da.coords['lon'].values
+    if "lon" in da.coords:
+        lon = da.coords["lon"].values
         if np.nanmax(lon) > 180:
             da = da.assign_coords(lon=("lon", ((lon + 180) % 360) - 180))
-            da = da.sortby('lon')
+            da = da.sortby("lon")
     da = da.rio.write_crs("EPSG:4326", inplace=False)
     da = da.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=False)
     return da
@@ -211,8 +222,9 @@ def _write_tiff(da: xr.DataArray, path: str):
     """Write float32 GeoTIFF with nodata=-9999."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     data = np.where(np.isnan(da.data.astype(np.float32)), -9999.0, da.data.astype(np.float32))
-    out = xr.DataArray(data, dims=da.dims, coords=da.coords,
-                       name=da.name or "PRATE_mm_hr", attrs={"units": "mm/h"})
+    out = xr.DataArray(
+        data, dims=da.dims, coords=da.coords, name=da.name or "PRATE_mm_hr", attrs={"units": "mm/h"}
+    )
     out.rio.write_nodata(-9999.0, inplace=True)
     out.rio.to_raster(path, driver="GTiff", dtype="float32")
 
@@ -220,9 +232,9 @@ def _write_tiff(da: xr.DataArray, path: str):
 # ---------------------------------------------------------------------------
 # Single forecast-hour download
 # ---------------------------------------------------------------------------
-def _download_one_fxx(init_time: datetime, fxx: int,
-                       xmin: float, xmax: float, ymin: float, ymax: float,
-                       out_dir: str) -> Optional[str]:
+def _download_one_fxx(
+    init_time: datetime, fxx: int, xmin: float, xmax: float, ymin: float, ymax: float, out_dir: str
+) -> str | None:
     """Download one forecast hour. Returns output path or None on failure."""
     valid_time = init_time + timedelta(hours=fxx)
     out_path = os.path.join(out_dir, f"gfs.{valid_time:%Y%m%d%H%M}.tif")
@@ -240,7 +252,7 @@ def _download_one_fxx(init_time: datetime, fxx: int,
         ds = None
         for query in (":PRATE:surface", ":PRATE:", "PRATE:surface", "PRATE"):
             try:
-                ds = _retry_call(lambda: H.xarray(query))
+                ds = _retry_call(lambda q=query: H.xarray(q))
                 break
             except Exception:
                 continue
@@ -252,7 +264,7 @@ def _download_one_fxx(init_time: datetime, fxx: int,
         # Extract variable
         if isinstance(ds, list):
             ds = ds[0]
-        var = next((v for v in ('prate', 'PRATE') if v in ds.data_vars), None)
+        var = next((v for v in ("prate", "PRATE") if v in ds.data_vars), None)
         if var is None:
             var = list(ds.data_vars)[0]
 
@@ -261,9 +273,13 @@ def _download_one_fxx(init_time: datetime, fxx: int,
         if rate.ndim == 3:
             rate = np.squeeze(rate, axis=0)
 
-        step = xr.DataArray(rate * 3600.0, dims=("lat", "lon"),
-                            coords={"lat": prate.coords["lat"], "lon": prate.coords["lon"]},
-                            name="PRATE_mm_per_hour", attrs={"units": "mm/hour"})
+        step = xr.DataArray(
+            rate * 3600.0,
+            dims=("lat", "lon"),
+            coords={"lat": prate.coords["lat"], "lon": prate.coords["lon"]},
+            name="PRATE_mm_per_hour",
+            attrs={"units": "mm/hour"},
+        )
         step = step.rio.write_crs("EPSG:4326", inplace=False)
         step = step.rio.set_spatial_dims(x_dim="lon", y_dim="lat", inplace=False)
 
@@ -282,14 +298,23 @@ def _download_one_fxx(init_time: datetime, fxx: int,
 # ---------------------------------------------------------------------------
 # Download full cycle (parallel)
 # ---------------------------------------------------------------------------
-def download_cycle(cycle: datetime, hours: int,
-                   xmin: float, xmax: float, ymin: float, ymax: float,
-                   out_dir: str, workers: int = PARALLEL_WORKERS) -> List[str]:
+def download_cycle(
+    cycle: datetime,
+    hours: int,
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+    out_dir: str,
+    workers: int = PARALLEL_WORKERS,
+) -> list[str]:
     """Download all forecast hours for one GFS cycle in parallel. Returns list of output paths."""
     fxx_list = _forecast_hours(hours)
-    sys.stderr.write(f"[cycle] {cycle:%Y-%m-%d %H}z — {len(fxx_list)} forecast hours, {workers} workers\n")
+    sys.stderr.write(
+        f"[cycle] {cycle:%Y-%m-%d %H}z — {len(fxx_list)} forecast hours, {workers} workers\n"
+    )
 
-    results: List[str] = []
+    results: list[str] = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(_download_one_fxx, cycle, fxx, xmin, xmax, ymin, ymax, out_dir): fxx
@@ -299,7 +324,7 @@ def download_cycle(cycle: datetime, hours: int,
         for future in as_completed(futures):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                sys.stderr.write(f"[cycle] Cycle timeout reached, cancelling remaining futures\n")
+                sys.stderr.write("[cycle] Cycle timeout reached, cancelling remaining futures\n")
                 for f in futures:
                     f.cancel()
                 break
@@ -318,24 +343,29 @@ def download_cycle(cycle: datetime, hours: int,
 # ---------------------------------------------------------------------------
 # Auto mode
 # ---------------------------------------------------------------------------
-def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
-              poll_seconds: int = AUTO_POLL_SECONDS,
-              workers: int = PARALLEL_WORKERS,
-              max_back: int = MAX_CYCLES_BACK):
+def auto_mode(
+    out_dir: str,
+    hours: int = AUTO_HOURS,
+    poll_seconds: int = AUTO_POLL_SECONDS,
+    workers: int = PARALLEL_WORKERS,
+    max_back: int = MAX_CYCLES_BACK,
+):
     """Continuous polling mode. Tries latest cycle, falls back to previous cycles if no data."""
     xmin, xmax, ymin, ymax = AUTO_BBOX
     os.makedirs(out_dir, exist_ok=True)
-    last_successful_cycle: Optional[datetime] = None
+    last_successful_cycle: datetime | None = None
 
     while True:
         try:
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = datetime.now(UTC).replace(tzinfo=None)
             latest = _gfs_cycle(now)
 
             # Respect grace period
             if now <= latest + timedelta(minutes=AUTO_CYCLE_GRACE_MINUTES):
                 start_cycle = latest - timedelta(hours=6)
-                sys.stderr.write(f"[auto] Within grace period of {latest:%H}z, starting from {start_cycle:%Y-%m-%d %H}z\n")
+                sys.stderr.write(
+                    f"[auto] Within grace period of {latest:%H}z, starting from {start_cycle:%Y-%m-%d %H}z\n"
+                )
             else:
                 start_cycle = latest
 
@@ -347,11 +377,19 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
                 # Only skip if this cycle is already fully downloaded
                 expected_files = _forecast_hours(hours)
                 n_expected = len(expected_files)
-                existing = [f for f in os.listdir(out_dir) if f.startswith("gfs.") and f.endswith(".tif")]
+                existing = [
+                    f for f in os.listdir(out_dir) if f.startswith("gfs.") and f.endswith(".tif")
+                ]
                 cycle_prefix = f"gfs.{cycle:%Y%m%d}"
                 cycle_existing = [f for f in existing if f.startswith(cycle_prefix)]
-                if last_successful_cycle and cycle <= last_successful_cycle and len(cycle_existing) >= n_expected:
-                    sys.stderr.write(f"[auto] Skipping {cycle:%Y-%m-%d %H}z (already complete: {len(cycle_existing)}/{n_expected})\n")
+                if (
+                    last_successful_cycle
+                    and cycle <= last_successful_cycle
+                    and len(cycle_existing) >= n_expected
+                ):
+                    sys.stderr.write(
+                        f"[auto] Skipping {cycle:%Y-%m-%d %H}z (already complete: {len(cycle_existing)}/{n_expected})\n"
+                    )
                     continue
 
                 sys.stderr.write(f"[auto] Trying cycle {cycle:%Y-%m-%d %H}z (back={back})...\n")
@@ -385,11 +423,15 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
                         pass
 
                     last_successful_cycle = cycle
-                    sys.stderr.write(f"[auto] ✅ Cycle {cycle:%Y-%m-%d %H}z promoted — {len(results)}/{n_expected} files\n")
+                    sys.stderr.write(
+                        f"[auto] ✅ Cycle {cycle:%Y-%m-%d %H}z promoted — {len(results)}/{n_expected} files\n"
+                    )
                     success = True
                     break
                 else:
-                    sys.stderr.write(f"[auto] ⚠ Only {len(results)}/{n_expected} files for {cycle:%Y-%m-%d %H}z — waiting for NOAA\n")
+                    sys.stderr.write(
+                        f"[auto] ⚠ Only {len(results)}/{n_expected} files for {cycle:%Y-%m-%d %H}z — waiting for NOAA\n"
+                    )
                     # Clean up staging, keep existing files untouched
                     for f in os.listdir(staging):
                         try:
@@ -398,10 +440,12 @@ def auto_mode(out_dir: str, hours: int = AUTO_HOURS,
                             pass
 
             if not success:
-                sys.stderr.write(f"[auto] ⚠ No complete cycle available, will retry after poll\n")
+                sys.stderr.write("[auto] ⚠ No complete cycle available, will retry after poll\n")
 
             if not success:
-                sys.stderr.write(f"[auto] ⚠ All {max_back+1} cycles failed, will retry after poll\n")
+                sys.stderr.write(
+                    f"[auto] ⚠ All {max_back + 1} cycles failed, will retry after poll\n"
+                )
 
         except Exception as e:
             sys.stderr.write(f"[auto] Error: {e}\n")
@@ -421,15 +465,19 @@ def main():
     # Manual mode
     p.add_argument("--start", help="Cycle start (e.g. '2025-12-01 12')")
     p.add_argument("--end", help="End valid time")
-    p.add_argument("--xmin", type=float); p.add_argument("--xmax", type=float)
-    p.add_argument("--ymin", type=float); p.add_argument("--ymax", type=float)
+    p.add_argument("--xmin", type=float)
+    p.add_argument("--xmax", type=float)
+    p.add_argument("--ymin", type=float)
+    p.add_argument("--ymax", type=float)
     p.add_argument("--out", help="Output dir")
     # Auto mode
     p.add_argument("--auto-out", help="Auto mode output dir")
     p.add_argument("--auto-hours", type=int, default=AUTO_HOURS)
     p.add_argument("--poll-seconds", type=int, default=AUTO_POLL_SECONDS)
     p.add_argument("--workers", type=int, default=PARALLEL_WORKERS, help="Parallel workers")
-    p.add_argument("--max-back", type=int, default=MAX_CYCLES_BACK, help="Max previous cycles to try")
+    p.add_argument(
+        "--max-back", type=int, default=MAX_CYCLES_BACK, help="Max previous cycles to try"
+    )
     p.add_argument("--auto-once", action="store_true", help="Single pass (no polling)")
     args = p.parse_args()
 
@@ -438,10 +486,16 @@ def main():
         cycle = _gfs_cycle(datetime.strptime(args.start.strip(), "%Y-%m-%d %H"))
         end = datetime.strptime(args.end.strip(), "%Y-%m-%d %H")
         hours = int((end - cycle).total_seconds() / 3600)
-        results = download_cycle(cycle, hours,
-                                 args.xmin or -180, args.xmax or 180,
-                                 args.ymin or -90, args.ymax or 90,
-                                 args.out, args.workers)
+        results = download_cycle(
+            cycle,
+            hours,
+            args.xmin or -180,
+            args.xmax or 180,
+            args.ymin or -90,
+            args.ymax or 90,
+            args.out,
+            args.workers,
+        )
         print(f"Wrote {len(results)} files to {args.out}")
 
     # Auto mode
@@ -449,7 +503,7 @@ def main():
         if args.auto_once:
             # One-shot: try cycles until we get data
             xmin, xmax, ymin, ymax = AUTO_BBOX
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            now = datetime.now(UTC).replace(tzinfo=None)
             latest = _gfs_cycle(now)
             if now <= latest + timedelta(minutes=AUTO_CYCLE_GRACE_MINUTES):
                 start_cycle = latest - timedelta(hours=6)
@@ -462,7 +516,9 @@ def main():
                 cycle = start_cycle - timedelta(hours=6 * back)
                 staging = os.path.join(args.auto_out, ".staging")
                 os.makedirs(staging, exist_ok=True)
-                results = download_cycle(cycle, args.auto_hours, xmin, xmax, ymin, ymax, staging, args.workers)
+                results = download_cycle(
+                    cycle, args.auto_hours, xmin, xmax, ymin, ymax, staging, args.workers
+                )
                 if results:
                     for f in os.listdir(args.auto_out):
                         if f.startswith("gfs.") and f.endswith(".tif"):
@@ -478,7 +534,9 @@ def main():
                 sys.stderr.write("All cycles failed.\n")
                 sys.exit(2)
         else:
-            auto_mode(args.auto_out, args.auto_hours, args.poll_seconds, args.workers, args.max_back)
+            auto_mode(
+                args.auto_out, args.auto_hours, args.poll_seconds, args.workers, args.max_back
+            )
     else:
         p.print_help()
 

@@ -9,12 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional
 
 from tito_utils.cycle.timeline import (
-    STATE_LOOKBACK,
-    WARMUP_STATE_OFFSET,
     DEFAULT_WARMUP_DAYS,
+    WARMUP_STATE_OFFSET,
 )
 
 
@@ -25,7 +23,7 @@ class WarmupDecision:
     reason: str
     warmup_start: datetime
     warmup_end: datetime
-    precip_source: str          # IMERG | HSAF
+    precip_source: str  # IMERG | HSAF
     is_stream_sat: bool
 
 
@@ -48,7 +46,7 @@ def decide_warmup(
     warmup_days: int = DEFAULT_WARMUP_DAYS,
     warmup_precip_source: str = "IMERG",
     states_found: bool = False,
-    states_time: Optional[datetime] = None,
+    states_time: datetime | None = None,
 ) -> WarmupDecision:
     """
     Decide whether *region* needs a warmup for this cycle.
@@ -65,8 +63,12 @@ def decide_warmup(
 
     if not warmup_enabled:
         return WarmupDecision(
-            region=region, needed=False, reason="warmup_disabled",
-            warmup_start=start, warmup_end=end, precip_source=precip,
+            region=region,
+            needed=False,
+            reason="warmup_disabled",
+            warmup_start=start,
+            warmup_end=end,
+            precip_source=precip,
             is_stream_sat=(qpe == "STREAM_SAT"),
         )
 
@@ -77,13 +79,21 @@ def decide_warmup(
             else "states_ok"
         )
         return WarmupDecision(
-            region=region, needed=False, reason=reason,
-            warmup_start=start, warmup_end=end, precip_source=precip,
+            region=region,
+            needed=False,
+            reason=reason,
+            warmup_start=start,
+            warmup_end=end,
+            precip_source=precip,
             is_stream_sat=(qpe == "STREAM_SAT"),
         )
 
     return WarmupDecision(
-        region=region, needed=True, reason="no_states_within_48h",
-        warmup_start=start, warmup_end=end, precip_source=precip,
+        region=region,
+        needed=True,
+        reason="no_states_within_48h",
+        warmup_start=start,
+        warmup_end=end,
+        precip_source=precip,
         is_stream_sat=(qpe == "STREAM_SAT"),
     )

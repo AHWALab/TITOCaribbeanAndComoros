@@ -27,18 +27,22 @@ def coerce_crs(crs):
 
 @dataclass
 class FimDomain:
-    bounds: tuple          # (minx, miny, maxx, maxy) in crs
-    crs: object            # pyproj CRS
+    bounds: tuple  # (minx, miny, maxx, maxy) in crs
+    crs: object  # pyproj CRS
     transform: object
-    shape: tuple           # (rows, cols)
+    shape: tuple  # (rows, cols)
     path: str = ""
 
     @classmethod
     def from_raster(cls, path: str) -> "FimDomain":
         with rasterio.open(path) as src:
-            return cls(bounds=tuple(src.bounds), crs=coerce_crs(src.crs),
-                       transform=src.transform, shape=(src.height, src.width),
-                       path=path)
+            return cls(
+                bounds=tuple(src.bounds),
+                crs=coerce_crs(src.crs),
+                transform=src.transform,
+                shape=(src.height, src.width),
+                path=path,
+            )
 
     def bounds_in(self, crs, buffer_m: float = 0.0) -> tuple:
         """Domain bounds in another CRS, optionally buffered by buffer_m METERS.
@@ -58,11 +62,11 @@ class FimDomain:
             tr = Transformer.from_crs(self.crs, dst, always_xy=True)
             b = tr.transform_bounds(*self.bounds)
         if buffer_m:
-            pad = float(buffer_m) if dst.is_projected \
-                else float(buffer_m) / 111320.0
+            pad = float(buffer_m) if dst.is_projected else float(buffer_m) / 111320.0
             b = (b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad)
         return b
 
     def polygon_in(self, crs, buffer_m: float = 0.0):
         from shapely.geometry import box
+
         return box(*self.bounds_in(crs, buffer_m))

@@ -28,14 +28,14 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.features import rasterize
-from rasterio.windows import from_bounds, Window
+from rasterio.windows import Window, from_bounds
 
 from .domain import coerce_crs
 
 RE_NEW = re.compile(
-    r"^prob_depth_ge_(?P<tag>[0-9p]+)cm(?P<ob>_overbank)?\.(?P<cycle>\d{8}\.\d{6})\.tif$")
-RE_LEGACY = re.compile(
-    r"^qpeprob\.(?P<cycle>\d{8}\.\d{6})\.(?P<m>[0-9.]+) ?meters\.tif$")
+    r"^prob_depth_ge_(?P<tag>[0-9p]+)cm(?P<ob>_overbank)?\.(?P<cycle>\d{8}\.\d{6})\.tif$"
+)
+RE_LEGACY = re.compile(r"^qpeprob\.(?P<cycle>\d{8}\.\d{6})\.(?P<m>[0-9.]+) ?meters\.tif$")
 
 
 def _tag_from_meters(m: float) -> str:
@@ -49,7 +49,7 @@ def _tag_from_meters(m: float) -> str:
 class ProbabilityLayer:
     path: str
     threshold_m: float
-    tag: str               # canonical, derived from threshold_m
+    tag: str  # canonical, derived from threshold_m
     cycle: str
     overbank: bool = False
 
@@ -64,18 +64,19 @@ def parse_probability_filename(name: str):
     m = RE_NEW.match(base)
     if m:
         meters = float(m.group("tag").replace("p", ".")) / 100.0
-        return ProbabilityLayer(name, meters, _tag_from_meters(meters),
-                                m.group("cycle"), bool(m.group("ob")))
+        return ProbabilityLayer(
+            name, meters, _tag_from_meters(meters), m.group("cycle"), bool(m.group("ob"))
+        )
     m = RE_LEGACY.match(base)
     if m:
         meters = float(m.group("m"))
-        return ProbabilityLayer(name, meters, _tag_from_meters(meters),
-                                m.group("cycle"), False)
+        return ProbabilityLayer(name, meters, _tag_from_meters(meters), m.group("cycle"), False)
     return None
 
 
-def discover_probability_products(directory: str, cycle: str = None,
-                                  extra_paths=None, prefer_overbank: bool = False):
+def discover_probability_products(
+    directory: str, cycle: str = None, extra_paths=None, prefer_overbank: bool = False
+):
     """All probability layers in a directory (plus explicit extra paths),
     filtered to one cycle when given, sorted by threshold.
 
@@ -91,35 +92,34 @@ def discover_probability_products(directory: str, cycle: str = None,
             layer = parse_probability_filename(os.path.join(directory, base))
             if layer:
                 found.append(layer)
-    for p in (extra_paths or []):
+    for p in extra_paths or []:
         layer = parse_probability_filename(p)
         if layer:
             layer.explicit = True
             found.append(layer)
 
     if cycle is None and found:
-        cycles = sorted({l.cycle for l in found})
+        cycles = sorted({lyr.cycle for lyr in found})
         cycle = cycles[-1]
 
     layers, skipped = [], []
-    for l in found:
-        if l.cycle != cycle and not getattr(l, "explicit", False):
-            skipped.append(l)
+    for lyr in found:
+        if lyr.cycle != cycle and not getattr(lyr, "explicit", False):
+            skipped.append(lyr)
             continue
-        layers.append(l)
+        layers.append(lyr)
 
     if prefer_overbank:
-        ob_thresholds = {l.threshold_m for l in layers if l.overbank}
-        layers = [l for l in layers
-                  if l.overbank or l.threshold_m not in ob_thresholds]
+        ob_thresholds = {lyr.threshold_m for lyr in layers if lyr.overbank}
+        layers = [lyr for lyr in layers if lyr.overbank or lyr.threshold_m not in ob_thresholds]
     else:
-        layers = [l for l in layers if not l.overbank]
+        layers = [lyr for lyr in layers if not lyr.overbank]
 
     # one layer per threshold
     seen = {}
-    for l in layers:
-        seen.setdefault(round(l.threshold_m, 4), l)
-    layers = sorted(seen.values(), key=lambda l: l.threshold_m)
+    for lyr in layers:
+        seen.setdefault(round(lyr.threshold_m, 4), lyr)
+    layers = sorted(seen.values(), key=lambda lyr: lyr.threshold_m)
     return layers, skipped, cycle
 
 
@@ -131,8 +131,11 @@ class _InMemoryRaster:
             self.crs = coerce_crs(src.crs)
             if bounds is not None:
                 win = from_bounds(*bounds, transform=src.transform)
-                win = win.round_offsets().round_lengths().intersection(
-                    Window(0, 0, src.width, src.height))
+                win = (
+                    win.round_offsets()
+                    .round_lengths()
+                    .intersection(Window(0, 0, src.width, src.height))
+                )
                 data = src.read(1, window=win, masked=True)
                 self.transform = src.window_transform(win)
             else:
@@ -161,12 +164,23 @@ class _InMemoryRaster:
             return np.nan
         window_transform = self.transform * rasterio.Affine.translation(c_lo, r_lo)
         shape = (r_hi - r_lo, c_hi - c_lo)
-        mask = rasterize([(geom, 1)], out_shape=shape, transform=window_transform,
-                         fill=0, all_touched=all_touched, dtype="uint8")
+        mask = rasterize(
+            [(geom, 1)],
+            out_shape=shape,
+            transform=window_transform,
+            fill=0,
+            all_touched=all_touched,
+            dtype="uint8",
+        )
         if not mask.any() and not all_touched:
-            mask = rasterize([(geom, 1)], out_shape=shape,
-                             transform=window_transform, fill=0,
-                             all_touched=True, dtype="uint8")
+            mask = rasterize(
+                [(geom, 1)],
+                out_shape=shape,
+                transform=window_transform,
+                fill=0,
+                all_touched=True,
+                dtype="uint8",
+            )
         values = self.data[r_lo:r_hi, c_lo:c_hi][mask == 1]
         values = values[~np.isnan(values)]
         if values.size == 0:
@@ -179,8 +193,9 @@ class _InMemoryRaster:
         raise ValueError(f"Unknown op '{op}'")
 
 
-def sample_raster(gdf, raster_path: str, op: str = "max",
-                  all_touched: bool = None, bounds_pad_m: float = 100.0):
+def sample_raster(
+    gdf, raster_path: str, op: str = "max", all_touched: bool = None, bounds_pad_m: float = 100.0
+):
     """Sample one raster onto every geometry of a GeoDataFrame.
 
     Geometries are reprojected to the raster CRS; the raster is read once,
@@ -193,11 +208,13 @@ def sample_raster(gdf, raster_path: str, op: str = "max",
         raster_crs = coerce_crs(src.crs)
     geoms = gdf.geometry.to_crs(raster_crs)
     minx, miny, maxx, maxy = geoms.total_bounds
-    ras = _InMemoryRaster(raster_path, bounds=(minx - bounds_pad_m, miny - bounds_pad_m,
-                                               maxx + bounds_pad_m, maxy + bounds_pad_m))
+    ras = _InMemoryRaster(
+        raster_path,
+        bounds=(minx - bounds_pad_m, miny - bounds_pad_m, maxx + bounds_pad_m, maxy + bounds_pad_m),
+    )
     line_like = geoms.geom_type.isin(["LineString", "MultiLineString"])
     out = np.full(len(gdf), np.nan)
-    for i, (geom, is_line) in enumerate(zip(geoms.values, line_like.values)):
+    for i, (geom, is_line) in enumerate(zip(geoms.values, line_like.values, strict=False)):
         touched = all_touched if all_touched is not None else bool(is_line)
         out[i] = ras.reduce(geom, op, touched)
     return pd.Series(out, index=gdf.index)

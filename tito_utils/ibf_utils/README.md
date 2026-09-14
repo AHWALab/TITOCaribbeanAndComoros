@@ -19,23 +19,20 @@ fim_utils.pipeline_pf            ibf_utils.pipeline_ibf
 
 ```
 python -m tito_utils.ibf_utils.pipeline_ibf \
-    --config fim_config/ibf/Guatemala_SantaInesPetapa_ibf.yaml \
-    [--cycle 20230621.070000] [--products-dir DIR] [--rebuild-cache]
+    --config fim_config/ibf/Antigua_SaintGeorge_ibf.yaml \
+    [--cycle 20251010.010000] [--products-dir DIR] [--rebuild-cache]
 ```
 
 One YAML per site (see `fim_config/ibf/`, paired with the FIM site YAML by
 name). The first run over a domain builds the receptor cache from the
 national preload (bbox-filtered read, a multi GB country GeoPackage is
-never loaded whole); every later cycle reuses it. Guatemala Santa Ines
-Petapa: cold start about 2.5 minutes, warm cycles about 10 seconds. Dense
-island units (Saint John's, Saint Michael) run in about 2 to 3 minutes cold
-and under 2 minutes warm; small units in seconds.
+never loaded whole); every later cycle reuses it. Dense Antigua and Barbuda
+units (Saint John's) run in about 2 to 3 minutes cold and under 2 minutes
+warm; small units in seconds.
 
 ## Static data per country
 
-- Guatemala: external `IBFv10_Guatemala/input_data/` package next to the
-  repo (about 6 GB, not in git).
-- Antigua and Barbuda, Barbados: `ibf_data/<Country>/` IN the repo.
+- Antigua and Barbuda: `ibf_data/Antigua/` IN the repo.
   Overture Maps buildings and roads (layers `buildings`, `roads`), admin
   units with census population (`<Country>_adm1_population.gpkg`, layer
   `adm1`, fields ADM1_PCODE / ADM1_EN / population / pop_year /
@@ -74,7 +71,7 @@ The dasymetric population allocation is the IBFv1.0 algorithm unchanged
 (Overture subtype weight where present, else GHS BUILT-C land-class
 weight, footprint-area share of the admin census total).
 
-## Differences from the IBFv1.0 Guatemala script (intentional)
+## Differences from the original IBFv1.0 receptor script (intentional)
 
 1. Threshold labels are parsed from filenames, never assumed. The v1.0
    script mapped `qpeprob...0.1524 meters` (15.24 cm) to a variable
@@ -96,7 +93,7 @@ weight, footprint-area share of the admin census total).
 
 ## Verification against the IBFv1.0 outputs
 
-Re-running this module on the team's own Guatemala event-1 inputs
+Re-running this module on the original IBFv1.0 event-1 inputs
 (same receptors, same four grids): probability sampling agrees on
 95-98 % of buildings (mean absolute difference below 0.02), hazard_flag
 on 96.9 % of the 4,689 team-flagged buildings, residential_class on

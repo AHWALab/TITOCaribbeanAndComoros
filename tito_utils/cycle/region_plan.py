@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any
 
 from tito_utils.cycle.timeline import IMERG_LATENCY, build_cycle_plan
 from tito_utils.ef5.jobs.helpers import (
+    as_source_list,
     region_path_key,
     resolve_control_template,
     resolve_region_resolution,
@@ -28,7 +30,8 @@ def build_region_configs(
     qpf_store_path: str,
     template_path: str,
     default_template: str,
-) -> Dict[str, dict]:
+    region_resolution_map: dict[str, Any] | None = None,
+) -> dict[str, dict]:
     """
     Build the ``region_configs`` dict previously inline in orchestrator.
 
@@ -40,19 +43,20 @@ def build_region_configs(
     """
     region_template_map = getattr(config, "region_template_map", {})
     model_resolution = getattr(config, "model_resolution", "90m")
-    region_resolution_map = getattr(config, "region_resolution_map", {})
+    if region_resolution_map is None:
+        region_resolution_map = getattr(config, "region_resolution_map", {})
     warmup_days = int(getattr(config, "warmup_days", 5))
     mode = "hindcast" if hindcast_mode else "operational"
     lr_duration = timedelta(hours=24) if lr_run else timedelta(0)
 
-    region_configs: Dict[str, dict] = {}
+    region_configs: dict[str, dict] = {}
     for region in regions_to_run:
         region_slug = region.lower()
-        r_res = resolve_region_resolution(
-            region, model_resolution, region_resolution_map)
+        r_res = resolve_region_resolution(region, model_resolution, region_resolution_map)
         rkey = region_path_key(region, r_res)
         ct = region_cycle_times[region]
-        qpe = region_qpe_sources[region]
+        qpe_list = as_source_list(region_qpe_sources[region])
+        qpe = qpe_list[0] if qpe_list else "IMERG"
         qpf_list = list(region_qpf_requested[region]) if lr_run else []
 
         plan = build_cycle_plan(
@@ -69,7 +73,7 @@ def build_region_configs(
         # STREAM_SAT Phase A/B use data-driven ss_end from GeoTIFFs, not these.
         # Hindcast: full IMERG archive → QPE ends at T (no 4h latency gap).
         # Operational IMERG: QPE ends at T−4h (Early product latency).
-        if qpe == "IMERG" and not hindcast_mode:
+        if "IMERG" in qpe_list and not hindcast_mode:
             imerg_offset = IMERG_LATENCY
             r_imerg_end = ct - IMERG_LATENCY
         else:
@@ -98,7 +102,7 @@ def build_region_configs(
         )
 
         # Separate state roots per product (match STREAM-Sat / StormLab pattern).
-        if qpe == "IMERG":
+        if "IMERG" in qpe_list:
             region_states = os.path.join(
                 getattr(config, "imerg_state_folder", "EF5_conf/states/imerg/"),
                 rkey,
@@ -109,29 +113,30 @@ def build_region_configs(
         region_data = os.path.join(data_path, output_ts, rkey)
 
         region_configs[region] = {
-            "region_key":           rkey,
-            "region_slug":          region_slug,
-            "model_resolution":     r_res,
-            "region_current_time":  ct,
+            "region_key": rkey,
+            "region_slug": region_slug,
+            "model_resolution": r_res,
+            "region_current_time": ct,
             "output_timestamp_str": output_ts,
-            "qpe_source":           qpe,
-            "qpf_sources":          qpf_list,
-            "region_template":      tmpl,
-            "r_start_lr":           r_start_lr,
-            "r_end_lr":             r_end_lr,
-            "r_end_time":           r_end_time,  # r_end_lr + dry_run_hours (EF5 TIME_END)
-            "dry_run_hours":        dry_h,
-            "r_state_end":          r_state_end,
-            "r_warm_end":           r_warm_end,
-            "r_system_start":       r_sys_start,
-            "r_fail_time":          r_fail_time,
-            "r_imerg_end":          r_imerg_end,
-            "r_scampr_end":         ct,
-            "cycle_time_key":       ct.strftime("%Y%m%d%H%M"),
-            "region_states_path":   region_states,
-            "region_data_path":     region_data,
-            "region_qpf_store":     os.path.join(qpf_store_path, region_slug, ""),
-            "cycle_plan":           plan,
+            "qpe_source": qpe,
+            "qpe_sources": qpe_list,
+            "qpf_sources": qpf_list,
+            "region_template": tmpl,
+            "r_start_lr": r_start_lr,
+            "r_end_lr": r_end_lr,
+            "r_end_time": r_end_time,  # r_end_lr + dry_run_hours (EF5 TIME_END)
+            "dry_run_hours": dry_h,
+            "r_state_end": r_state_end,
+            "r_warm_end": r_warm_end,
+            "r_system_start": r_sys_start,
+            "r_fail_time": r_fail_time,
+            "r_imerg_end": r_imerg_end,
+            "r_scampr_end": ct,
+            "cycle_time_key": ct.strftime("%Y%m%d%H%M"),
+            "region_states_path": region_states,
+            "region_data_path": region_data,
+            "region_qpf_store": os.path.join(qpf_store_path, region_slug, ""),
+            "cycle_plan": plan,
         }
 
     return region_configs

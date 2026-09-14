@@ -3,8 +3,8 @@
 # w=0, advection_scale=0.6 — no new decisions; bbox/paths only.
 domain:
   name: lesserantilles
-  # forcing/output domain (deg) — the island arc
-  out_lat: [10.0, 17.0]
+  # forcing/output domain (deg) — v1.1, north edge 18N so Antigua (~17.1) and Barbuda (~17.6) are in-grid
+  out_lat: [10.0, 18.0]
   out_lon: [-63.0, -56.0]
   # buffer (deg) added on each side for noise generation / spectra
   sim_buffer: 3.0

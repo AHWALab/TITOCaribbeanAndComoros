@@ -24,7 +24,7 @@ def _template_to_regex(template: str):
     """'a/ensOut{ens}_sl{sl}/b' -> compiled regex with named groups."""
     out, pos = [], 0
     for m in _PLACEHOLDER.finditer(template):
-        out.append(re.escape(template[pos:m.start()]))
+        out.append(re.escape(template[pos : m.start()]))
         out.append(f"(?P<{m.group(1)}>[^/]+?)")
         pos = m.end()
     out.append(re.escape(template[pos:]))
@@ -37,17 +37,18 @@ def _template_to_glob(template: str) -> str:
 
 @dataclass
 class EnsembleMember:
-    member_id: str                 # e.g. "ens03_sl2"
-    keys: dict                     # {"ens": "3", "sl": "2"}
-    run_dir: str                   # resolved member run dir (absolute)
+    member_id: str  # e.g. "ens03_sl2"
+    keys: dict  # {"ens": "3", "sl": "2"}
+    run_dir: str  # resolved member run dir (absolute)
     cycle: str
 
 
-def discover_ensemble_members(outputs_root: str, member_template: str,
-                              cycle: str = None,
-                              cycle_format: str = "%Y%m%d.%H%M%S") -> list:
+def discover_ensemble_members(
+    outputs_root: str, member_template: str, cycle: str = None, cycle_format: str = "%Y%m%d.%H%M%S"
+) -> list:
     """Find members by expanding the member template against the disk."""
     from datetime import datetime
+
     tmpl = member_template.strip("/").replace("\\", "/")
     cycle_in_tmpl = "{cycle}" in tmpl
 
@@ -86,13 +87,13 @@ def discover_ensemble_members(outputs_root: str, member_template: str,
             # Deterministic runs (imerg_gfs) may only have {cycle}/{rkey}/gfs
             id_keys = {k: v for k, v in keys.items() if k not in ("rkey",)}
             if id_keys:
-                member_id = "_".join(
-                    f"{k}{_pad(v)}" for k, v in sorted(id_keys.items()))
+                member_id = "_".join(f"{k}{_pad(v)}" for k, v in sorted(id_keys.items()))
             else:
                 member_id = "det01"
             # keep rkey in keys so component templates can format
-            members.append(EnsembleMember(
-                member_id=member_id, keys=keys, run_dir=path, cycle=cycle))
+            members.append(
+                EnsembleMember(member_id=member_id, keys=keys, run_dir=path, cycle=cycle)
+            )
         return members
 
     # Legacy: member folder contains cycle subdirs
@@ -124,13 +125,16 @@ def discover_ensemble_members(outputs_root: str, member_template: str,
         cdir = os.path.join(path, cycle)
         if not os.path.isdir(cdir):
             # maybe files already live in path (flat)
-            if any(f.endswith(".tif") for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))):
+            if any(
+                f.endswith(".tif")
+                for f in os.listdir(path)
+                if os.path.isfile(os.path.join(path, f))
+            ):
                 cdir = path
             else:
                 continue
         member_id = "_".join(f"{k}{_pad(v)}" for k, v in sorted(keys.items()))
-        members.append(EnsembleMember(member_id=member_id, keys=keys,
-                                      run_dir=cdir, cycle=cycle))
+        members.append(EnsembleMember(member_id=member_id, keys=keys, run_dir=cdir, cycle=cycle))
     return members
 
 
@@ -155,13 +159,16 @@ def resolve_component_dir(outputs_root: str, template: str, keys: dict, cycle: s
         except KeyError as exc:
             raise KeyError(
                 f"Component template '{template}' needs key {exc} "
-                f"not present in member keys {sorted(fmt_keys)}") from exc
+                f"not present in member keys {sorted(fmt_keys)}"
+            ) from exc
         return os.path.join(outputs_root, rel)
     try:
         rel = tmpl.format(**fmt_keys)
     except KeyError as exc:
-        raise KeyError(f"Component template '{template}' needs key {exc} "
-                       f"not present in member keys {sorted(keys)}") from exc
+        raise KeyError(
+            f"Component template '{template}' needs key {exc} "
+            f"not present in member keys {sorted(keys)}"
+        ) from exc
     return os.path.join(outputs_root, rel, cycle)
 
 
@@ -177,6 +184,7 @@ def grid_path(run_dir: str, role: str, cycle: str, file_templates: dict) -> str:
 # Sampling zone: AOC stats with expand-on-nodata fallback.
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ZoneStat:
     value: float
@@ -185,12 +193,17 @@ class ZoneStat:
     flags: list = field(default_factory=list)
 
 
-def zone_stat(raster_path: str, bounds, stat: str = "mean",
-              expand_steps_km=(0, 2, 5, 10, 15), min_valid_cells: int = 50) -> ZoneStat:
+def zone_stat(
+    raster_path: str,
+    bounds,
+    stat: str = "mean",
+    expand_steps_km=(0, 2, 5, 10, 15),
+    min_valid_cells: int = 50,
+) -> ZoneStat:
     """Statistic over a lon/lat bounds box with widening fallback."""
     import numpy as np
     import rasterio
-    from rasterio.windows import from_bounds, Window
+    from rasterio.windows import Window, from_bounds
 
     with rasterio.open(raster_path) as src:
         for exp_km in expand_steps_km:
@@ -208,5 +221,9 @@ def zone_stat(raster_path: str, bounds, stat: str = "mean",
                 value = float(vals.max()) if stat == "max" else float(vals.mean())
                 flags = [] if exp_km == 0 else [f"sampling_expanded_{exp_km}km"]
                 return ZoneStat(value=value, n_valid=n, expand_km=float(exp_km), flags=flags)
-    return ZoneStat(value=float("nan"), n_valid=0, expand_km=float(expand_steps_km[-1]),
-                    flags=["no_valid_cells"])
+    return ZoneStat(
+        value=float("nan"),
+        n_valid=0,
+        expand_km=float(expand_steps_km[-1]),
+        flags=["no_valid_cells"],
+    )

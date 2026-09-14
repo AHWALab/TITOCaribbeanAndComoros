@@ -1,7 +1,7 @@
 # FIM site: Antigua, Saint Paul (AG06). Pluvial only, per ADM1 unit.
 # Cycle-first EF5 layout (orchestrated runs override member/rain via tito_hook).
 region: Antigua_SaintPaul
-required_resolution: "90m"
+required_resolution: "30m"
 
 outputs_root: outputs
 cycle_format: "%Y%m%d.%H%M%S"
@@ -9,7 +9,7 @@ cycle_format: "%Y%m%d.%H%M%S"
 aoc_geojson: fim_config/aoc/Antigua_AG06_SaintPaul_aoc.geojson
 store: fim_store/Antigua/fim_store_AG06_SaintPaul_v1.zarr
 # Overridden at runtime by tito_hook to:
-#   outputs/<cycle>/antigua_90m/fim/<chain>/
+#   outputs/<cycle>/antigua_30m/fim/<chain>/
 products_root: outputs/fim/Antigua_SaintPaul
 
 member:

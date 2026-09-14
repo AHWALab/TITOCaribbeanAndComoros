@@ -12,10 +12,8 @@ import glob
 import os
 import shutil
 from datetime import datetime, timedelta
-from typing import Union
 
 from .arome_downloader import download_AROME
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,8 +47,8 @@ def _clear_arome_data_folder(folder: str) -> None:
 def AROME_searcher(
     path_arome: str,
     qpf_store_path: str,
-    start_time: Union[str, datetime],
-    end_time: Union[str, datetime],
+    start_time: str | datetime,
+    end_time: str | datetime,
     xmin: float,
     xmax: float,
     ymin: float,
@@ -88,9 +86,11 @@ def AROME_searcher(
     """
     if isinstance(start_time, str):
         from .arome_downloader import _ensure_datetime
+
         start_time = _ensure_datetime(start_time)
     if isinstance(end_time, str):
         from .arome_downloader import _ensure_datetime
+
         end_time = _ensure_datetime(end_time)
 
     download_folder = os.path.join(qpf_store_path, "arome_data")
@@ -102,10 +102,7 @@ def AROME_searcher(
 
     # Step 2: check the shared cache
     expected = _expected_arome_filenames(start_time, end_time)
-    cached_files = {
-        os.path.basename(f)
-        for f in glob.glob(os.path.join(path_arome, "*.tif"))
-    }
+    cached_files = {os.path.basename(f) for f in glob.glob(os.path.join(path_arome, "*.tif"))}
     missing = expected - cached_files
 
     if not missing:
@@ -127,9 +124,7 @@ def AROME_searcher(
         f"    AROME: {len(missing)} of {len(expected)} file(s) missing from "
         "shared cache — downloading directly."
     )
-    result = download_AROME(
-        start_time, end_time, xmin, xmax, ymin, ymax, download_folder, domain
-    )
+    result = download_AROME(start_time, end_time, xmin, xmax, ymin, ymax, download_folder, domain)
     num_written = len(result) if result else 0
     print(f"    AROME: download complete — {num_written} file(s) written.")
 

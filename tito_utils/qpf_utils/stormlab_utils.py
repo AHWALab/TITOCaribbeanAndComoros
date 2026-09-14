@@ -20,17 +20,16 @@ TITO GeoTIFF layout::
 
 from __future__ import annotations
 
-import glob
 import logging
 import os
 import re
 import subprocess
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 import numpy as np
 from osgeo import gdal, osr
@@ -62,16 +61,15 @@ def get_stormlab_domain(region: str) -> str:
     if r in TITO_TO_STORMLAB_DOMAIN:
         return TITO_TO_STORMLAB_DOMAIN[r]
     raise ValueError(
-        f"No StormLab domain for TITO region '{region}'. "
-        f"Known: {sorted(TITO_TO_STORMLAB_DOMAIN)}"
+        f"No StormLab domain for TITO region '{region}'. Known: {sorted(TITO_TO_STORMLAB_DOMAIN)}"
     )
 
 
 def stormlab_cycle_time(
-    cycle_time: Optional[datetime] = None,
+    cycle_time: datetime | None = None,
     *,
     min_age_h: float = 5.0,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> datetime:
     """Pick a GEFS/StormLab cycle that is usually on the NOAA bucket.
 
@@ -94,15 +92,13 @@ def stormlab_cycle_time(
 
 
 def stormlab_cycle_str(
-    cycle_time: Optional[datetime] = None,
+    cycle_time: datetime | None = None,
     *,
     min_age_h: float = 5.0,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> str:
     """``YYYYMMDDHH`` string for :func:`stormlab_cycle_time`."""
-    return stormlab_cycle_time(cycle_time, min_age_h=min_age_h, now=now).strftime(
-        "%Y%m%d%H"
-    )
+    return stormlab_cycle_time(cycle_time, min_age_h=min_age_h, now=now).strftime("%Y%m%d%H")
 
 
 def probe_gefs_cycle_available(cycle: datetime, timeout: float = 15.0) -> bool:
@@ -168,16 +164,14 @@ def resolve_stormlab_cycle(
         cyc -= timedelta(hours=6)
     if hindcast:
         return hindcast_stormlab_cycle(cycle_time).strftime("%Y%m%d%H")
-    return stormlab_cycle_time(
-        cycle_time, min_age_h=min_age_h, now=None
-    ).strftime("%Y%m%d%H")
+    return stormlab_cycle_time(cycle_time, min_age_h=min_age_h, now=None).strftime("%Y%m%d%H")
 
 
 def find_stormlab_nc(
     domain: str,
-    cycle: Optional[str] = None,
-    nc_root: Optional[str] = None,
-) -> Optional[Path]:
+    cycle: str | None = None,
+    nc_root: str | None = None,
+) -> Path | None:
     """Locate qpf_ens_<domain>_<cycle>.nc (or latest for domain)."""
     root = Path(nc_root) if nc_root else DEFAULT_NC_ROOT
     domain_dir = root / domain
@@ -206,12 +200,12 @@ def run_stormlab_for_regions(
     regions: Sequence[str],
     *,
     cycle: str = "latest",
-    members: Optional[int] = None,
-    forcing_members: Optional[int] = None,
+    members: int | None = None,
+    forcing_members: int | None = None,
     source: str = "gefs",
     timeout_seconds: int = 14400,
     pipeline_log: Any = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run StormLab via 06_run_regions.py for the mapped domains.
 
     Always launched with the TITO conda env (tito_env2) — same as STREAM-Sat.
@@ -221,7 +215,7 @@ def run_stormlab_for_regions(
     if not STORMLAB_REGIONS_SCRIPT.is_file():
         raise FileNotFoundError(f"StormLab script not found: {STORMLAB_REGIONS_SCRIPT}")
 
-    domains: List[str] = []
+    domains: list[str] = []
     seen = set()
     for r in regions:
         d = get_stormlab_domain(r)
@@ -233,9 +227,12 @@ def run_stormlab_for_regions(
     cmd = [
         py,
         str(STORMLAB_REGIONS_SCRIPT),
-        "--region", *domains,
-        "--cycle", str(cycle),
-        "--source", source,
+        "--region",
+        *domains,
+        "--cycle",
+        str(cycle),
+        "--source",
+        source,
     ]
     if members is not None:
         cmd += ["--members", str(int(members))]
@@ -243,7 +240,10 @@ def run_stormlab_for_regions(
         cmd += ["--forcing-members", str(int(forcing_members))]
 
     from tito_utils.logging_utils import (
-        debug_print, filter_stormlab_line, is_debug, user_print,
+        debug_print,
+        filter_stormlab_line,
+        is_debug,
+        user_print,
     )
 
     env = os.environ.copy()
@@ -266,7 +266,7 @@ def run_stormlab_for_regions(
         pipeline_log.info("[StormLab] cmd: %s", " ".join(cmd))
 
     t0 = time.time()
-    combined_chunks: List[str] = []
+    combined_chunks: list[str] = []
     try:
         proc = subprocess.Popen(
             cmd,
@@ -308,9 +308,7 @@ def run_stormlab_for_regions(
         pipeline_log.info("[StormLab] elapsed=%.1fs rc=%s", elapsed, rc)
 
     if rc != 0:
-        raise RuntimeError(
-            f"StormLab failed (rc={rc}): {combined[-2000:]}"
-        )
+        raise RuntimeError(f"StormLab failed (rc={rc}): {combined[-2000:]}")
 
     user_print(f"    StormLab: completed in {elapsed:.0f}s")
     return {"domains": domains, "elapsed": elapsed, "rc": rc}
@@ -333,7 +331,11 @@ def _write_geotiff(path: str, data: np.ndarray, ul_lon, lon_res, ul_lat, lat_res
     ny, nx = data.shape
     driver = gdal.GetDriverByName("GTiff")
     out_ds = driver.Create(
-        path, nx, ny, 1, gdal.GDT_Float32,
+        path,
+        nx,
+        ny,
+        1,
+        gdal.GDT_Float32,
         options=["COMPRESS=LZW", "TILED=NO", "BIGTIFF=IF_SAFER"],
     )
     out_ds.SetGeoTransform([ul_lon, lon_res, 0, ul_lat, 0, lat_res])
@@ -375,12 +377,12 @@ def convert_stormlab_nc_to_geotiffs(
     nc_path: str,
     tif_dest_root: str,
     *,
-    n_members: Optional[int] = None,
+    n_members: int | None = None,
     tif_naming: str = "stormlab",
-    max_workers: Optional[int] = None,
-    min_valid_time: Optional[datetime] = None,
-    max_valid_time: Optional[datetime] = None,
-) -> Dict[str, Any]:
+    max_workers: int | None = None,
+    min_valid_time: datetime | None = None,
+    max_valid_time: datetime | None = None,
+) -> dict[str, Any]:
     """Convert one StormLab ensemble NC → per-member hourly GeoTIFFs.
 
     Filenames: ``{tif_naming}.YYYYMMDDHH00.tif`` (EF5 FREQ=1h).
@@ -427,9 +429,6 @@ def convert_stormlab_nc_to_geotiffs(
                 continue
             out_name = f"{tif_naming}.{vt.strftime('%Y%m%d%H')}00.tif"
             out_path = os.path.join(member_dir, out_name)
-            if os.path.isfile(out_path) and os.path.getsize(out_path) > 0:
-                ok += 1
-                continue
             try:
                 arr = data_all[m_idx, t_idx, :, :].astype(np.float64)
                 arr = np.where(np.isnan(arr), FILL_VALUE, arr)
@@ -445,7 +444,11 @@ def convert_stormlab_nc_to_geotiffs(
     elapsed = time.time() - t_start
     log.info(
         "StormLab conversion %s: %d OK, %d fail, %d members, %.1fs",
-        nc_path, ok, fail, use_n, elapsed,
+        nc_path,
+        ok,
+        fail,
+        use_n,
+        elapsed,
     )
     if fail > 0:
         raise RuntimeError(f"{fail} StormLab GeoTIFF conversions failed for {nc_path}")
@@ -465,12 +468,12 @@ def run_and_convert_stormlab(
     regions: Sequence[str],
     *,
     cycle_time: datetime,
-    ensemble_size: Optional[int] = None,
-    forcing_members: Optional[int] = None,
+    ensemble_size: int | None = None,
+    forcing_members: int | None = None,
     run_pipeline: bool = True,
-    cycle: Optional[str] = None,
-    tif_root_base: Optional[str] = None,
-    nc_root: Optional[str] = None,
+    cycle: str | None = None,
+    tif_root_base: str | None = None,
+    nc_root: str | None = None,
     source: str = "auto",
     timeout_seconds: int = 14400,
     tif_naming: str = "stormlab",
@@ -478,7 +481,7 @@ def run_and_convert_stormlab(
     hindcast: bool = False,
     min_age_h: float = 5.0,
     pipeline_log: Any = None,
-) -> Dict[str, dict]:
+) -> dict[str, dict]:
     """Run StormLab (optional) and convert NC→TIF per TITO region.
 
     Operational: ``--cycle latest`` (StormLab's own GEFS age gate).
@@ -497,8 +500,7 @@ def run_and_convert_stormlab(
         cyc = "latest"
     print(f"    [StormLab] using cycle {cyc} (source={source}, hindcast={hindcast})")
     if pipeline_log:
-        pipeline_log.info(
-            "[StormLab] cycle=%s source=%s hindcast=%s", cyc, source, hindcast)
+        pipeline_log.info("[StormLab] cycle=%s source=%s hindcast=%s", cyc, source, hindcast)
 
     pipeline_s = 0.0
     pipeline_ok = False
@@ -528,10 +530,10 @@ def run_and_convert_stormlab(
 
     min_vt = cycle_time
     max_vt = cycle_time + timedelta(hours=int(lr_hours))
-    out: Dict[str, dict] = {}
+    out: dict[str, dict] = {}
 
     # Convert once per StormLab domain, then point each TITO region at its domain tree
-    domain_info: Dict[str, dict] = {}
+    domain_info: dict[str, dict] = {}
     for region in regions:
         try:
             domain = get_stormlab_domain(region)
@@ -588,11 +590,15 @@ def run_and_convert_stormlab(
                     if pipeline_log:
                         pipeline_log.error(
                             "[StormLab %s] convert failed nc=%s: %s",
-                            domain, nc_path, exc,
+                            domain,
+                            nc_path,
+                            exc,
                         )
                     domain_info[domain] = {
-                        "error": str(exc), "domain": domain,
-                        "pipeline_s": pipeline_s, "pipeline_ok": pipeline_ok,
+                        "error": str(exc),
+                        "domain": domain,
+                        "pipeline_s": pipeline_s,
+                        "pipeline_ok": pipeline_ok,
                         "nc_path": str(nc_path) if nc_path else None,
                     }
 
@@ -629,7 +635,7 @@ def run_and_convert_stormlab(
     return out
 
 
-def get_stormlab_member_folders(tif_root: str, ensemble_size: int) -> List[str]:
+def get_stormlab_member_folders(tif_root: str, ensemble_size: int) -> list[str]:
     folders = []
     for i in range(1, ensemble_size + 1):
         d = os.path.join(tif_root, f"ensQ{i}")

@@ -98,8 +98,10 @@ def _read_clip(cfg, spec, work_crs, geom_types, clip_poly):
     minx, miny, maxx, maxy = clip_poly.bounds
     if src_crs is not None:
         from pyproj import CRS, Transformer
-        tr = Transformer.from_crs(CRS.from_user_input(work_crs),
-                                  CRS.from_user_input(src_crs), always_xy=True)
+
+        tr = Transformer.from_crs(
+            CRS.from_user_input(work_crs), CRS.from_user_input(src_crs), always_xy=True
+        )
         bbox = tr.transform_bounds(minx, miny, maxx, maxy)
     else:
         bbox = (minx, miny, maxx, maxy)
@@ -125,14 +127,18 @@ def _assign_admin(gdf, admin, fields):
     inter = gpd.overlay(
         gdf[["feature_id", "geometry"]],
         admin[fields + ["geometry"]],
-        how="intersection", keep_geom_type=False)
+        how="intersection",
+        keep_geom_type=False,
+    )
     if len(inter) == 0:
         for f in fields:
             gdf[f] = np.nan
         return gdf
     measure = np.where(
         inter.geometry.geom_type.isin(["LineString", "MultiLineString"]),
-        inter.geometry.length, inter.geometry.area)
+        inter.geometry.length,
+        inter.geometry.area,
+    )
     inter["_m"] = measure
     best = inter.sort_values("_m").groupby("feature_id").tail(1)
     gdf = gdf.merge(best[["feature_id"] + fields], on="feature_id", how="left")
@@ -157,7 +163,8 @@ def _dasymetric_population(bldgs, cfg, admin_id, admin_pop):
     weighted = b["building_area_m2"] * b["final_area_weight"]
     total_w = weighted.groupby(b[admin_id]).transform("sum")
     b["population_per_building"] = np.where(
-        total_w > 0, b[admin_pop] * weighted / total_w, 0.0).round(2)
+        total_w > 0, b[admin_pop] * weighted / total_w, 0.0
+    ).round(2)
     return b
 
 
@@ -181,13 +188,16 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
 
     if os.path.isfile(cache_gpkg) and not rebuild:
         log(f"    receptors: cache hit {os.path.basename(cache_gpkg)}")
-        return {name: gpd.read_file(cache_gpkg, layer=name)
-                for name in ("buildings", "roads", "admin")}, manifest_path
+        return {
+            name: gpd.read_file(cache_gpkg, layer=name) for name in ("buildings", "roads", "admin")
+        }, manifest_path
 
     log("    receptors: building cache (bbox-filtered read of national layers)")
     adm_spec = rec["admin"]
-    admin = gpd.read_file(resolve(cfg, adm_spec["source"]),
-                          **({"layer": adm_spec["layer"]} if adm_spec.get("layer") else {}))
+    admin = gpd.read_file(
+        resolve(cfg, adm_spec["source"]),
+        **({"layer": adm_spec["layer"]} if adm_spec.get("layer") else {}),
+    )
     admin = admin.to_crs(work_crs)
     admin = admin[admin.intersects(cfg["_domain_poly_work"])].copy()
     admin_id = adm_spec["id_field"]
@@ -203,10 +213,8 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     # So the one-time cache read covers the intersecting admin units,
     # while the cached receptor layers keep only the FIM window subset.
     admin_union = admin.geometry.union_all()
-    bldgs = _read_clip(cfg, rec["buildings"], work_crs,
-                       ["Polygon", "MultiPolygon"], admin_union)
-    roads = _read_clip(cfg, rec["roads"], work_crs,
-                       ["LineString", "MultiLineString"], admin_union)
+    bldgs = _read_clip(cfg, rec["buildings"], work_crs, ["Polygon", "MultiPolygon"], admin_union)
+    roads = _read_clip(cfg, rec["roads"], work_crs, ["LineString", "MultiLineString"], admin_union)
     sub_field = rec["buildings"]["subtype_field"]
     bldgs["subtype"] = bldgs[sub_field] if sub_field in bldgs.columns else pd.NA
 
@@ -215,8 +223,10 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     if keep_classes and cls_field in roads.columns:
         roads = roads[roads[cls_field].isin(keep_classes)].copy()
     roads["road_class"] = roads[cls_field] if cls_field in roads.columns else pd.NA
-    log(f"    receptors: {len(bldgs):,} buildings, {len(roads):,} road segments "
-        f"across {len(admin)} admin units (full-unit read)")
+    log(
+        f"    receptors: {len(bldgs):,} buildings, {len(roads):,} road segments "
+        f"across {len(admin)} admin units (full-unit read)"
+    )
 
     # residential class from the GHS BUILT-C FUN raster (majority under feature)
     lu_path = resolve(cfg, rec["land_use"].get("source", ""))
@@ -238,20 +248,30 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     roads["road_length_m"] = roads.geometry.length.round(2)
 
     # admin baselines from the full-unit sets (IBFv1.0 column names)
-    base_b = (bldgs.groupby(admin_id)
-                   .agg(total_pop=("population_per_building", "sum"),
-                        bldg_count=("feature_id", "count"),
-                        bldg_area_m2=("building_area_m2", "sum"))
-                   .round(2).reset_index())
-    base_r = (roads.groupby(admin_id)
-                   .agg(rd_len_m=("road_length_m", "sum"))
-                   .round(2).reset_index())
-    res_b = _class_wide(bldgs, admin_id, "residential_class",
-                        {"total_pop": ("population_per_building", "sum"),
-                         "bldg_count": ("feature_id", "count"),
-                         "bldg_area_m2": ("building_area_m2", "sum")})
-    res_r = _class_wide(roads, admin_id, "residential_class",
-                        {"rd_len_m": ("road_length_m", "sum")})
+    base_b = (
+        bldgs.groupby(admin_id)
+        .agg(
+            total_pop=("population_per_building", "sum"),
+            bldg_count=("feature_id", "count"),
+            bldg_area_m2=("building_area_m2", "sum"),
+        )
+        .round(2)
+        .reset_index()
+    )
+    base_r = roads.groupby(admin_id).agg(rd_len_m=("road_length_m", "sum")).round(2).reset_index()
+    res_b = _class_wide(
+        bldgs,
+        admin_id,
+        "residential_class",
+        {
+            "total_pop": ("population_per_building", "sum"),
+            "bldg_count": ("feature_id", "count"),
+            "bldg_area_m2": ("building_area_m2", "sum"),
+        },
+    )
+    res_r = _class_wide(
+        roads, admin_id, "residential_class", {"rd_len_m": ("road_length_m", "sum")}
+    )
     for extra in (base_b, base_r, res_b, res_r):
         admin = admin.merge(extra, on=admin_id, how="left")
     num = admin.select_dtypes("number").columns
@@ -262,33 +282,56 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     n_full_b, n_full_r = len(bldgs), len(roads)
     bldgs = bldgs[bldgs.intersects(window)].copy()
     roads = roads[roads.intersects(window)].copy()
-    log(f"    receptors: window subset {len(bldgs):,}/{n_full_b:,} buildings, "
-        f"{len(roads):,}/{n_full_r:,} road segments")
+    log(
+        f"    receptors: window subset {len(bldgs):,}/{n_full_b:,} buildings, "
+        f"{len(roads):,}/{n_full_r:,} road segments"
+    )
 
-    keep_b = ["feature_id", "subtype", "critical", "residential_class",
-              admin_id] + ([admin_name] if admin_name else []) + \
-             [admin_pop, "building_area_m2", "final_area_weight",
-              "population_per_building", "geometry"]
-    keep_r = ["feature_id", "road_class", "residential_class", admin_id,
-              "road_length_m", "geometry"]
+    keep_b = (
+        ["feature_id", "subtype", "critical", "residential_class", admin_id]
+        + ([admin_name] if admin_name else [])
+        + [
+            admin_pop,
+            "building_area_m2",
+            "final_area_weight",
+            "population_per_building",
+            "geometry",
+        ]
+    )
+    keep_r = [
+        "feature_id",
+        "road_class",
+        "residential_class",
+        admin_id,
+        "road_length_m",
+        "geometry",
+    ]
     bldgs = bldgs[[c for c in keep_b if c in bldgs.columns]]
     roads = roads[[c for c in keep_r if c in roads.columns]]
 
-    write_gpkg_layers(cache_gpkg, (
-        ("buildings", bldgs),
-        ("roads", roads),
-        ("admin", admin),
-    ))
+    write_gpkg_layers(
+        cache_gpkg,
+        (
+            ("buildings", bldgs),
+            ("roads", roads),
+            ("admin", admin),
+        ),
+    )
     manifest = {
-        "region": cfg["region"], "cache_key": key,
-        "domain_bounds": list(domain.bounds), "domain_crs": str(domain.crs),
-        "work_crs": str(work_crs), "buffer_m": rec["domain_buffer_m"],
-        "counts": {"buildings_window": int(len(bldgs)),
-                   "roads_window": int(len(roads)),
-                   "buildings_full": int(n_full_b), "roads_full": int(n_full_r),
-                   "admin": int(len(admin))},
-        "sources": {k: resolve(cfg, rec[k]["source"])
-                    for k in ("buildings", "roads", "admin")},
+        "region": cfg["region"],
+        "cache_key": key,
+        "domain_bounds": list(domain.bounds),
+        "domain_crs": str(domain.crs),
+        "work_crs": str(work_crs),
+        "buffer_m": rec["domain_buffer_m"],
+        "counts": {
+            "buildings_window": int(len(bldgs)),
+            "roads_window": int(len(roads)),
+            "buildings_full": int(n_full_b),
+            "roads_full": int(n_full_r),
+            "admin": int(len(admin)),
+        },
+        "sources": {k: resolve(cfg, rec[k]["source"]) for k in ("buildings", "roads", "admin")},
     }
     with open(manifest_path, "w") as fh:
         json.dump(manifest, fh, indent=2)
@@ -298,13 +341,15 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
 
 def _class_wide(df, admin_id, class_col, metrics, classes=(0, 1, 2)):
     """res_{c}_{metric} baseline columns with classes 0/1/2 forced."""
-    agg = (df.dropna(subset=[class_col])
-             .groupby([admin_id, class_col])
-             .agg(**{name: spec for name, spec in metrics.items()})
-             .reset_index())
-    wide = agg.pivot_table(index=admin_id, columns=class_col,
-                           values=list(metrics.keys()),
-                           fill_value=0, aggfunc="sum")
+    agg = (
+        df.dropna(subset=[class_col])
+        .groupby([admin_id, class_col])
+        .agg(**{name: spec for name, spec in metrics.items()})
+        .reset_index()
+    )
+    wide = agg.pivot_table(
+        index=admin_id, columns=class_col, values=list(metrics.keys()), fill_value=0, aggfunc="sum"
+    )
     cols = pd.MultiIndex.from_product([list(metrics.keys()), list(classes)])
     wide = wide.reindex(columns=cols, fill_value=0)
     wide.columns = [f"res_{int(c)}_{m}" for m, c in wide.columns]

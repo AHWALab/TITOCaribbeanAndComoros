@@ -28,9 +28,12 @@ class MemberTotal:
 
     def to_dict(self):
         return {
-            "aoc_id": self.aoc_id, "member_id": self.member_id,
-            "qpe_mm": _r(self.qpe_mm), "qpf_mm": _r(self.qpf_mm),
-            "total_mm": _r(self.total_mm), "flags": ";".join(self.flags),
+            "aoc_id": self.aoc_id,
+            "member_id": self.member_id,
+            "qpe_mm": _r(self.qpe_mm),
+            "qpf_mm": _r(self.qpf_mm),
+            "total_mm": _r(self.total_mm),
+            "flags": ";".join(self.flags),
         }
 
 
@@ -38,9 +41,14 @@ def _r(v):
     return None if v != v else round(v, 2)
 
 
-def member_totals(runs, aocs, stat: str = "mean",
-                  qpe_scale: float = 1.0, qpf_scale: float = 1.0,
-                  missing_qpf: str = "skip_member") -> list:
+def member_totals(
+    runs,
+    aocs,
+    stat: str = "mean",
+    qpe_scale: float = 1.0,
+    qpf_scale: float = 1.0,
+    missing_qpf: str = "skip_member",
+) -> list:
     """Compute per (AOC, member) rainfall totals.
 
     missing_qpf:
@@ -73,6 +81,5 @@ def member_totals(runs, aocs, stat: str = "mean",
 
             parts = [v for v in (qpe_val, qpf_val) if v == v]
             total = sum(parts) if parts else float("nan")
-            out.append(MemberTotal(aoc.aoc_id, run.member_id,
-                                   qpe_val, qpf_val, total, flags))
+            out.append(MemberTotal(aoc.aoc_id, run.member_id, qpe_val, qpf_val, total, flags))
     return out

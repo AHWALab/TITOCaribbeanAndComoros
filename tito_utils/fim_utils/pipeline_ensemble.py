@@ -25,14 +25,15 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("PyYAML required") from exc
 
-from .ensemble import (
-    discover_ensemble_members, resolve_component_dir, grid_path, zone_stat)
-from .store import FimStore
 from . import probability as prob_mod
+from .ensemble import discover_ensemble_members, grid_path, resolve_component_dir, zone_stat
+from .store import FimStore
 
-DEFAULT_FILES = {"uq": "maxunitq.{cycle}.tif",
-                 "qpe_accum": "qpeaccum.{cycle}.tif",
-                 "qpf_accum": "qpfaccum.{cycle}.tif"}
+DEFAULT_FILES = {
+    "uq": "maxunitq.{cycle}.tif",
+    "qpe_accum": "qpeaccum.{cycle}.tif",
+    "qpf_accum": "qpfaccum.{cycle}.tif",
+}
 
 
 def load_ensemble_config(path: str, root: str = None) -> dict:
@@ -46,7 +47,8 @@ def load_ensemble_config(path: str, root: str = None) -> dict:
     with open(path) as fh:
         cfg = yaml.safe_load(fh) or {}
     cfg["_root"] = os.path.abspath(
-        root or cfg.get("root") or os.environ.get("TITO_FIM_ROOT") or ".")
+        root or cfg.get("root") or os.environ.get("TITO_FIM_ROOT") or "."
+    )
     for key in ("region", "outputs_root", "aoc_geojson", "store", "member", "components"):
         if key not in cfg:
             raise ValueError(f"Missing '{key}' in {path}")
@@ -83,7 +85,9 @@ def _aoc_bounds(cfg):
         if not coords:
             return
         if isinstance(coords[0], (int, float)):
-            xs.append(coords[0]); ys.append(coords[1]); return
+            xs.append(coords[0])
+            ys.append(coords[1])
+            return
         for c in coords:
             walk(c)
 
@@ -104,8 +108,9 @@ def run_ensemble_cycle(cfg, cycle: str = None, verbose: bool = True) -> dict:
     files = cfg["files"]
     sampling = cfg["sampling"]
 
-    members = discover_ensemble_members(outputs_root, cfg["member"]["template"],
-                                        cycle=cycle, cycle_format=cfg["cycle_format"])
+    members = discover_ensemble_members(
+        outputs_root, cfg["member"]["template"], cycle=cycle, cycle_format=cfg["cycle_format"]
+    )
     if not members:
         log(f"  FIM {cfg['region']}: no ensemble members found (cycle={cycle or 'latest'})")
         return {"region": cfg["region"], "cycle": cycle, "status": "no_runs"}
@@ -126,8 +131,9 @@ def run_ensemble_cycle(cfg, cycle: str = None, verbose: bool = True) -> dict:
     for member in members:
         for source in cfg["trigger"]["sources"]:
             try:
-                run_dir = resolve_component_dir(outputs_root, source["template"],
-                                                member.keys, cycle)
+                run_dir = resolve_component_dir(
+                    outputs_root, source["template"], member.keys, cycle
+                )
             except KeyError:
                 continue
             if run_dir in seen_dirs or not os.path.isdir(run_dir):
@@ -136,24 +142,41 @@ def run_ensemble_cycle(cfg, cycle: str = None, verbose: bool = True) -> dict:
             uq_path = grid_path(run_dir, "uq", cycle, files)
             if not uq_path:
                 continue
-            zs = zone_stat(uq_path, bounds, "max",
-                           sampling["expand_steps_km"], sampling["min_valid_cells"])
+            zs = zone_stat(
+                uq_path, bounds, "max", sampling["expand_steps_km"], sampling["min_valid_cells"]
+            )
             rel = os.path.relpath(run_dir, outputs_root).replace(os.sep, "/")
-            trig_rows.append({"source": rel, "max_uq": None if zs.value != zs.value else round(zs.value, 4),
-                              "n_valid_cells": zs.n_valid, "expand_km": zs.expand_km,
-                              "flags": ";".join(zs.flags)})
+            trig_rows.append(
+                {
+                    "source": rel,
+                    "max_uq": None if zs.value != zs.value else round(zs.value, 4),
+                    "n_valid_cells": zs.n_valid,
+                    "expand_km": zs.expand_km,
+                    "flags": ";".join(zs.flags),
+                }
+            )
             if zs.value == zs.value:
-                max_uq_overall = zs.value if max_uq_overall != max_uq_overall else max(max_uq_overall, zs.value)
+                max_uq_overall = (
+                    zs.value if max_uq_overall != max_uq_overall else max(max_uq_overall, zs.value)
+                )
 
     triggered = (max_uq_overall == max_uq_overall) and max_uq_overall >= threshold
     _write_csv(os.path.join(out_dir, "trigger_maxuq.csv"), trig_rows)
-    log(f"    trigger: max UQ = {max_uq_overall:.3f} vs {threshold} -> "
-        f"{'TRIGGERED' if triggered else 'quiet'}  ({len(trig_rows)} runs checked)")
+    log(
+        f"    trigger: max UQ = {max_uq_overall:.3f} vs {threshold} -> "
+        f"{'TRIGGERED' if triggered else 'quiet'}  ({len(trig_rows)} runs checked)"
+    )
 
-    summary = {"region": cfg["region"], "cycle": cycle,
-               "trigger": {"threshold": threshold,
-                           "max_uq": None if max_uq_overall != max_uq_overall else round(max_uq_overall, 4),
-                           "runs_checked": len(trig_rows), "triggered": bool(triggered)}}
+    summary = {
+        "region": cfg["region"],
+        "cycle": cycle,
+        "trigger": {
+            "threshold": threshold,
+            "max_uq": None if max_uq_overall != max_uq_overall else round(max_uq_overall, 4),
+            "runs_checked": len(trig_rows),
+            "triggered": bool(triggered),
+        },
+    }
 
     if not triggered:
         summary["status"] = "quiet"
@@ -168,19 +191,25 @@ def run_ensemble_cycle(cfg, cycle: str = None, verbose: bool = True) -> dict:
         flags, total, ok = [], 0.0, True
         for comp in cfg["components"]:
             try:
-                run_dir = resolve_component_dir(outputs_root, comp["template"],
-                                                member.keys, cycle)
+                run_dir = resolve_component_dir(outputs_root, comp["template"], member.keys, cycle)
             except KeyError:
                 run_dir = ""
-            gpath = grid_path(run_dir, comp.get("grid", "qpe_accum"), cycle, files) if run_dir else ""
+            gpath = (
+                grid_path(run_dir, comp.get("grid", "qpe_accum"), cycle, files) if run_dir else ""
+            )
             if not gpath:
                 row[comp["name"]] = None
                 flags.append(f"missing_{comp['name']}")
                 if comp.get("required", True):
                     ok = False
                 continue
-            zs = zone_stat(gpath, bounds, comp.get("stat", "mean"),
-                           sampling["expand_steps_km"], sampling["min_valid_cells"])
+            zs = zone_stat(
+                gpath,
+                bounds,
+                comp.get("stat", "mean"),
+                sampling["expand_steps_km"],
+                sampling["min_valid_cells"],
+            )
             row[comp["name"]] = None if zs.value != zs.value else round(zs.value, 2)
             flags.extend(zs.flags)
             if zs.value != zs.value:
@@ -189,13 +218,19 @@ def run_ensemble_cycle(cfg, cycle: str = None, verbose: bool = True) -> dict:
                 total += zs.value * float(comp.get("scale", 1.0))
         row["total_mm"] = round(total, 2) if ok else None
         # ---- 3. store lookup ------------------------------------------------
-        decision = store.match(total if ok else float("nan"),
-                               band=tuple(cfg["matching"]["band"]),
-                               band_wide=tuple(cfg["matching"]["band_wide"]))
-        row.update({"storm_id": decision["storm_id"],
-                    "storm_magnitude_mm": decision["storm_magnitude_mm"],
-                    "rule_applied": decision["rule_applied"],
-                    "flags": ";".join(sorted(set(flags + decision["flags"])))})
+        decision = store.match(
+            total if ok else float("nan"),
+            band=tuple(cfg["matching"]["band"]),
+            band_wide=tuple(cfg["matching"]["band_wide"]),
+        )
+        row.update(
+            {
+                "storm_id": decision["storm_id"],
+                "storm_magnitude_mm": decision["storm_magnitude_mm"],
+                "rule_applied": decision["rule_applied"],
+                "flags": ";".join(sorted(set(flags + decision["flags"]))),
+            }
+        )
         totals_rows.append(row)
         if ok and decision["storm_index"] >= 0:
             indices.append(decision["storm_index"])
@@ -213,7 +248,7 @@ def run_ensemble_cycle(cfg, cycle: str = None, verbose: bool = True) -> dict:
     prob, n_used = prob_mod.exceedance_probability(store, indices, thr)
     classes = prob_mod.classify_likelihood(prob, cfg["probability"]["bands"])
 
-    prob_tif = os.path.join(out_dir, f"prob_depth_ge_{int(round(thr*100))}cm.{cycle}.tif")
+    prob_tif = os.path.join(out_dir, f"prob_depth_ge_{int(round(thr * 100))}cm.{cycle}.tif")
     class_tif = os.path.join(out_dir, f"likelihood_class.{cycle}.tif")
     prob_mod.write_geotiff(prob_tif, prob, store.transform, store.crs, nodata=None)
     prob_mod.write_geotiff(class_tif, classes, store.transform, store.crs, nodata=0)
@@ -225,18 +260,26 @@ def run_ensemble_cycle(cfg, cycle: str = None, verbose: bool = True) -> dict:
     png = os.path.join(out_dir, f"quicklook.{cycle}.png")
     prob_mod.quicklook_png(png, prob, f"{cfg['region']} {cycle}", thr, note)
 
-    summary.update({
-        "status": "triggered",
-        "members_total": len(members), "members_used": n_used,
-        "depth_threshold_m": thr,
-        "probability_summary": prob_mod.summarize(prob, cfg["probability"]["bands"]),
-        "catalog": {"store": cfg["store"], "n_storms": store.n_storms,
-                    "magnitude_source": mag_src,
-                    "magnitude_range_mm": [float(np.nanmin(store.magnitude)),
-                                           float(np.nanmax(store.magnitude))]},
-        "sampling_flags": sorted(set(member_flags)),
-        "products": [os.path.basename(p) for p in (prob_tif, class_tif, png)],
-    })
+    summary.update(
+        {
+            "status": "triggered",
+            "members_total": len(members),
+            "members_used": n_used,
+            "depth_threshold_m": thr,
+            "probability_summary": prob_mod.summarize(prob, cfg["probability"]["bands"]),
+            "catalog": {
+                "store": cfg["store"],
+                "n_storms": store.n_storms,
+                "magnitude_source": mag_src,
+                "magnitude_range_mm": [
+                    float(np.nanmin(store.magnitude)),
+                    float(np.nanmax(store.magnitude)),
+                ],
+            },
+            "sampling_flags": sorted(set(member_flags)),
+            "products": [os.path.basename(p) for p in (prob_tif, class_tif, png)],
+        }
+    )
     _dump(summary, cfg, out_dir)
     log(f"    products -> {out_dir}")
     return summary
@@ -259,14 +302,16 @@ def _write_csv(path, rows):
 
 
 def _dump(summary, cfg, out_dir):
-    summary["config_echo"] = {k: cfg[k] for k in
-                              ("matching", "probability", "sampling", "trigger") if k in cfg}
+    summary["config_echo"] = {
+        k: cfg[k] for k in ("matching", "probability", "sampling", "trigger") if k in cfg
+    }
     with open(os.path.join(out_dir, "fim_summary.json"), "w") as fh:
         json.dump(summary, fh, indent=2)
 
 
 def main(argv=None):
     import argparse
+
     parser = argparse.ArgumentParser(description="Run one ensemble FIM cycle")
     parser.add_argument("--config", required=True)
     parser.add_argument("--cycle", default=None)

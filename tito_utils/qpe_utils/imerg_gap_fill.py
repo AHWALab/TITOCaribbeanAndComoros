@@ -25,23 +25,24 @@ import numpy as np
 
 try:
     import rasterio
+
     _RASTERIO_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _RASTERIO_AVAILABLE = False
 
 # Output filename template — matches the IMERG EF5 forcing NAME pattern.
-_IMERG_NAME_TPL = "imerg.qpe.{ts}.30minAccum.tif"   # ts = YYYYMMDDHHMM
+_IMERG_NAME_TPL = "imerg.qpe.{ts}.30minAccum.tif"  # ts = YYYYMMDDHHMM
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _require_rasterio() -> None:
     if not _RASTERIO_AVAILABLE:
         raise ImportError(
-            "rasterio is required for IMERG gap fill. "
-            "Install with: pip install rasterio"
+            "rasterio is required for IMERG gap fill. Install with: pip install rasterio"
         )
 
 
@@ -109,8 +110,8 @@ def _average_rasters_to_accum(tif_paths: list, output_path: str, accum_hours: fl
         return False
 
     stacked = np.stack(arrays, axis=0)
-    mean_rate = np.nanmean(stacked, axis=0)   # mm/h average
-    accum = mean_rate * accum_hours            # mm over accum_hours
+    mean_rate = np.nanmean(stacked, axis=0)  # mm/h average
+    accum = mean_rate * accum_hours  # mm over accum_hours
 
     fill_value = -9999.0
     accum = np.where(np.isnan(accum), fill_value, accum)
@@ -135,6 +136,7 @@ def _average_rasters_to_accum(tif_paths: list, output_path: str, accum_hours: fl
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def fill_imerg_gap_with_scampr(
     imerg_precip_folder: str,
@@ -185,19 +187,17 @@ def fill_imerg_gap_with_scampr(
         print(f"    Gap fill: no SCaMPR files found in [{gap_start}, {gap_end})")
         return 0
 
-    print(f"    Gap fill: found {len(scampr_by_ts)} SCaMPR file(s) for "
-          f"[{gap_start.strftime('%Y-%m-%d %H:%M')}, {gap_end.strftime('%H:%M')}) UTC")
+    print(
+        f"    Gap fill: found {len(scampr_by_ts)} SCaMPR file(s) for "
+        f"[{gap_start.strftime('%Y-%m-%d %H:%M')}, {gap_end.strftime('%H:%M')}) UTC"
+    )
 
     written = 0
     window_start = gap_start
     while window_start < gap_end:
         window_end = window_start + timedelta(minutes=30)
 
-        window_files = [
-            scampr_by_ts[ts]
-            for ts in scampr_by_ts
-            if window_start <= ts < window_end
-        ]
+        window_files = [scampr_by_ts[ts] for ts in scampr_by_ts if window_start <= ts < window_end]
 
         if window_files:
             out_ts = window_end.strftime("%Y%m%d%H%M")
@@ -209,7 +209,9 @@ def fill_imerg_gap_with_scampr(
                 success = _average_rasters_to_accum(window_files, out_path, accum_hours=0.5)
                 if success:
                     written += 1
-                    print(f"    SCaMPR→IMERG gap fill: {out_name} ({len(window_files)} source file(s))")
+                    print(
+                        f"    SCaMPR→IMERG gap fill: {out_name} ({len(window_files)} source file(s))"
+                    )
 
         window_start = window_end
 
@@ -265,19 +267,17 @@ def fill_imerg_gap_with_hsaf(
         print(f"    Gap fill: no HSAF files found in [{gap_start}, {gap_end})")
         return 0
 
-    print(f"    Gap fill: found {len(hsaf_by_ts)} HSAF file(s) for "
-          f"[{gap_start.strftime('%Y-%m-%d %H:%M')}, {gap_end.strftime('%H:%M')}) UTC")
+    print(
+        f"    Gap fill: found {len(hsaf_by_ts)} HSAF file(s) for "
+        f"[{gap_start.strftime('%Y-%m-%d %H:%M')}, {gap_end.strftime('%H:%M')}) UTC"
+    )
 
     written = 0
     window_start = gap_start
     while window_start < gap_end:
         window_end = window_start + timedelta(minutes=30)
 
-        window_files = [
-            hsaf_by_ts[ts]
-            for ts in hsaf_by_ts
-            if window_start <= ts < window_end
-        ]
+        window_files = [hsaf_by_ts[ts] for ts in hsaf_by_ts if window_start <= ts < window_end]
 
         if window_files:
             out_ts = window_end.strftime("%Y%m%d%H%M")
@@ -288,7 +288,9 @@ def fill_imerg_gap_with_hsaf(
                 success = _average_rasters_to_accum(window_files, out_path, accum_hours=0.5)
                 if success:
                     written += 1
-                    print(f"    HSAF→IMERG gap fill: {out_name} ({len(window_files)} source file(s))")
+                    print(
+                        f"    HSAF→IMERG gap fill: {out_name} ({len(window_files)} source file(s))"
+                    )
 
         window_start = window_end
 

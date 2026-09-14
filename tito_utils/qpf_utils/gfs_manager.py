@@ -1,13 +1,12 @@
+import glob
 import os
 import shutil
-from datetime import datetime as dt
 from datetime import timedelta
-from .gfs_downloader_v2 import download_cycle, _gfs_cycle, PARALLEL_WORKERS, MAX_CYCLES_BACK
+
+from .gfs_downloader_v2 import MAX_CYCLES_BACK, PARALLEL_WORKERS, _gfs_cycle, download_cycle
 from .gfs_wind_downloader import (
     assemble_winds_from_archive,
-    download_wind_cycle,
 )
-import glob
 
 
 def _expected_gfs_filenames(start_time, end_time):
@@ -73,7 +72,9 @@ def GFS_searcher(path_gfs, qpf_store_path, start_time, end_time, xmin, xmax, ymi
     missing = expected - daemon_files
 
     if not missing:
-        print(f"    GFS: all {len(expected)} file(s) found in shared folder — copying to region store.")
+        print(
+            f"    GFS: all {len(expected)} file(s) found in shared folder — copying to region store."
+        )
         for name in sorted(expected):
             src = os.path.join(path_gfs, name)
             dst = os.path.join(download_folder, name)
@@ -84,8 +85,10 @@ def GFS_searcher(path_gfs, qpf_store_path, start_time, end_time, xmin, xmax, ymi
         return
 
     # Step 3: daemon folder is incomplete — fallback one-shot download via V2.
-    print(f"    GFS: {len(missing)} of {len(expected)} file(s) missing from shared folder "
-          f"(daemon may not have run yet) — downloading via V2 parallel downloader.")
+    print(
+        f"    GFS: {len(missing)} of {len(expected)} file(s) missing from shared folder "
+        f"(daemon may not have run yet) — downloading via V2 parallel downloader."
+    )
 
     # Compute the GFS cycle and forecast window
     cycle = _gfs_cycle(start_time)
@@ -95,28 +98,36 @@ def GFS_searcher(path_gfs, qpf_store_path, start_time, end_time, xmin, xmax, ymi
     for back in range(MAX_CYCLES_BACK + 1):
         trial_cycle = cycle - timedelta(hours=6 * back)
         results = download_cycle(
-            trial_cycle, hours,
-            xmin, xmax, ymin, ymax,
+            trial_cycle,
+            hours,
+            xmin,
+            xmax,
+            ymin,
+            ymax,
             download_folder,
             workers=PARALLEL_WORKERS,
         )
         num_written = len(results) if results else 0
         if num_written > 0:
-            print(f"    GFS: V2 fallback — cycle {trial_cycle:%Y-%m-%d %H}z wrote {num_written} files.")
+            print(
+                f"    GFS: V2 fallback — cycle {trial_cycle:%Y-%m-%d %H}z wrote {num_written} files."
+            )
             break
-        print(f"    GFS: V2 fallback — cycle {trial_cycle:%Y-%m-%d %H}z returned 0 files, "
-              f"trying previous cycle...")
+        print(
+            f"    GFS: V2 fallback — cycle {trial_cycle:%Y-%m-%d %H}z returned 0 files, "
+            f"trying previous cycle..."
+        )
 
     if num_written == 0:
         raise RuntimeError(
-            f"No GFS data available after {MAX_CYCLES_BACK + 1} cycle attempts "
-            f"via V2 downloader."
+            f"No GFS data available after {MAX_CYCLES_BACK + 1} cycle attempts via V2 downloader."
         )
 
 
 # ---------------------------------------------------------------------------
 # GFS Wind (U/V 850 hPa) archive-first searcher
 # ---------------------------------------------------------------------------
+
 
 def _expected_wind_filenames(start_time, end_time):
     """Return the set of gfs_wind.*.nc basenames covering start_time..end_time."""
@@ -128,13 +139,19 @@ def _expected_wind_filenames(start_time, end_time):
     return names
 
 
-def GFS_wind_searcher(archive_dir: str, output_dir: str,
-                      start_time, end_time,
-                      lat_min: float, lat_max: float,
-                      lon_min: float, lon_max: float,
-                      *,
-                      out_res: float = 0.1,
-                      workers: int = PARALLEL_WORKERS) -> str:
+def GFS_wind_searcher(
+    archive_dir: str,
+    output_dir: str,
+    start_time,
+    end_time,
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+    *,
+    out_res: float = 0.1,
+    workers: int = PARALLEL_WORKERS,
+) -> str:
     """Obtain a GFS 850 hPa wind NetCDF covering *start_time*..*end_time*.
 
     Strategy (archive-first, Herbie-fallback):
@@ -168,8 +185,7 @@ def GFS_wind_searcher(archive_dir: str, output_dir: str,
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(archive_dir, exist_ok=True)
 
-    out_name = (f"GFS_UV850_{out_res}deg_"
-                f"{start_time:%Y%m%d_%H}_{end_time:%Y%m%d_%H}.nc")
+    out_name = f"GFS_UV850_{out_res}deg_{start_time:%Y%m%d_%H}_{end_time:%Y%m%d_%H}.nc"
     out_path = os.path.join(output_dir, out_name)
 
     # Already cached?
@@ -179,8 +195,9 @@ def GFS_wind_searcher(archive_dir: str, output_dir: str,
 
     # Step 1: check archive
     expected = _expected_wind_filenames(start_time, end_time)
-    archive_files = {os.path.basename(f)
-                     for f in glob.glob(os.path.join(archive_dir, "gfs_wind.*.nc"))}
+    archive_files = {
+        os.path.basename(f) for f in glob.glob(os.path.join(archive_dir, "gfs_wind.*.nc"))
+    }
     missing = expected - archive_files
 
     if not missing:
@@ -188,7 +205,7 @@ def GFS_wind_searcher(archive_dir: str, output_dir: str,
         result = assemble_winds_from_archive(archive_dir, start_time, end_time, out_path)
         if result is not None:
             return result
-        print(f"    GFS winds: assembly failed, falling back to download.")
+        print("    GFS winds: assembly failed, falling back to download.")
 
     # Step 2: archive incomplete — fail fast, let caller fall back to
     #   download_gfs_winds (which handles multi-cycle windows efficiently).
@@ -197,4 +214,3 @@ def GFS_wind_searcher(archive_dir: str, output_dir: str,
         f"missing ({start_time} → {end_time}). "
         f"Use download_gfs_winds fallback."
     )
-        

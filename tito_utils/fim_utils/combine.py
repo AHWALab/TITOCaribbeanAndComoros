@@ -40,10 +40,13 @@ def exceedance_by_pairs(store, pairs, thresholds, mode: str = "PF"):
             return (-1, f)
         return (p, f)
 
-    counts = Counter(key(pr) for pr in pairs
-                     if (mode == "P" and pr[0] >= 0)
-                     or (mode == "F" and pr[1] >= 0)
-                     or (mode == "PF" and (pr[0] >= 0 or pr[1] >= 0)))
+    counts = Counter(
+        key(pr)
+        for pr in pairs
+        if (mode == "P" and pr[0] >= 0)
+        or (mode == "F" and pr[1] >= 0)
+        or (mode == "PF" and (pr[0] >= 0 or pr[1] >= 0))
+    )
     n = sum(counts.values())
     out = {t: np.zeros(store.grid_shape, dtype="float64") for t in thresholds}
     if n == 0:

@@ -40,15 +40,14 @@ if IMERG is late, SCaMPR gap fill spans whatever remains until ``T``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import List, Optional, Sequence
-
 
 # ── Canonical constants (single source of truth) ───────────────────────────
 IMERG_LATENCY = timedelta(hours=4)
-WARMUP_STATE_OFFSET = timedelta(hours=40)   # warmup ends / states saved here
-STATE_LOOKBACK = timedelta(hours=48)        # find_available_states window
+WARMUP_STATE_OFFSET = timedelta(hours=40)  # warmup ends / states saved here
+STATE_LOOKBACK = timedelta(hours=48)  # find_available_states window
 DEFAULT_LR_HOURS = 24
 DEFAULT_WARMUP_DAYS = 5
 
@@ -63,15 +62,13 @@ class PhaseWindow:
     qpe_source: str
     qpf_sources: tuple = ()
     save_states: bool = False
-    state_save_time: Optional[datetime] = None
-    state_load_time: Optional[datetime] = None
+    state_save_time: datetime | None = None
+    state_load_time: datetime | None = None
     notes: str = ""
 
     def __post_init__(self):
         if self.end < self.start:
-            raise ValueError(
-                f"Phase '{self.name}': end ({self.end}) < start ({self.start})"
-            )
+            raise ValueError(f"Phase '{self.name}': end ({self.end}) < start ({self.start})")
 
 
 @dataclass(frozen=True)
@@ -79,7 +76,7 @@ class CyclePlan:
     """Full timing plan for one region at one cycle time."""
 
     cycle_time: datetime
-    mode: str                          # "operational" | "hindcast"
+    mode: str  # "operational" | "hindcast"
     qpe_source: str
     qpf_sources: tuple
     imerg_latency: timedelta
@@ -87,14 +84,14 @@ class CyclePlan:
 
     # Warmup window (always computed; runner decides whether to execute)
     warmup_start: datetime
-    warmup_end: datetime               # == warmup state save time (T − 40h)
+    warmup_end: datetime  # == warmup state save time (T − 40h)
     warmup_state_time: datetime
-    state_lookback_start: datetime     # cycle_time − 48h
+    state_lookback_start: datetime  # cycle_time − 48h
 
     # Expected QPE end for latency-aware products
-    qpe_end: datetime                  # T−4h operational IMERG/STREAM_SAT; T in hindcast
-    scampr_end: datetime               # always cycle_time (gap fill target)
-    lr_end: datetime                   # cycle_time + lr_duration
+    qpe_end: datetime  # T−4h operational IMERG/STREAM_SAT; T in hindcast
+    scampr_end: datetime  # always cycle_time (gap fill target)
+    lr_end: datetime  # cycle_time + lr_duration
 
     phases: tuple = field(default_factory=tuple)
 
@@ -103,11 +100,11 @@ class CyclePlan:
         return self.mode == "hindcast"
 
     @property
-    def state_save_phases(self) -> List[PhaseWindow]:
+    def state_save_phases(self) -> list[PhaseWindow]:
         return [p for p in self.phases if p.save_states]
 
     @property
-    def primary_state_time(self) -> Optional[datetime]:
+    def primary_state_time(self) -> datetime | None:
         """Time of the states that the *next* cycle should find."""
         for p in reversed(self.phases):
             if p.save_states and p.state_save_time is not None:
@@ -133,13 +130,13 @@ def build_cycle_plan(
     *,
     mode: str = "operational",
     qpe_source: str = "STREAM_SAT",
-    qpf_sources: Optional[Sequence[str]] = None,
+    qpf_sources: Sequence[str] | None = None,
     run_lr: bool = True,
     warmup_days: int = DEFAULT_WARMUP_DAYS,
     imerg_latency: timedelta = IMERG_LATENCY,
     lr_hours: int = DEFAULT_LR_HOURS,
-    stream_sat_end: Optional[datetime] = None,
-    stream_sat_start: Optional[datetime] = None,
+    stream_sat_end: datetime | None = None,
+    stream_sat_start: datetime | None = None,
     stream_sat_window_hours: int = 48,
 ) -> CyclePlan:
     """
@@ -168,6 +165,11 @@ def build_cycle_plan(
 
     qpe = qpe_source.strip().upper()
     qpf = tuple(s.strip().upper() for s in (qpf_sources or ("GFS",)))
+    if mode == "hindcast" and "AROME" in qpf:
+        raise RuntimeError(
+            "AROME cannot be used in hindcast (no archive). "
+            "Remove AROME from qpf_source / region_forcing_map, or run operational mode."
+        )
     lr_duration = timedelta(hours=lr_hours) if run_lr else timedelta(0)
 
     warmup_end = cycle_time - WARMUP_STATE_OFFSET
@@ -186,7 +188,7 @@ def build_cycle_plan(
     scampr_end = cycle_time
     lr_end = cycle_time + lr_duration
 
-    phases: List[PhaseWindow] = []
+    phases: list[PhaseWindow] = []
 
     if qpe == "STREAM_SAT":
         phases.extend(
@@ -269,13 +271,12 @@ def expected_state_for_next_cycle(
             f"{lookback_start} for next cycle {next_cycle_time}"
         )
     if state_t > next_cycle_time:
-        raise ValueError(
-            f"State at {state_t} is after next cycle {next_cycle_time}"
-        )
+        raise ValueError(f"State at {state_t} is after next cycle {next_cycle_time}")
     return state_t
 
 
 # ── Phase builders ─────────────────────────────────────────────────────────
+
 
 def _stream_sat_phases(
     *,
@@ -286,10 +287,10 @@ def _stream_sat_phases(
     lr_end: datetime,
     qpf: tuple,
     run_lr: bool,
-    stream_sat_end: Optional[datetime],
-    stream_sat_start: Optional[datetime],
+    stream_sat_end: datetime | None,
+    stream_sat_start: datetime | None,
     stream_sat_window_hours: int,
-) -> List[PhaseWindow]:
+) -> list[PhaseWindow]:
     ss_end = stream_sat_end if stream_sat_end is not None else qpe_end
     if stream_sat_start is not None:
         ss_start = stream_sat_start
@@ -318,11 +319,11 @@ def _stream_sat_phases(
     has_stormlab = any(s == "STORMLAB" for s in qpf)
     legacy_qpf = tuple(s for s in qpf if s in ("GFS", "AROME", "WRF"))
     if mode == "hindcast":
-        # AROME has no archive in hindcast
-        legacy_qpf = tuple(s for s in legacy_qpf if s == "GFS")
+        legacy_qpf = tuple(s for s in legacy_qpf if s != "AROME")
         forecast_qpf = ("STORMLAB",) if has_stormlab else (legacy_qpf or ("GFS",))
     else:
-        forecast_qpf = ("STORMLAB",) if has_stormlab else (legacy_qpf or qpf)
+        # Operational: every listed QPF (StormLab and/or AROME/GFS)
+        forecast_qpf = tuple((["STORMLAB"] if has_stormlab else []) + list(legacy_qpf)) or qpf
 
     # Phase B — gap fill only (operational). Saves states for Phase C.
     if mode == "operational" and ss_end < scampr_end:
@@ -381,7 +382,7 @@ def _imerg_phases(
     lr_end: datetime,
     qpf: tuple,
     run_lr: bool,
-) -> List[PhaseWindow]:
+) -> list[PhaseWindow]:
     # In hindcast, IMERG has no latency → qpe_end == T; still save states at end.
     phases = [
         PhaseWindow(
@@ -433,7 +434,7 @@ def _direct_qpe_phases(
     lr_end: datetime,
     qpf: tuple,
     run_lr: bool,
-) -> List[PhaseWindow]:
+) -> list[PhaseWindow]:
     phases = [
         PhaseWindow(
             name=qpe.lower(),

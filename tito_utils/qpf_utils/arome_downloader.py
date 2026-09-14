@@ -20,18 +20,18 @@ Standalone Usage:
 
    from datetime import datetime, timedelta
    from arome_downloader import download_AROME, get_arome_domain_for_region
-   
+
    # Define forecast window
    start_time = datetime(2024, 1, 15, 0, 0)
    end_time = datetime(2024, 1, 16, 18, 0)
-   
+
    # Define domain bounds (e.g., Caribbean)
    xmin, ymin, xmax, ymax = -85.0, 10.0, -60.0, 25.0
-   
+
    # Get domain for your region
    domain = get_arome_domain_for_region("haiti")  # Returns "ANTIL"
    # Or specify directly: domain = "ANTIL"  # or "INDIEN"
-   
+
    # Download AROME forecast
    written_files = download_AROME(
        start_time=start_time,
@@ -50,7 +50,7 @@ Standalone Usage:
    run_time = "2024-01-15T00:00:00"
    domain = "ANTIL"
    lead = 6  # Hours (1 to 48)
-   
+
    url = (
        "https://meteofrance-pnt.s3.rbx.io.cloud.ovh.net/pnt/"
        f"{run_time}Z/arome-om/{domain}/0025/SP2/"
@@ -175,18 +175,16 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Union
 
 import numpy as np
 import requests
 
 try:
-    import xarray as xr
     import rioxarray  # noqa: F401  – registers .rio accessor
+    import xarray as xr
 except ImportError as exc:
     raise ImportError(
-        "xarray and rioxarray are required. "
-        "Install with: pip install xarray rioxarray"
+        "xarray and rioxarray are required. Install with: pip install xarray rioxarray"
     ) from exc
 
 # ---------------------------------------------------------------------------
@@ -209,7 +207,7 @@ AROME_MAX_LEAD = 48
 AROME_GRACE_HOURS = 2
 
 # Fixed mapping from TITO region name (lowercase) to AROME domain code
-REGION_DOMAIN_MAP: Dict[str, str] = {
+REGION_DOMAIN_MAP: dict[str, str] = {
     "antigua": "ANTIL",
     "barbados": "ANTIL",
     "haiti": "ANTIL",
@@ -221,7 +219,7 @@ REGION_DOMAIN_MAP: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 
-def _ensure_datetime(dt_like: Union[str, datetime]) -> datetime:
+def _ensure_datetime(dt_like: str | datetime) -> datetime:
     """Parse a string or datetime into a naive UTC datetime."""
     if isinstance(dt_like, datetime):
         return dt_like.replace(tzinfo=None) if dt_like.tzinfo else dt_like
@@ -275,7 +273,7 @@ def _download_grib(url: str, dest: str) -> bool:
     return True
 
 
-def _extract_tirf(grib_path: str) -> Optional[xr.DataArray]:
+def _extract_tirf(grib_path: str) -> xr.DataArray | None:
     """Open an AROME SP2 GRIB2 and return the 'tirf' DataArray (lat × lon, 2-D).
 
     tirf = Time integral of rain flux = cumulative liquid rainfall [kg m⁻² = mm]
@@ -283,6 +281,7 @@ def _extract_tirf(grib_path: str) -> Optional[xr.DataArray]:
     """
     try:
         import warnings
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             ds = xr.open_dataset(
@@ -296,8 +295,7 @@ def _extract_tirf(grib_path: str) -> Optional[xr.DataArray]:
         return None
 
     candidates = [
-        v for v in ds.data_vars
-        if any(kw in v.lower() for kw in ["tirf", "tp", "precip", "rain"])
+        v for v in ds.data_vars if any(kw in v.lower() for kw in ["tirf", "tp", "precip", "rain"])
     ]
     if not candidates:
         print(
@@ -309,7 +307,7 @@ def _extract_tirf(grib_path: str) -> Optional[xr.DataArray]:
     da = ds[candidates[0]].squeeze(drop=True)
 
     # Normalise spatial dim names to lat / lon
-    rename_map: Dict[str, str] = {}
+    rename_map: dict[str, str] = {}
     for d in list(da.dims):
         dl = d.lower()
         if "lat" in dl and d != "lat":
@@ -379,8 +377,7 @@ def _save_geotiff(da: xr.DataArray, out_path: str) -> None:
         from rasterio.transform import from_bounds
     except ImportError as exc:
         raise ImportError(
-            "rasterio is required for GeoTIFF export. "
-            "Install with: pip install rasterio"
+            "rasterio is required for GeoTIFF export. Install with: pip install rasterio"
         ) from exc
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
@@ -408,9 +405,9 @@ def _save_geotiff(da: xr.DataArray, out_path: str) -> None:
     res_lon = float(np.abs(lon_vals[1] - lon_vals[0])) if ncols > 1 else 0.025
     res_lat = float(np.abs(lat_vals[0] - lat_vals[1])) if nrows > 1 else 0.025
 
-    west  = float(lon_vals[0])  - res_lon / 2.0
-    east  = float(lon_vals[-1]) + res_lon / 2.0
-    north = float(lat_vals[0])  + res_lat / 2.0
+    west = float(lon_vals[0]) - res_lon / 2.0
+    east = float(lon_vals[-1]) + res_lon / 2.0
+    north = float(lat_vals[0]) + res_lat / 2.0
     south = float(lat_vals[-1]) - res_lat / 2.0
 
     transform = from_bounds(west, south, east, north, ncols, nrows)
@@ -451,8 +448,8 @@ def get_arome_domain_for_region(region_name: str) -> str:
 
 
 def download_AROME(
-    start_time: Union[str, datetime],
-    end_time: Union[str, datetime],
+    start_time: str | datetime,
+    end_time: str | datetime,
     xmin: float,
     xmax: float,
     ymin: float,
@@ -461,7 +458,7 @@ def download_AROME(
     domain: str,
     *,
     max_cycles_back: int = 4,
-) -> List[str]:
+) -> list[str]:
     """Download AROME QPF and write hourly GeoTIFFs suitable for EF5.
 
     For each valid hour H in [start_time, end_time] coverable by AROME (≤48
@@ -510,11 +507,11 @@ def download_AROME(
         run_time_str = run_time.strftime("%Y-%m-%dT%H:%M:%S")
         print(f"    AROME: trying run {run_time_str}Z (domain={domain}) ...")
 
-        def _lead_for(vt: datetime) -> int:
+        def _lead_for(vt: datetime, run_time=run_time) -> int:
             return int(round((vt - run_time).total_seconds() / 3600))
 
         # Build the list of valid times we want output for
-        valid_times_out: List[datetime] = []
+        valid_times_out: list[datetime] = []
         t = t_start.replace(minute=0, second=0, microsecond=0)
         while t <= t_end:
             valid_times_out.append(t)
@@ -526,7 +523,7 @@ def download_AROME(
 
         # Determine which leads we need (include lead-1 for the first diff)
         leads_needed: set = set()
-        coverable: List[datetime] = []
+        coverable: list[datetime] = []
         for vt in valid_times_out:
             lead = _lead_for(vt)
             if 1 <= lead <= AROME_MAX_LEAD:
@@ -543,13 +540,11 @@ def download_AROME(
             continue
 
         # Download GRIB2 files for all required leads
-        tirf_by_lead: Dict[int, xr.DataArray] = {}
+        tirf_by_lead: dict[int, xr.DataArray] = {}
         any_missing = False
 
         for lead in sorted(leads_needed):
-            grib_name = (
-                f"arome-om-{domain}__0025__SP2__{lead:03d}H__{run_time_str}Z.grib2"
-            )
+            grib_name = f"arome-om-{domain}__0025__SP2__{lead:03d}H__{run_time_str}Z.grib2"
             grib_path = os.path.join(cache_dir, grib_name)
             url = BASE_URL.format(run_time=run_time_str, domain=domain, lead=lead)
 
@@ -567,13 +562,12 @@ def download_AROME(
 
         if not tirf_by_lead:
             print(
-                f"    AROME: no tirf data retrieved for run {run_time_str}Z. "
-                "Trying previous cycle."
+                f"    AROME: no tirf data retrieved for run {run_time_str}Z. Trying previous cycle."
             )
             continue
 
         # Compute hourly rates and write GeoTIFFs
-        written: List[str] = []
+        written: list[str] = []
         for vt in coverable:
             lead_now = _lead_for(vt)
             if lead_now not in tirf_by_lead:
@@ -612,13 +606,7 @@ def download_AROME(
                 )
             return written
 
-        print(
-            f"    AROME: run {run_time_str}Z yielded no output. "
-            "Trying previous cycle."
-        )
+        print(f"    AROME: run {run_time_str}Z yielded no output. Trying previous cycle.")
 
-    print(
-        f"    AROME: WARNING — no files produced after {max_cycles_back} "
-        "cycle attempts."
-    )
+    print(f"    AROME: WARNING — no files produced after {max_cycles_back} cycle attempts.")
     return []

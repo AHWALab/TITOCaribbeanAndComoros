@@ -5,7 +5,7 @@ IMERG Precipitation Retrieval Module (QPE - Quantitative Precipitation Estimate)
 
 Description:
 ------------
-Downloads NASA GPM IMERG (Integrated Multi-satellitE Retrievals for GPM) 
+Downloads NASA GPM IMERG (Integrated Multi-satellitE Retrievals for GPM)
 precipitation data and converts it to EF5-compatible GeoTIFF format. IMERG
 provides near-global precipitation estimates at 0.1° resolution every 30 minutes.
 
@@ -19,17 +19,17 @@ Standalone Usage:
 
    from datetime import datetime, timedelta
    from imerg_retrieve import get_new_precip, get_gpm_files
-   
+
    # Define domain bounds
    xmin, ymin, xmax, ymax = -85.0, 10.0, -60.0, 25.0
-   
+
    # Set your NASA GPM email
    email = "your-email@example.com"
-   
+
    # Define time window
    start_time = datetime(2024, 1, 1, 0, 0)
    end_time = datetime(2024, 1, 1, 6, 0)
-   
+
    # Download IMERG data
    get_gpm_files(
        precipFolder="./imerg_output",
@@ -69,7 +69,7 @@ Required Packages:
 
 - numpy: Array manipulation for raster data
   pip install numpy
-  
+
 - GDAL (osgeo.gdal): Geospatial processing and reprojection
   conda install -c conda-forge gdal
   OR on Windows with pre-built wheels:
@@ -108,57 +108,52 @@ Notes:
 ================================================================================
 """
 
-import requests
-from bs4 import BeautifulSoup
+import datetime
 import os
-import glob
-import shutil
-import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import timedelta
+
+import osgeo.gdal as gdal
 import requests
 from bs4 import BeautifulSoup
-import datetime
-from datetime import datetime as dt
-from datetime import timedelta
-from os import makedirs, listdir, rename, remove
-import numpy as np
-import osgeo.gdal as gdal
-from osgeo.gdal import gdalconst
 from osgeo.gdalconst import GA_ReadOnly
-from tito_utils.file_utils.datetime_utils import extract_timestamp, extract_datetime_from_filename, to_naive_utc
 
 
 def retrieve_imerg_files(url, email_gpm, HindCastMode, date):
     """List bare filenames ending in '30min.tif' available for *date*'s YYYY/MM folder."""
-    url = url.rstrip('/')
-    folder = date.strftime('%Y/%m/')
-    url_server = url + '/' + folder
+    url = url.rstrip("/")
+    folder = date.strftime("%Y/%m/")
+    url_server = url + "/" + folder
 
     response = requests.get(url_server, auth=(email_gpm, email_gpm))
 
     if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
-        links = soup.find_all('a')
+        soup = BeautifulSoup(response.text, "html.parser")
+        links = soup.find_all("a")
         # Guard against hrefs that are None or don't end in the expected suffix.
         files = [
-            link.get('href') for link in links
-            if link.get('href') and link.get('href').endswith('30min.tif')
+            link.get("href")
+            for link in links
+            if link.get("href") and link.get("href").endswith("30min.tif")
         ]
     else:
-        print(f"    Failed to retrieve directory listing ({url_server}). Status: {response.status_code}")
+        print(
+            f"    Failed to retrieve directory listing ({url_server}). Status: {response.status_code}"
+        )
         files = []
 
     return files
 
 
 # IMERG version cutover: V07B → V07C happened around 2026-03-10.
-_IMERG_V07C_CUTOVER = datetime.datetime(2026, 3, 10, tzinfo=datetime.timezone.utc)
+_IMERG_V07C_CUTOVER = datetime.datetime(2026, 3, 10, tzinfo=datetime.UTC)
+
 
 def _imerg_file_suffix(date):
     """Return the correct IMERG 30-min TIF version suffix for a given date."""
-    d = date if date.tzinfo is not None else date.replace(tzinfo=datetime.timezone.utc)
-    return '.V07C.30min.tif' if d >= _IMERG_V07C_CUTOVER else '.V07B.30min.tif'
+    d = date if date.tzinfo is not None else date.replace(tzinfo=datetime.UTC)
+    return ".V07C.30min.tif" if d >= _IMERG_V07C_CUTOVER else ".V07B.30min.tif"
 
 
 def _imerg_one_timestep(
@@ -166,25 +161,28 @@ def _imerg_one_timestep(
     precipFolder,
     server,
     email_gpm,
-    xmin, ymin, xmax, ymax,
+    xmin,
+    ymin,
+    xmax,
+    ymax,
     available_files,
     file_prefix,
     print_lock=None,
 ):
     """Download + convert one 30-min IMERG step. Returns status string."""
-    initial_time_stmp = current_date.strftime('%Y%m%d-S%H%M%S')
+    initial_time_stmp = current_date.strftime("%Y%m%d-S%H%M%S")
     final_time = current_date + timedelta(minutes=29)
-    final_time_stmp = final_time.strftime('E%H%M59')
+    final_time_stmp = final_time.strftime("E%H%M59")
     final_time_gridout = current_date + timedelta(minutes=30)
-    folder = current_date.strftime('%Y/%m/')
+    folder = current_date.strftime("%Y/%m/")
     total_minutes = current_date.hour * 60 + current_date.minute
-    date_stamp = initial_time_stmp + '-' + final_time_stmp + '.' + f"{total_minutes:04}"
+    date_stamp = initial_time_stmp + "-" + final_time_stmp + "." + f"{total_minutes:04}"
     file_suffix = _imerg_file_suffix(current_date)
     filename = folder + file_prefix + date_stamp + file_suffix
 
     gridOutName = os.path.join(
         precipFolder,
-        'imerg.qpe.' + final_time_gridout.strftime('%Y%m%d%H%M') + '.30minAccum.tif',
+        "imerg.qpe." + final_time_gridout.strftime("%Y%m%d%H%M") + ".30minAccum.tif",
     )
     # Skip if already on disk (warmup / re-runs)
     if os.path.isfile(gridOutName) and os.path.getsize(gridOutName) > 0:
@@ -193,7 +191,7 @@ def _imerg_one_timestep(
     if filename not in available_files:
         return "missing"
 
-    raw_dir = os.path.join(precipFolder, '_imerg_raw')
+    raw_dir = os.path.join(precipFolder, "_imerg_raw")
     os.makedirs(raw_dir, exist_ok=True)
     # Unique raw name per worker to avoid collisions under parallel download
     local_filename = f"{os.getpid()}_{threading.get_ident()}_{file_prefix}{date_stamp}{file_suffix}"
@@ -207,6 +205,7 @@ def _imerg_one_timestep(
         msg = f"    ERROR downloading {filename}: {e}"
         try:
             from tito_utils.logging_utils import debug_print, is_debug
+
             if is_debug():
                 if print_lock:
                     with print_lock:
@@ -236,7 +235,10 @@ def get_gpm_files(
     final_timestamp,
     ppt_server_path,
     email_gpm,
-    xmin, ymin, xmax, ymax,
+    xmin,
+    ymin,
+    xmax,
+    ymax,
     HindCastMode=False,
     max_workers=None,
 ):
@@ -254,18 +256,22 @@ def get_gpm_files(
             or min(16, cpu_count*2)).  Use 1 for serial.
     """
     server = ppt_server_path
-    file_prefix = '3B-HHR-E.MS.MRG.3IMERG.'
+    file_prefix = "3B-HHR-E.MS.MRG.3IMERG."
 
     final_date = final_timestamp + timedelta(minutes=30)
     delta_time = datetime.timedelta(minutes=30)
 
     from tito_utils.logging_utils import (
-        debug_print, is_debug, is_user, progress_done, progress_line, user_print,
+        is_user,
+        progress_done,
+        progress_line,
+        user_print,
     )
 
     user_print("    Checking server for available files...")
     available_files = _get_available_files_for_range(
-        server, email_gpm, initial_timestamp, final_date, HindCastMode)
+        server, email_gpm, initial_timestamp, final_date, HindCastMode
+    )
     user_print(f"    Found {len(available_files)} files available on server")
 
     # Build list of 30-min timesteps to fetch
@@ -293,6 +299,7 @@ def get_gpm_files(
     print_lock = threading.Lock()
     done = 0
     import sys as _sys
+
     _tty = bool(getattr(_sys.stdout, "isatty", lambda: False)())
     # TTY user mode: rewrite one line continuously.
     # Log files / non-TTY: update ~ every 5% so files stay readable.
@@ -302,9 +309,11 @@ def get_gpm_files(
     def _emit_progress(force=False):
         if n_total <= 0:
             return
-        msg = (f"    IMERG progress: {done}/{n_total} "
-               f"(new={downloaded_count} exist={exists_count} "
-               f"skip={skipped_count} err={error_count})")
+        msg = (
+            f"    IMERG progress: {done}/{n_total} "
+            f"(new={downloaded_count} exist={exists_count} "
+            f"skip={skipped_count} err={error_count})"
+        )
         if is_user() and _tty:
             progress_line(msg)
             return
@@ -315,9 +324,17 @@ def get_gpm_files(
 
     def _work(ts):
         return _imerg_one_timestep(
-            ts, precipFolder, server, email_gpm,
-            xmin, ymin, xmax, ymax,
-            available_files, file_prefix, print_lock,
+            ts,
+            precipFolder,
+            server,
+            email_gpm,
+            xmin,
+            ymin,
+            xmax,
+            ymax,
+            available_files,
+            file_prefix,
+            print_lock,
         )
 
     if max_workers == 1:
@@ -350,9 +367,11 @@ def get_gpm_files(
                         error_count += 1
                     _emit_progress()
 
-    final = (f"    IMERG complete: {downloaded_count} new, "
-             f"{exists_count} existing, {skipped_count} missing, "
-             f"{error_count} errors")
+    final = (
+        f"    IMERG complete: {downloaded_count} new, "
+        f"{exists_count} existing, {skipped_count} missing, "
+        f"{error_count} errors"
+    )
     progress_done(final)
 
 
@@ -376,62 +395,68 @@ def _get_available_files_for_range(server, email_gpm, start_date, end_date, Hind
 
     for year, month in sorted(year_months):
         folder_prefix = f"{year:04d}/{month:02d}/"
-        files = retrieve_imerg_files(server, email_gpm, HindCastMode, datetime.datetime(year, month, 1))
+        files = retrieve_imerg_files(
+            server, email_gpm, HindCastMode, datetime.datetime(year, month, 1)
+        )
         for f in files:
             # The server returns bare basenames; strip any accidental path component
             # (e.g. if a future server version embeds the full path) then re-add the
             # canonical YYYY/MM/ prefix so lookups against `filename` always match.
-            available_files.add(folder_prefix + f.split('/')[-1])
+            available_files.add(folder_prefix + f.split("/")[-1])
 
     return available_files
 
 
 def get_file(filename, server, email_gpm, local_path=None, retries=4):
-   ''' Download an IMERG file from the PPS HTTPS server using requests.
-   Uses the same auth pattern as retrieve_imerg_files() (email as both user
-   and password).  requests follows redirects automatically, which curl
-   without -L does not, so this avoids saving an HTML redirect page as the
-   output file.
-   When local_path is provided the file is saved there; otherwise it is saved
-   to the current working directory using the bare filename.
-   Retries transient PPS failures (429/5xx/timeouts) with backoff.
-   '''
-   import time
-   server = server.rstrip('/')
-   url = server + '/' + filename
-   if local_path is None:
-       local_path = os.path.basename(filename)
-   last_exc = None
-   for attempt in range(retries):
-       try:
-           with requests.get(
-               url, auth=(email_gpm, email_gpm), stream=True, timeout=60,
-           ) as r:
-               if r.status_code in (429, 500, 502, 503, 504):
-                   raise requests.HTTPError(f"{r.status_code} {r.reason}", response=r)
-               r.raise_for_status()
-               with open(local_path, 'wb') as f:
-                   for chunk in r.iter_content(chunk_size=65536):
-                       f.write(chunk)
-           if os.path.getsize(local_path) <= 0:
-               raise IOError(f"empty download: {filename}")
-           return
-       except (requests.RequestException, IOError, OSError) as exc:
-           last_exc = exc
-           if os.path.isfile(local_path):
-               try:
-                   os.remove(local_path)
-               except OSError:
-                   pass
-           if attempt + 1 < retries:
-               time.sleep(min(30.0, 1.5 * (2 ** attempt)))
-   raise last_exc
+    """Download an IMERG file from the PPS HTTPS server using requests.
+    Uses the same auth pattern as retrieve_imerg_files() (email as both user
+    and password).  requests follows redirects automatically, which curl
+    without -L does not, so this avoids saving an HTML redirect page as the
+    output file.
+    When local_path is provided the file is saved there; otherwise it is saved
+    to the current working directory using the bare filename.
+    Retries transient PPS failures (429/5xx/timeouts) with backoff.
+    """
+    import time
+
+    server = server.rstrip("/")
+    url = server + "/" + filename
+    if local_path is None:
+        local_path = os.path.basename(filename)
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            with requests.get(
+                url,
+                auth=(email_gpm, email_gpm),
+                stream=True,
+                timeout=60,
+            ) as r:
+                if r.status_code in (429, 500, 502, 503, 504):
+                    raise requests.HTTPError(f"{r.status_code} {r.reason}", response=r)
+                r.raise_for_status()
+                with open(local_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=65536):
+                        f.write(chunk)
+            if os.path.getsize(local_path) <= 0:
+                raise OSError(f"empty download: {filename}")
+            return
+        except (requests.RequestException, OSError) as exc:
+            last_exc = exc
+            if os.path.isfile(local_path):
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    pass
+            if attempt + 1 < retries:
+                time.sleep(min(30.0, 1.5 * (2**attempt)))
+    raise last_exc
 
 
 def ReadandWarp(gridFile, xmin, ymin, xmax, ymax):
 
-    #Read grid and warp to domain grid
-    #Assumes no reprojection is necessary, and EPSG:4326
+    # Read grid and warp to domain grid
+    # Assumes no reprojection is necessary, and EPSG:4326
     rawGridIn = gdal.Open(gridFile, GA_ReadOnly)
 
     # Use GDAL's in-memory virtual filesystem for the intermediate translate
@@ -439,18 +464,31 @@ def ReadandWarp(gridFile, xmin, ymin, xmax, ymax):
     # file (previously the hardcoded 'OutTemp.tif' in CWD caused race conditions
     # when multiple regions processed the same IMERG timestamp simultaneously).
     import uuid as _uuid
-    mem_path = f'/vsimem/OutTemp_{_uuid.uuid4().hex}.tif'
-    pre_ds = gdal.Translate(mem_path, rawGridIn, options="-co COMPRESS=Deflate -a_nodata 29999 -a_ullr -180.0 90.0 180.0 -90.0")
+
+    mem_path = f"/vsimem/OutTemp_{_uuid.uuid4().hex}.tif"
+    pre_ds = gdal.Translate(
+        mem_path,
+        rawGridIn,
+        options="-co COMPRESS=Deflate -a_nodata 29999 -a_ullr -180.0 90.0 180.0 -90.0",
+    )
 
     gt = pre_ds.GetGeoTransform()
-    proj = pre_ds.GetProjection()
-    nx = pre_ds.GetRasterBand(1).XSize
-    ny = pre_ds.GetRasterBand(1).YSize
     NoData = 29999
     pixel_size = gt[1]
 
-    #Warp to model resolution and domain extents
-    ds = gdal.Warp('', pre_ds, srcNodata=NoData, srcSRS='EPSG:4326', dstSRS='EPSG:4326', dstNodata='29999', format='VRT', xRes=pixel_size, yRes=-pixel_size, outputBounds=(xmin,ymin,xmax,ymax))
+    # Warp to model resolution and domain extents
+    ds = gdal.Warp(
+        "",
+        pre_ds,
+        srcNodata=NoData,
+        srcSRS="EPSG:4326",
+        dstSRS="EPSG:4326",
+        dstNodata="29999",
+        format="VRT",
+        xRes=pixel_size,
+        yRes=-pixel_size,
+        outputBounds=(xmin, ymin, xmax, ymax),
+    )
 
     WarpedGrid = ds.ReadAsArray()
     new_gt = ds.GetGeoTransform()
@@ -466,9 +504,9 @@ def ReadandWarp(gridFile, xmin, ymin, xmax, ymax):
 
 
 def WriteGrid(gridOutName, dataOut, nx, ny, gt, proj):
-    #Writes out a GeoTIFF based on georeference information in RefInfo
-    driver = gdal.GetDriverByName('GTiff')
-    dst_ds = driver.Create(gridOutName, nx, ny, 1, gdal.GDT_Float32, ['COMPRESS=DEFLATE'])
+    # Writes out a GeoTIFF based on georeference information in RefInfo
+    driver = gdal.GetDriverByName("GTiff")
+    dst_ds = driver.Create(gridOutName, nx, ny, 1, gdal.GDT_Float32, ["COMPRESS=DEFLATE"])
     dst_ds.SetGeoTransform(gt)
     dst_ds.SetProjection(proj)
     dataOut.shape = (-1, nx)
@@ -476,12 +514,11 @@ def WriteGrid(gridOutName, dataOut, nx, ny, gt, proj):
     dst_ds.GetRasterBand(1).SetNoDataValue(-9999.0)
     dst_ds = None
 
-def processIMERG(local_filename,llx, lly ,urx, ury):
+
+def processIMERG(local_filename, llx, lly, urx, ury):
     # Process grid
     # Read and subset grid
-    NewGrid, nx, ny, gt, proj = ReadandWarp(local_filename,llx, lly, urx, ury)
+    NewGrid, nx, ny, gt, proj = ReadandWarp(local_filename, llx, lly, urx, ury)
     # Scale value
-    NewGrid = NewGrid*0.1
+    NewGrid = NewGrid * 0.1
     return NewGrid, nx, ny, gt, proj
-
-

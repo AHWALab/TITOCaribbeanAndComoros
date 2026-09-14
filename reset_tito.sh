@@ -10,8 +10,8 @@
 # StormLab output folders. Keeps the folders themselves and .gitkeep.
 #
 # States: never delete folders. Only delete *.tif that are NOT the training
-# warmup snapshot (20230619 15:00). Matches these name spellings:
-#   20230619_1500  20230619_150000  20230619.1500  20230619.150000  202306191500
+# warmup snapshot (20101028 08:00). Matches these name spellings:
+#   20101028_0800  20101028_080000  20101028.0800  20101028.080000  201010280800
 # If none match, state tifs are left alone (unless --force).
 # ============================================================================
 set -euo pipefail
@@ -35,14 +35,14 @@ WIPE_DIRS=(
     "$SCRIPT_DIR/EF5_conf/precipEF5"
     "$SCRIPT_DIR/EF5_conf/qpf_store"
     "$SCRIPT_DIR/tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/output/caribbean"
-    "$SCRIPT_DIR/tito_utils/qpf_utils/StormLab-GFS-realtime/output/guatemala"
+    "$SCRIPT_DIR/tito_utils/qpf_utils/StormLab-GFS-realtime/output/barbados"
 )
 STATES_DIR="$SCRIPT_DIR/EF5_conf/states"
 
 is_keep_tif() {
     local b="$1"
     case "$b" in
-        *20230619_1500*|*20230619_150000*|*20230619.1500*|*20230619.150000*|*202306191500*) return 0 ;;
+        *20101028_0800*|*20101028_080000*|*20101028.0800*|*20101028.080000*|*201010280800*) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -50,7 +50,7 @@ is_keep_tif() {
 echo "==== reset_tito ===="
 echo "  Root   : $SCRIPT_DIR"
 echo "  Mode   : $([ "$DRY_RUN" -eq 1 ] && echo DRY-RUN || echo DELETE)"
-echo "  Keep   : states *.tif for 2023-06-19 15:00 (any common spelling)"
+echo "  Keep   : states *.tif for 2010-10-28 08:00 (any common spelling)"
 echo ""
 
 wipe_dir() {
@@ -101,7 +101,7 @@ else
     echo "STATES scan: $((local_keep + local_del)) tif(s) — keep $local_keep  delete $local_del"
 
     if [[ "$local_del" -gt 0 && "$local_keep" -eq 0 && "$FORCE" -ne 1 ]]; then
-        echo "ERROR: no state tif matched 2023-06-19 15:00 — refusing to delete any state tifs."
+        echo "ERROR: no state tif matched 2010-10-28 08:00 — refusing to delete any state tifs."
         echo "  Sample names in $STATES_DIR:"
         while IFS= read -r -d '' tif; do
             echo "    $(basename "$tif")"

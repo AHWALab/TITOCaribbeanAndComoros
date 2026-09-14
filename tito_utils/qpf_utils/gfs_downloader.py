@@ -14,9 +14,9 @@ batch downloads for specific forecast windows and continuous auto-polling mode.
 Quick usage guide:
 - Activate the conda environment:
   `conda activate tito_env`
-- One-shot/parameterized run:  
+- One-shot/parameterized run:
   `python gfs_downloader.py --start "2025-12-01 00" --end "2025-12-03 00" --xmin -85 --xmax -74 --ymin 19 --ymax 26 --out /path/to/output`
-- Continuous auto mode (polls for latest cycle, uses defaults defined below):  
+- Continuous auto mode (polls for latest cycle, uses defaults defined below):
   `python gfs_downloader.py   cd /home/nammehta/TITOV2Cuba/tito_utils/qpf_utils
   `python gfs_downloader.py --out /home/nammehta/TITOV2Cuba/precip/GFS/GFSData ` or `python gfs_downloader.py --auto-once` for a single pass.
   `nohup python gfs_downloader.py --auto-out /home/nammehta/TITO_Final_DA_Cuba/precip/GFS > /home/nammehta/TITO_Final_DA_Cuba/data/logs/gfs_downloader.py
@@ -45,7 +45,7 @@ Standalone Usage:
 5. Programmatic usage in Python:
 
    from gfs_downloader import download_GFS
-   
+
    written_files = download_GFS(
        systemStartLRTime="2025-12-01 00",
        systemEndTime="2025-12-03 00",
@@ -163,13 +163,12 @@ import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
-import xarray as xr
 
 # rioxarray import registers the rio accessor on xarray objects
 import rioxarray  # noqa: F401
+import xarray as xr
 
 # --------------------
 # Optional dependencies
@@ -177,9 +176,7 @@ import rioxarray  # noqa: F401
 try:
     from herbie import Herbie
 except Exception as exc:  # pragma: no cover - provide a clearer import error
-    raise ImportError(
-        "Herbie is required. Install with `pip install herbie-data`"
-    ) from exc
+    raise ImportError("Herbie is required. Install with `pip install herbie-data`") from exc
 
 
 # --------------------
@@ -203,7 +200,7 @@ AUTO_POLL_SECONDS = 3600  # 1 hour
 AUTO_CYCLE_GRACE_MINUTES = 120
 
 
-def _ensure_datetime(dt_like: Union[str, datetime]) -> datetime:
+def _ensure_datetime(dt_like: str | datetime) -> datetime:
     """Convert a string or datetime-like to a Python datetime (naive, UTC-assumed).
 
     Acceptable string formats include:
@@ -232,7 +229,7 @@ def _ensure_datetime(dt_like: Union[str, datetime]) -> datetime:
     raise ValueError(f"Unrecognized datetime format: {dt_like}")
 
 
-def _gfs_forecast_hours(max_hours: int, upper_limit: int = 384) -> List[int]:
+def _gfs_forecast_hours(max_hours: int, upper_limit: int = 384) -> list[int]:
     """Generate forecast hours for GFS 0.25°: hourly to 120h, then 3-hourly.
 
     Ensures 0..min(max_hours, upper_limit), with step 1 to 120 and step 3 beyond.
@@ -354,8 +351,6 @@ def _wrap_longitudes_to_180(da: xr.DataArray) -> xr.DataArray:
     return da
 
 
-
-
 def _safe_to_raster(da: xr.DataArray, out_path: str) -> None:
     """Write DataArray to GeoTIFF with sensible defaults for EF5 compatibility."""
     # Ensure directory exists
@@ -388,7 +383,7 @@ def _align_to_gfs_cycle(dt: datetime) -> datetime:
     return base
 
 
-def _parse_valid_time_from_filename(name: str) -> Optional[datetime]:
+def _parse_valid_time_from_filename(name: str) -> datetime | None:
     """Extract valid time from a filename like 'gfs.YYYYMMDDHHMM.tif'."""
     try:
         base = os.path.basename(name)
@@ -410,7 +405,7 @@ def _download_one_fxx(
     ymin: float,
     ymax: float,
     qpf_store_path: str,
-) -> Tuple[int, Optional[str], Optional[str]]:
+) -> tuple[int, str | None, str | None]:
     """Download and process a single GFS forecast hour (PRATE → GeoTIFF).
 
     Designed to be called from a thread pool — each *fxx* is fully independent.
@@ -426,8 +421,8 @@ def _download_one_fxx(
     # retrieve PRATE via Herbie for this forecast hour
     H = Herbie(init_time, model="gfs", product="pgrb2.0p25", fxx=fxx)
 
-    ds: Optional[Union[xr.Dataset, List[xr.Dataset]]] = None
-    last_err: Optional[Exception] = None
+    ds: xr.Dataset | list[xr.Dataset] | None = None
+    last_err: Exception | None = None
     for query in (":PRATE:surface", ":PRATE:", "PRATE:surface", "PRATE"):
         try:
             ds = H.xarray(query)
@@ -509,8 +504,8 @@ def _download_one_fxx(
 
 
 def download_GFS(
-    systemStartLRTime: Union[str, datetime],
-    systemEndTime: Union[str, datetime],
+    systemStartLRTime: str | datetime,
+    systemEndTime: str | datetime,
     xmin: float,
     xmax: float,
     ymin: float,
@@ -519,10 +514,10 @@ def download_GFS(
     *,
     max_cycles_back: int = 4,
     max_workers: int = 6,
-    force_cycle_start: Optional[datetime] = None,
+    force_cycle_start: datetime | None = None,
     allow_previous_cycle_fallback: bool = True,
     clear_between_attempts: bool = True,
-) -> List[str]:
+) -> list[str]:
     """Download GFS PRATE with Herbie and write hourly rate GeoTIFFs clipped to bbox.
 
     Implements a built-in retry: if no files are written for the requested window, it will
@@ -552,7 +547,7 @@ def download_GFS(
 
     # Start from the specified cycle (if forced) or the most recent cycle at or before init_time_raw
     attempt = 0
-    outputs_overall: List[str] = []
+    outputs_overall: list[str] = []
     cycle_start = _align_to_gfs_cycle(force_cycle_start or init_time_raw)
 
     while attempt <= max_cycles_back:
@@ -578,7 +573,7 @@ def download_GFS(
             break
         fxx_list = _gfs_forecast_hours(total_hours)
 
-        outputs: List[str] = []
+        outputs: list[str] = []
         failures = 0
 
         # --- Parallel download of all forecast hours ---
@@ -586,7 +581,13 @@ def download_GFS(
             future_map = {
                 executor.submit(
                     _download_one_fxx,
-                    fxx, init_time, xmin, xmax, ymin, ymax, qpf_store_path,
+                    fxx,
+                    init_time,
+                    xmin,
+                    xmax,
+                    ymin,
+                    ymax,
+                    qpf_store_path,
                 ): fxx
                 for fxx in fxx_list
             }
@@ -595,9 +596,7 @@ def download_GFS(
                 try:
                     _, out_path, err_msg = future.result()
                 except Exception as e:
-                    sys.stderr.write(
-                        f"Error: unhandled exception for f{fxx:03d}: {e}\n"
-                    )
+                    sys.stderr.write(f"Error: unhandled exception for f{fxx:03d}: {e}\n")
                     failures += 1
                     continue
 
@@ -626,10 +625,12 @@ def download_GFS(
     return outputs_overall
 
 
-def _parse_cli_args(argv: Optional[List[str]] = None):  # pragma: no cover - CLI helper
+def _parse_cli_args(argv: list[str] | None = None):  # pragma: no cover - CLI helper
     import argparse
 
-    p = argparse.ArgumentParser(description="Download GFS PRATE via Herbie and write hourly GeoTIFFs.")
+    p = argparse.ArgumentParser(
+        description="Download GFS PRATE via Herbie and write hourly GeoTIFFs."
+    )
     # When provided, run once for the given window
     p.add_argument("--start", help="Model run start (e.g., '2023-09-04 12')")
     p.add_argument("--end", help="End valid time (e.g., '2023-09-09 00')")
@@ -640,9 +641,15 @@ def _parse_cli_args(argv: Optional[List[str]] = None):  # pragma: no cover - CLI
     p.add_argument("--out", help="Output directory for GeoTIFFs")
 
     # Auto mode options
-    p.add_argument("--auto-out", help="Auto mode output directory (default: AUTO_OUT_DIR in script)")
-    p.add_argument("--auto-hours", type=int, help="Forecast horizon hours for auto mode (default: 120)")
-    p.add_argument("--poll-seconds", type=int, help="Polling interval seconds for auto mode (default: 300)")
+    p.add_argument(
+        "--auto-out", help="Auto mode output directory (default: AUTO_OUT_DIR in script)"
+    )
+    p.add_argument(
+        "--auto-hours", type=int, help="Forecast horizon hours for auto mode (default: 120)"
+    )
+    p.add_argument(
+        "--poll-seconds", type=int, help="Polling interval seconds for auto mode (default: 300)"
+    )
     p.add_argument(
         "--auto-once",
         action="store_true",
@@ -657,9 +664,9 @@ def _latest_cycle_now() -> datetime:
 
 
 def _auto_mode(
-    out_dir: Optional[str] = None,
-    hours: Optional[int] = None,
-    poll_seconds: Optional[int] = None,
+    out_dir: str | None = None,
+    hours: int | None = None,
+    poll_seconds: int | None = None,
     one_shot: bool = False,
 ) -> int:
     """Continuously download the latest GFS cycle as it becomes available.
@@ -673,7 +680,7 @@ def _auto_mode(
     xmin, xmax, ymin, ymax = AUTO_BBOX
 
     os.makedirs(out_dir, exist_ok=True)
-    last_cycle: Optional[datetime] = None
+    last_cycle: datetime | None = None
 
     total_written_overall = 0
     while True:
@@ -818,7 +825,9 @@ def _auto_mode(
                                         f"Auto mode (one-shot): promoted {len(staged_prev)} files for fallback cycle {prev_cycle:%Y-%m-%d %H}.\n"
                                     )
                                 except Exception as e:
-                                    sys.stderr.write(f"Auto mode: error promoting staged fallback files: {e}\n")
+                                    sys.stderr.write(
+                                        f"Auto mode: error promoting staged fallback files: {e}\n"
+                                    )
                         except Exception as e:
                             sys.stderr.write(f"Auto mode: fallback error: {e}\n")
             else:
@@ -851,6 +860,7 @@ def _auto_mode(
             return total_written_overall
         try:
             import time
+
             time.sleep(poll)
         except KeyboardInterrupt:
             sys.stderr.write("Auto mode stopped by user.\n")
@@ -860,7 +870,15 @@ def _auto_mode(
 if __name__ == "__main__":  # pragma: no cover - CLI entry
     args = _parse_cli_args()
     # If both start and end are provided, run once in parameterized mode; otherwise, run auto mode
-    if args.start and args.end and args.xmin is not None and args.xmax is not None and args.ymin is not None and args.ymax is not None and args.out:
+    if (
+        args.start
+        and args.end
+        and args.xmin is not None
+        and args.xmax is not None
+        and args.ymin is not None
+        and args.ymax is not None
+        and args.out
+    ):
         written = download_GFS(
             systemStartLRTime=args.start,
             systemEndTime=args.end,
@@ -882,6 +900,7 @@ if __name__ == "__main__":  # pragma: no cover - CLI entry
         if getattr(args, "auto_once", False):
             try:
                 import sys as _sys
+
                 _sys.exit(0 if wrote > 0 else 2)
             except SystemExit:
                 raise

@@ -62,6 +62,7 @@ _LAZY = {
 def __getattr__(name):
     if name in _LAZY:
         import importlib
+
         module, attr = _LAZY[name]
         return getattr(importlib.import_module(module, __package__), attr)
     raise AttributeError(name)

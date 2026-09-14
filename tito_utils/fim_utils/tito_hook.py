@@ -2,7 +2,7 @@
 TITO orchestrator hook — FIM after the **forecast** EF5 phase only.
 
 Rules:
-  - FIM for **90m** (Guatemala, Antigua, Haiti, Comoros) and **30m** (Barbados).
+  - FIM for **90m** (Guatemala, Haiti, Comoros) and **30m** (Antigua, Barbados).
   - Skip **900m** (Guatemala coarse).
   - Only when a forecast phase ran (``run_LR`` / Phase C GFS or StormLab).
   - Pluvial rain = sum of **qpeaccum** components (no qpfaccum / long-range).
@@ -29,7 +29,8 @@ from __future__ import annotations
 import glob
 import os
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 
 def _project_root() -> str:
@@ -39,12 +40,12 @@ def _project_root() -> str:
 def discover_fim_configs(
     regions: Sequence[str],
     fim_config_dir: str,
-) -> List[str]:
+) -> list[str]:
     """Return sorted YAML paths for enabled FIM sites matching *regions*."""
     cfg_dir = os.path.abspath(fim_config_dir)
     if not os.path.isdir(cfg_dir):
         return []
-    out: List[str] = []
+    out: list[str] = []
     for region in regions:
         pattern = os.path.join(cfg_dir, f"{region}*.yaml")
         for path in sorted(glob.glob(pattern)):
@@ -53,6 +54,7 @@ def discover_fim_configs(
                 continue
             try:
                 import yaml
+
                 with open(path) as fh:
                     raw = yaml.safe_load(fh) or {}
                 if raw.get("enabled") is False:
@@ -66,8 +68,8 @@ def discover_fim_configs(
 def _regions_fim_eligible(
     regions: Sequence[str],
     config: Any,
-) -> List[str]:
-    """FIM for 90m and Barbados 30m. Skip 900m."""
+) -> list[str]:
+    """FIM for 90m and 30m (Antigua, Barbados). Skip 900m."""
     try:
         from tito_utils.ef5.jobs.helpers import resolve_region_resolution
     except Exception:
@@ -98,19 +100,15 @@ def forcing_chain_tag(region: str, config: Any = None) -> str:
     Build a short chain id from region_forcing_map, e.g.:
       STREAM_SAT + STORMLAB → stream_sat_stormlab
       IMERG + GFS           → imerg_gfs
+    Lists join in order: STREAM_SAT+IMERG / STORMLAB+AROME → stream_sat_imerg_stormlab_arome
     """
+    from tito_utils.ef5.jobs.helpers import as_source_list
+
     fmap = getattr(config, "region_forcing_map", None) or {}
     entry = fmap.get(region) or {}
-    qpe = entry.get("qpe_source") or entry.get("qpe") or ""
-    qpf = entry.get("qpf_source") or entry.get("qpf_sources") or ""
-    if isinstance(qpf, (list, tuple)):
-        qpf_parts = [_slug(x) for x in qpf if x]
-    else:
-        qpf_parts = [_slug(qpf)] if qpf else []
-    parts = []
-    if qpe:
-        parts.append(_slug(qpe))
-    parts.extend(qpf_parts)
+    qpes = as_source_list(entry.get("qpe_source") or entry.get("qpe") or "")
+    qpfs = as_source_list(entry.get("qpf_source") or entry.get("qpf_sources") or "")
+    parts = [_slug(x) for x in qpes + qpfs if x]
     return "_".join(parts) if parts else "unknown"
 
 
@@ -120,6 +118,7 @@ def _region_key(region: str, config: Any = None) -> str:
             region_path_key,
             resolve_region_resolution,
         )
+
         model_res = getattr(config, "model_resolution", "90m") if config else "90m"
         rmap = getattr(config, "region_resolution_map", {}) if config else {}
         res = resolve_region_resolution(region, model_res, rmap)
@@ -128,11 +127,12 @@ def _region_key(region: str, config: Any = None) -> str:
         res = "90m"
         if config is not None:
             res = (getattr(config, "region_resolution_map", {}) or {}).get(
-                region, getattr(config, "model_resolution", "90m"))
+                region, getattr(config, "model_resolution", "90m")
+            )
         return f"{region.lower()}_{res}"
 
 
-def _match_yaml_to_region(yml_basename: str, regions: Sequence[str]) -> Optional[str]:
+def _match_yaml_to_region(yml_basename: str, regions: Sequence[str]) -> str | None:
     """Pick the longest region name that is a prefix of the yaml basename."""
     best = None
     for r in regions:
@@ -141,7 +141,7 @@ def _match_yaml_to_region(yml_basename: str, regions: Sequence[str]) -> Optional
     return best
 
 
-def _region_fim_entry(region: str, config: Any) -> Optional[dict]:
+def _region_fim_entry(region: str, config: Any) -> dict | None:
     """The region's entry in config.fim_regions, normalized to a dict.
 
     Accepts the bool shorthand {"Region": True/False}. Returns None when the
@@ -156,7 +156,7 @@ def _region_fim_entry(region: str, config: Any) -> Optional[dict]:
     return entry
 
 
-def _region_thresholds(region: str, config: Any) -> Optional[List[float]]:
+def _region_thresholds(region: str, config: Any) -> list[float] | None:
     """Cleaned thresholds_m for *region* from config.fim_regions, or None."""
     entry = _region_fim_entry(region, config)
     if not entry:
@@ -178,7 +178,7 @@ def _ibf_master_enabled(config: Any) -> bool:
     return bool(getattr(config, "ibf_enabled", True))
 
 
-def _region_ibf_entry(region: str, config: Any) -> Optional[dict]:
+def _region_ibf_entry(region: str, config: Any) -> dict | None:
     """The region's entry in config.ibf_regions, normalized like fim_regions.
 
     Accepts the bool shorthand {"Region": True/False}. Returns None when the
@@ -204,7 +204,7 @@ def run_ibf_for_site(
     config: Any = None,
     master_log: Any = None,
     verbose: bool = True,
-) -> Optional[dict]:
+) -> dict | None:
     """
     IBF receptor products for one FIM site, right after its FIM run.
 
@@ -239,8 +239,10 @@ def run_ibf_for_site(
         from tito_utils.ibf_utils.config import load_ibf_config
         from tito_utils.ibf_utils.pipeline_ibf import run_ibf_cycle
     except Exception as exc:
-        log(f"  IBF: skipped, dependencies missing ({exc}); "
-            "geopandas and pyogrio are declared in tito_env.yml")
+        log(
+            f"  IBF: skipped, dependencies missing ({exc}); "
+            "geopandas and pyogrio are declared in tito_env.yml"
+        )
         if master_log:
             master_log.info("IBF skipped for %s: deps missing (%s)", site_stem, exc)
         return {"region": region, "site": site_stem, "status": "deps_missing"}
@@ -256,10 +258,8 @@ def run_ibf_for_site(
         if entry:
             sev = entry.get("severity_thresholds_m")
             if isinstance(sev, dict) and sev:
-                cl["severity_thresholds_m"] = {
-                    str(k): float(v) for k, v in sev.items()}
-                applied.append(
-                    f"severity_thresholds_m={cl['severity_thresholds_m']}")
+                cl["severity_thresholds_m"] = {str(k): float(v) for k, v in sev.items()}
+                applied.append(f"severity_thresholds_m={cl['severity_thresholds_m']}")
             for key in ("hazard_flag_cutoff", "reporting_threshold"):
                 if entry.get(key) is not None:
                     cl[key] = float(entry[key])
@@ -286,11 +286,9 @@ def run_ibf_for_site(
             products_dir = os.path.join(root, products_dir)
         log(f"  IBF: running {site_stem} on {products_dir} ...")
         if master_log:
-            master_log.info(
-                "IBF start %s cycle=%s dir=%s", site_stem, cycle, products_dir)
+            master_log.info("IBF start %s cycle=%s dir=%s", site_stem, cycle, products_dir)
 
-        summary = run_ibf_cycle(
-            cfg, cycle=cycle, products_dir=products_dir, verbose=verbose)
+        summary = run_ibf_cycle(cfg, cycle=cycle, products_dir=products_dir, verbose=verbose)
         status = summary.get("status", "?") if isinstance(summary, dict) else "?"
         log(f"  IBF: {site_stem} -> {status}")
         if master_log:
@@ -300,20 +298,21 @@ def run_ibf_for_site(
         # A missing receptor preload is the usual cause on fresh machines.
         hint = ""
         try:
-            src = ((cfg.get("receptors") or {}).get("buildings") or {}).get(
-                "source", "")
+            src = ((cfg.get("receptors") or {}).get("buildings") or {}).get("source", "")
             if src:
                 from tito_utils.ibf_utils.config import resolve as _ibf_resolve
+
                 if not os.path.exists(_ibf_resolve(cfg, src)):
-                    hint = (f" (receptor preload not found at {src}; "
-                            "see tito_utils/ibf_utils/README.md)")
+                    hint = (
+                        f" (receptor preload not found at {src}; "
+                        "see tito_utils/ibf_utils/README.md)"
+                    )
         except Exception:
             pass
         log(f"  IBF: {site_stem} failed (non-fatal): {exc}{hint}")
         if master_log:
             master_log.error("IBF failed %s: %s", site_stem, exc)
-        return {"region": region, "site": site_stem, "status": "error",
-                "error": str(exc)}
+        return {"region": region, "site": site_stem, "status": "error", "error": str(exc)}
 
 
 # Path templates for cycle-first EF5 layout, keyed by forcing_chain_tag().
@@ -322,10 +321,18 @@ _CHAIN_TEMPLATES = {
     "stream_sat_stormlab": {
         "member": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
         "rain_components": [
-            {"name": "stream_sat", "template": "{cycle}/{rkey}/stream_sat/ensOut{ens}",
-             "grid": "qpe_accum", "required": True},
-            {"name": "stormlab", "template": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
-             "grid": "qpe_accum", "required": True},
+            {
+                "name": "stream_sat",
+                "template": "{cycle}/{rkey}/stream_sat/ensOut{ens}",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+            {
+                "name": "stormlab",
+                "template": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
+                "grid": "qpe_accum",
+                "required": True,
+            },
         ],
         "trigger_sources": [
             {"template": "{cycle}/{rkey}/stream_sat/ensOut{ens}"},
@@ -335,12 +342,24 @@ _CHAIN_TEMPLATES = {
     "imerg_gfs": {
         "member": "{cycle}/{rkey}/gfs",
         "rain_components": [
-            {"name": "imerg", "template": "{cycle}/{rkey}/imerg",
-             "grid": "qpe_accum", "required": True},
-            {"name": "scampr_gap", "template": "{cycle}/{rkey}/scampr_det",
-             "grid": "qpe_accum", "required": False},
-            {"name": "gfs_forecast", "template": "{cycle}/{rkey}/gfs",
-             "grid": "qpe_accum", "required": True},
+            {
+                "name": "imerg",
+                "template": "{cycle}/{rkey}/imerg",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+            {
+                "name": "scampr_gap",
+                "template": "{cycle}/{rkey}/scampr_det",
+                "grid": "qpe_accum",
+                "required": False,
+            },
+            {
+                "name": "gfs_forecast",
+                "template": "{cycle}/{rkey}/gfs",
+                "grid": "qpe_accum",
+                "required": True,
+            },
         ],
         "trigger_sources": [
             {"template": "{cycle}/{rkey}/gfs"},
@@ -350,12 +369,24 @@ _CHAIN_TEMPLATES = {
     "imerg_stormlab": {
         "member": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
         "rain_components": [
-            {"name": "imerg", "template": "{cycle}/{rkey}/imerg",
-             "grid": "qpe_accum", "required": True},
-            {"name": "scampr_gap", "template": "{cycle}/{rkey}/scampr_det",
-             "grid": "qpe_accum", "required": False},
-            {"name": "stormlab", "template": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
-             "grid": "qpe_accum", "required": True},
+            {
+                "name": "imerg",
+                "template": "{cycle}/{rkey}/imerg",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+            {
+                "name": "scampr_gap",
+                "template": "{cycle}/{rkey}/scampr_det",
+                "grid": "qpe_accum",
+                "required": False,
+            },
+            {
+                "name": "stormlab",
+                "template": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
+                "grid": "qpe_accum",
+                "required": True,
+            },
         ],
         "trigger_sources": [
             {"template": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}"},
@@ -365,14 +396,70 @@ _CHAIN_TEMPLATES = {
     "stream_sat_gfs": {
         "member": "{cycle}/{rkey}/gfs/ensOut{ens}",
         "rain_components": [
-            {"name": "stream_sat", "template": "{cycle}/{rkey}/stream_sat/ensOut{ens}",
-             "grid": "qpe_accum", "required": True},
-            {"name": "gfs_forecast", "template": "{cycle}/{rkey}/gfs/ensOut{ens}",
-             "grid": "qpe_accum", "required": True},
+            {
+                "name": "stream_sat",
+                "template": "{cycle}/{rkey}/stream_sat/ensOut{ens}",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+            {
+                "name": "gfs_forecast",
+                "template": "{cycle}/{rkey}/gfs/ensOut{ens}",
+                "grid": "qpe_accum",
+                "required": True,
+            },
         ],
         "trigger_sources": [
             {"template": "{cycle}/{rkey}/gfs/ensOut{ens}"},
             {"template": "{cycle}/{rkey}/stream_sat/ensOut{ens}"},
+        ],
+    },
+    "stream_sat_arome": {
+        "member": "{cycle}/{rkey}/arome/ensOut{ens}",
+        "rain_components": [
+            {
+                "name": "stream_sat",
+                "template": "{cycle}/{rkey}/stream_sat/ensOut{ens}",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+            {
+                "name": "arome_forecast",
+                "template": "{cycle}/{rkey}/arome/ensOut{ens}",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+        ],
+        "trigger_sources": [
+            {"template": "{cycle}/{rkey}/arome/ensOut{ens}"},
+            {"template": "{cycle}/{rkey}/stream_sat/ensOut{ens}"},
+        ],
+    },
+    "imerg_arome": {
+        "member": "{cycle}/{rkey}/arome",
+        "rain_components": [
+            {
+                "name": "imerg",
+                "template": "{cycle}/{rkey}/imerg",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+            {
+                "name": "scampr_gap",
+                "template": "{cycle}/{rkey}/scampr_det",
+                "grid": "qpe_accum",
+                "required": False,
+            },
+            {
+                "name": "arome_forecast",
+                "template": "{cycle}/{rkey}/arome",
+                "grid": "qpe_accum",
+                "required": True,
+            },
+        ],
+        "trigger_sources": [
+            {"template": "{cycle}/{rkey}/arome"},
+            {"template": "{cycle}/{rkey}/imerg"},
         ],
     },
 }
@@ -393,6 +480,7 @@ def _apply_chain_templates(cfg: dict, chain: str) -> None:
 def _explain_no_runs(outputs_root: str, template: str, cycle: str, chain: str) -> str:
     """Human-readable reason when discover finds zero members."""
     import glob as _glob
+
     tmpl = (template or "").strip("/").replace("\\", "/")
     if "{cycle}" in tmpl and cycle:
         search = tmpl.replace("{cycle}", cycle)
@@ -411,7 +499,9 @@ def _explain_no_runs(outputs_root: str, template: str, cycle: str, chain: str) -
         for r in sorted(os.listdir(cycle_dir))[:8]:
             rp = os.path.join(cycle_dir, r)
             if os.path.isdir(rp):
-                prods = [p for p in sorted(os.listdir(rp))[:12] if os.path.isdir(os.path.join(rp, p))]
+                prods = [
+                    p for p in sorted(os.listdir(rp))[:12] if os.path.isdir(os.path.join(rp, p))
+                ]
                 kids.append(f"{r}/[{', '.join(prods)}]")
     lines = [
         f"no EF5 member folders matched chain={chain}",
@@ -438,9 +528,10 @@ def run_fim_for_cycle(
     master_log: Any = None,
     verbose: bool = True,
     forecast_ran: bool = True,
-    region_qpe_sources: Optional[Dict[str, str]] = None,
-    region_qpf_sources: Optional[Dict[str, Sequence[str]]] = None,
-) -> List[dict]:
+    region_qpe_sources: dict[str, str] | None = None,
+    region_qpf_sources: dict[str, Sequence[str]] | None = None,
+    region_resolution_map: dict[str, Any] | None = None,
+) -> list[dict]:
     """
     Run FIM after forecast EF5 finishes one cycle.
 
@@ -450,6 +541,9 @@ def run_fim_for_cycle(
         Must be True (Phase C / run_LR produced forecast QPE runs). Otherwise skip.
     region_qpe_sources / region_qpf_sources
         Optional explicit maps; otherwise read from config.region_forcing_map.
+    region_resolution_map
+        Optional per-region resolution override (multi-resolution loops pass a
+        single-resolution map); otherwise read from config.region_resolution_map.
     """
     log = print if verbose else (lambda *a, **k: None)
 
@@ -468,6 +562,10 @@ def run_fim_for_cycle(
             master_log.info("FIM skipped — forecast_ran=False")
         return []
 
+    if region_resolution_map is not None:
+        if config is not None:
+            config.region_resolution_map = dict(region_resolution_map)
+
     regions_90 = _regions_fim_eligible(regions_to_run, config)
     skipped = [r for r in regions_to_run if r not in regions_90]
     if skipped:
@@ -475,7 +573,7 @@ def run_fim_for_cycle(
         if master_log:
             master_log.info("FIM skip ineligible: %s", skipped)
     if not regions_90:
-        log("  FIM: no eligible regions (90m or Barbados 30m) — skip")
+        log("  FIM: no eligible regions (90m or 30m) — skip")
         if master_log:
             master_log.info("FIM skipped — no eligible regions")
         return []
@@ -499,11 +597,11 @@ def run_fim_for_cycle(
 
     root = _project_root()
     if config is not None and getattr(config, "fim_root", None):
-        root = os.path.abspath(getattr(config, "fim_root"))
+        root = os.path.abspath(config.fim_root)
 
     cfg_dir = os.path.join(root, "fim_config")
     if config is not None and getattr(config, "fim_config_dir", None):
-        d = getattr(config, "fim_config_dir")
+        d = config.fim_config_dir
         cfg_dir = d if os.path.isabs(d) else os.path.join(root, d)
 
     yaml_paths = discover_fim_configs(regions_90, cfg_dir)
@@ -515,127 +613,153 @@ def run_fim_for_cycle(
 
     os.environ.setdefault("TITO_FIM_ROOT", root)
     data_root = getattr(config, "dataPath", "outputs/") if config else "outputs/"
-    summaries: List[dict] = []
+    summaries: list[dict] = []
 
     for yml in yaml_paths:
         site = os.path.basename(yml)
         site_stem = os.path.splitext(site)[0]
         region = _match_yaml_to_region(site_stem, regions_90) or regions_90[0]
         rkey = _region_key(region, config)
-
-        # Prefer explicit maps from orchestrator; else config.region_forcing_map
-        if region_qpe_sources is not None or region_qpf_sources is not None:
-            qpe = (region_qpe_sources or {}).get(region, "")
-            qpf = (region_qpf_sources or {}).get(region, [])
-            if isinstance(qpf, str):
-                qpf = [qpf]
-            chain = "_".join(
-                p for p in [_slug(qpe)] + [_slug(x) for x in (qpf or []) if x] if p
-            ) or forcing_chain_tag(region, config)
-        else:
-            chain = forcing_chain_tag(region, config)
-
-        # Cycle-first + chain-tagged products root (do not append cycle again)
-        products_root = os.path.join(
-            data_root.rstrip("/\\"), cycle, rkey, "fim", chain)
-
         try:
-            import yaml
-            with open(yml) as fh:
-                raw = yaml.safe_load(fh) or {}
-            has_hazards = isinstance(raw.get("hazards"), dict)
-            log(
-                f"  FIM: running {site} after forecast "
-                f"(cycle={cycle}, {rkey}, chain={chain}, "
-                f"{'P+F' if has_hazards else 'ensemble'}) …"
-            )
-            log(f"       products → {products_root}")
-            if master_log:
-                master_log.info(
-                    "FIM start %s cycle=%s chain=%s out=%s",
-                    site, cycle, chain, products_root)
+            import yaml as _yaml
 
-            if has_hazards:
-                from .pipeline_pf import load_pf_config, run_pf_cycle
-                cfg = load_pf_config(yml, root=root)
-                cfg["outputs_root"] = (
-                    data_root if os.path.isabs(data_root)
-                    else os.path.join(root, str(data_root).rstrip("/\\"))
-                )
-                cfg["products_root"] = products_root
-                cfg["append_cycle"] = False
-                _thr = _region_thresholds(region, config)
-                if _thr:
-                    cfg["thresholds_m"] = _thr
-                    log(f"       thresholds from fim_regions: {_thr}")
-                    if master_log:
-                        master_log.info(
-                            "FIM %s thresholds from fim_regions: %s", site, _thr)
-                _apply_chain_templates(cfg, chain)
-                log(f"       member template: {cfg.get('member', {}).get('template')}")
-                summary = run_pf_cycle(cfg, cycle=cycle, verbose=verbose)
-            else:
-                from .pipeline_ensemble import load_ensemble_config, run_ensemble_cycle
-                cfg = load_ensemble_config(yml, root=root)
-                cfg["outputs_root"] = (
-                    data_root if os.path.isabs(data_root)
-                    else os.path.join(root, str(data_root).rstrip("/\\"))
-                )
-                cfg["products_root"] = products_root
-                cfg["append_cycle"] = False
-                _apply_chain_templates(cfg, chain)
-                log(f"       member template: {cfg.get('member', {}).get('template')}")
-                summary = run_ensemble_cycle(cfg, cycle=cycle, verbose=verbose)
+            with open(yml) as _fh:
+                _raw = _yaml.safe_load(_fh) or {}
+            req = str(_raw.get("required_resolution") or "").lower().replace(" ", "")
+        except Exception:
+            req = ""
+        if req:
+            actual = rkey.rsplit("_", 1)[-1].lower().replace(" ", "")
+            if req not in (actual, actual.replace("m", ""), f"0.0{actual.replace('m', '')}km"):
+                log(f"  FIM: skip {site} (required_resolution={req}, run is {actual})")
+                continue
 
-            status = summary.get("status", "?")
-            summary["chain"] = chain
-            summary["products_root"] = products_root
-            if status == "no_runs":
-                outputs_root = cfg.get("outputs_root", "outputs")
-                if not os.path.isabs(outputs_root):
-                    outputs_root = os.path.join(root, outputs_root)
-                detail = _explain_no_runs(
-                    outputs_root,
-                    (cfg.get("member") or {}).get("template", ""),
-                    cycle,
-                    chain,
-                )
-                summary["detail"] = detail
-                log(f"  FIM: {site} [{chain}] → no_runs")
-                for line in detail.splitlines():
-                    log(f"  FIM: {line}")
-            else:
-                log(f"  FIM: {site} [{chain}] → {status}")
-            if master_log:
-                master_log.info(
-                    "FIM done %s chain=%s status=%s", site, chain, status)
+        from tito_utils.ef5.jobs.helpers import as_source_list
 
-            # IBF receptor products, chained on this site's fresh FIM
-            # probabilities (config gated; see run_ibf_for_site).
-            if status not in ("error", "no_runs", "quiet"):
-                ibf_summary = run_ibf_for_site(
-                    site_stem=site_stem,
-                    region=region,
-                    products_root=products_root,
-                    cycle=cycle,
-                    cfg_dir=cfg_dir,
-                    root=root,
-                    config=config,
-                    master_log=master_log,
-                    verbose=verbose,
-                )
-                if ibf_summary:
-                    summary["ibf"] = ibf_summary
+        if region_qpe_sources is not None or region_qpf_sources is not None:
+            qpes = as_source_list((region_qpe_sources or {}).get(region, ""))
+            qpfs = as_source_list((region_qpf_sources or {}).get(region, []))
+        else:
+            fmap = getattr(config, "region_forcing_map", None) or {}
+            entry = fmap.get(region) or {}
+            qpes = as_source_list(entry.get("qpe_source") or entry.get("qpe") or "")
+            qpfs = as_source_list(entry.get("qpf_source") or entry.get("qpf_sources") or "")
+        if not qpes:
+            qpes = [""]
+        chains = (
+            [f"{_slug(p)}_{_slug(f)}" for p in qpes for f in qpfs]
+            if qpfs
+            else [_slug(p) or "unknown" for p in qpes]
+        )
 
-            summaries.append(summary)
+        chain = chains[0] if chains else "unknown"
+        try:
+            for chain in chains:
+                products_root = os.path.join(data_root.rstrip("/\\"), cycle, rkey, "fim", chain)
+                import yaml
+
+                with open(yml) as fh:
+                    raw = yaml.safe_load(fh) or {}
+                has_hazards = isinstance(raw.get("hazards"), dict)
+                log(
+                    f"  FIM: running {site} after forecast "
+                    f"(cycle={cycle}, {rkey}, chain={chain}, "
+                    f"{'P+F' if has_hazards else 'ensemble'}) …"
+                )
+                log(f"       products → {products_root}")
+                if master_log:
+                    master_log.info(
+                        "FIM start %s cycle=%s chain=%s out=%s", site, cycle, chain, products_root
+                    )
+
+                if has_hazards:
+                    from .pipeline_pf import load_pf_config, run_pf_cycle
+
+                    cfg = load_pf_config(yml, root=root)
+                    cfg["outputs_root"] = (
+                        data_root
+                        if os.path.isabs(data_root)
+                        else os.path.join(root, str(data_root).rstrip("/\\"))
+                    )
+                    cfg["products_root"] = products_root
+                    cfg["append_cycle"] = False
+                    _thr = _region_thresholds(region, config)
+                    if _thr:
+                        cfg["thresholds_m"] = _thr
+                        log(f"       thresholds from fim_regions: {_thr}")
+                        if master_log:
+                            master_log.info("FIM %s thresholds from fim_regions: %s", site, _thr)
+                    _apply_chain_templates(cfg, chain)
+                    log(f"       member template: {cfg.get('member', {}).get('template')}")
+                    summary = run_pf_cycle(cfg, cycle=cycle, verbose=verbose)
+                else:
+                    from .pipeline_ensemble import load_ensemble_config, run_ensemble_cycle
+
+                    cfg = load_ensemble_config(yml, root=root)
+                    cfg["outputs_root"] = (
+                        data_root
+                        if os.path.isabs(data_root)
+                        else os.path.join(root, str(data_root).rstrip("/\\"))
+                    )
+                    cfg["products_root"] = products_root
+                    cfg["append_cycle"] = False
+                    _apply_chain_templates(cfg, chain)
+                    log(f"       member template: {cfg.get('member', {}).get('template')}")
+                    summary = run_ensemble_cycle(cfg, cycle=cycle, verbose=verbose)
+
+                status = summary.get("status", "?")
+                summary["chain"] = chain
+                summary["products_root"] = products_root
+                if status == "no_runs":
+                    outputs_root = cfg.get("outputs_root", "outputs")
+                    if not os.path.isabs(outputs_root):
+                        outputs_root = os.path.join(root, outputs_root)
+                    detail = _explain_no_runs(
+                        outputs_root,
+                        (cfg.get("member") or {}).get("template", ""),
+                        cycle,
+                        chain,
+                    )
+                    summary["detail"] = detail
+                    log(f"  FIM: {site} [{chain}] → no_runs")
+                    for line in detail.splitlines():
+                        log(f"  FIM: {line}")
+                else:
+                    log(f"  FIM: {site} [{chain}] → {status}")
+                if master_log:
+                    master_log.info("FIM done %s chain=%s status=%s", site, chain, status)
+
+                # IBF receptor products, chained on this site's fresh FIM
+                # probabilities (config gated; see run_ibf_for_site).
+                if status not in ("error", "no_runs", "quiet"):
+                    ibf_summary = run_ibf_for_site(
+                        site_stem=site_stem,
+                        region=region,
+                        products_root=products_root,
+                        cycle=cycle,
+                        cfg_dir=cfg_dir,
+                        root=root,
+                        config=config,
+                        master_log=master_log,
+                        verbose=verbose,
+                    )
+                    if ibf_summary:
+                        summary["ibf"] = ibf_summary
+
+                summaries.append(summary)
         except Exception as exc:
             msg = f"  FIM: {site} failed (non-fatal): {exc}"
             log(msg)
             if master_log:
                 master_log.error("FIM failed %s: %s", site, exc)
-            summaries.append({
-                "config": yml, "cycle": cycle, "status": "error",
-                "chain": chain, "error": str(exc),
-            })
+            summaries.append(
+                {
+                    "config": yml,
+                    "cycle": cycle,
+                    "status": "error",
+                    "chain": chain,
+                    "error": str(exc),
+                }
+            )
 
     return summaries

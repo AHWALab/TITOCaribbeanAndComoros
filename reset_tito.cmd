@@ -10,8 +10,8 @@ REM Wipes contents of outputs, precip, precipEF5, qpf_store, STREAM-Sat and
 REM StormLab output folders. Keeps the folders themselves and .gitkeep.
 REM
 REM States: never delete folders. Only delete *.tif that are NOT the training
-REM warmup snapshot (20230619 15:00). Matches:
-REM   20230619_1500  20230619_150000  20230619.1500  20230619.150000  202306191500
+REM warmup snapshot (20101028 08:00). Matches:
+REM   20101028_0800  20101028_080000  20101028.0800  20101028.080000  201010280800
 REM If none match, state tifs are left alone (unless --force).
 REM ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
@@ -31,7 +31,7 @@ if /I "%~2"=="--dry-run" set "DRY_RUN=1"
 echo ==== reset_tito ====
 echo   Root   : %ROOT%
 if "%DRY_RUN%"=="1" (echo   Mode   : DRY-RUN) else (echo   Mode   : DELETE)
-echo   Keep   : states *.tif for 2023-06-19 15:00 ^(any common spelling^)
+echo   Keep   : states *.tif for 2010-10-28 08:00 ^(any common spelling^)
 echo.
 
 call :wipe_dir "%ROOT%\outputs"
@@ -39,7 +39,7 @@ call :wipe_dir "%ROOT%\EF5_conf\precip"
 call :wipe_dir "%ROOT%\EF5_conf\precipEF5"
 call :wipe_dir "%ROOT%\EF5_conf\qpf_store"
 call :wipe_dir "%ROOT%\tito_utils\qpe_utils\STREAM-Sat-realtime\extension\realtime\output\caribbean"
-call :wipe_dir "%ROOT%\tito_utils\qpf_utils\StormLab-GFS-realtime\output\guatemala"
+call :wipe_dir "%ROOT%\tito_utils\qpf_utils\StormLab-GFS-realtime\output\barbados"
 
 echo.
 call :clean_states "%ROOT%\EF5_conf\states"
@@ -82,7 +82,7 @@ exit /b 0
 
 :is_keep
 set "KEEP_HIT=0"
-echo %~1| findstr /I /L /C:"20230619_1500" /C:"20230619_150000" /C:"20230619.1500" /C:"20230619.150000" /C:"202306191500" >nul
+echo %~1| findstr /I /L /C:"20101028_0800" /C:"20101028_080000" /C:"20101028.0800" /C:"20101028.080000" /C:"201010280800" >nul
 if not errorlevel 1 set "KEEP_HIT=1"
 exit /b 0
 
@@ -121,7 +121,7 @@ for /r "%SDIR%" %%F in (*.tiff) do (
 echo STATES scan: !TOTAL! tif^(s^) — keep !KEEPN!  delete !DELN!
 
 if !TOTAL! GTR 0 if !KEEPN! EQU 0 if not "%FORCE%"=="1" (
-  echo ERROR: no state tif matched 2023-06-19 15:00 — refusing to delete any state tifs.
+  echo ERROR: no state tif matched 2010-10-28 08:00 — refusing to delete any state tifs.
   echo   Sample names in %SDIR%:
   set "N=0"
   for /r "%SDIR%" %%F in (*.tif) do (

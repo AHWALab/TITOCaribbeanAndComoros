@@ -17,8 +17,8 @@ except ImportError as exc:  # pragma: no cover
 
 @dataclass
 class Grid:
-    data: np.ndarray          # 2D float32, NaN = nodata
-    transform: object         # affine transform of the (possibly windowed) read
+    data: np.ndarray  # 2D float32, NaN = nodata
+    transform: object  # affine transform of the (possibly windowed) read
     crs: object
     path: str = ""
 
@@ -38,12 +38,9 @@ def read_grid(path: str, bounds=None) -> Grid:
             window = from_bounds(*bounds, transform=src.transform)
             window = window.round_offsets().round_lengths()
             # Clamp to the raster
-            window = window.intersection(
-                rasterio.windows.Window(0, 0, src.width, src.height)
-            )
+            window = window.intersection(rasterio.windows.Window(0, 0, src.width, src.height))
             if window.width <= 0 or window.height <= 0:
-                return Grid(np.full((0, 0), np.nan, dtype="float32"),
-                            src.transform, src.crs, path)
+                return Grid(np.full((0, 0), np.nan, dtype="float32"), src.transform, src.crs, path)
             data = src.read(1, window=window, masked=True)
             transform = src.window_transform(window)
         else:

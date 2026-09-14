@@ -24,33 +24,32 @@ import os
 import re
 import shutil
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
+from tito_utils.ef5.ef5_routines import find_available_states
 from tito_utils.file_utils.cleanup import cleanup_precip, cleanup_streamsat_outputs
 from tito_utils.file_utils.file_handling import mkdir_p, newline
-from tito_utils.ef5.ef5_routines import find_available_states
 from tito_utils.qpe_utils import (
     get_gpm_files,
     get_new_hsaf_precip,
     get_new_scampr_precip,
 )
-from tito_utils.qpf_utils.gfs_manager import GFS_searcher
-from tito_utils.qpf_utils.arome_manager import AROME_searcher
 from tito_utils.qpf_utils.arome_downloader import get_arome_domain_for_region
-
+from tito_utils.qpf_utils.arome_manager import AROME_searcher
+from tito_utils.qpf_utils.gfs_manager import GFS_searcher
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _with_sep(path: str) -> str:
     return os.path.join(path, "")
 
 
-def _parse_scampr_ts(filename: str) -> Optional[datetime]:
+def _parse_scampr_ts(filename: str) -> datetime | None:
     m = re.match(r"scampr\.qpe\.(\d{12})\.mmhInst\.tif$", filename)
     if m:
         try:
@@ -64,41 +63,46 @@ def _parse_scampr_ts(filename: str) -> Optional[datetime]:
 # result container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SharedPrecip:
     """Returned by :func:`prepare_all_precip`."""
+
     # IMERG — one folder per cycle_time (shared across ALL IMERG regions)
-    imerg_folders: Dict[str, str] = field(default_factory=dict)       # cycle_key → folder
-    imerg_eff_starts: Dict[str, datetime] = field(default_factory=dict)  # region → effective start
+    imerg_folders: dict[str, str] = field(default_factory=dict)  # cycle_key → folder
+    imerg_eff_starts: dict[str, datetime] = field(default_factory=dict)  # region → effective start
 
     # QPF — shared caches
-    gfs_cache: Dict[str, str] = field(default_factory=dict)           # cycle_key → gfs_data/
-    arome_cache: Dict[Tuple[str, str], str] = field(default_factory=dict)  # (ck, domain) → arome_data/
+    gfs_cache: dict[str, str] = field(default_factory=dict)  # cycle_key → gfs_data/
+    arome_cache: dict[tuple[str, str], str] = field(
+        default_factory=dict
+    )  # (ck, domain) → arome_data/
 
     # SCaMPR — shared folder (for gap-fill and direct LR QPE)
-    scampr_folder: Optional[str] = None
+    scampr_folder: str | None = None
 
     # STREAM-Sat — per-region dict: region → {"tif_root": ..., "ensemble_size": ...}
-    streamsat_info: Dict[str, dict] = field(default_factory=dict)
+    streamsat_info: dict[str, dict] = field(default_factory=dict)
 
     # StormLab-GFS — per-region dict: region → {"tif_root", "ensemble_size", ...}
-    stormlab_info: Dict[str, dict] = field(default_factory=dict)
+    stormlab_info: dict[str, dict] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # IMERG state-aware download window
 # ---------------------------------------------------------------------------
 
+
 def _resolve_imerg_download_window(
     region: str,
     cycle_time: datetime,
     states_path: str,
-    model_states: List[str],
+    model_states: list[str],
     cold_start_warmup: timedelta,
     cold_start_post_warmup: timedelta,
     *,
     hindcast: bool = False,
-) -> Tuple[datetime, datetime]:
+) -> tuple[datetime, datetime]:
     """Return (dl_start, effective_start) for IMERG download.
 
     Checks states in *states_path* (must be the same folder EF5 will load,
@@ -111,27 +115,35 @@ def _resolve_imerg_download_window(
     fail_time = target - timedelta(days=7)
 
     found, state_time = find_available_states(
-        _with_sep(states_path), model_states, target, fail_time,
+        _with_sep(states_path),
+        model_states,
+        target,
+        fail_time,
     )
 
     if found:
-        dl_start = state_time - timedelta(minutes=30)   # 30-min buffer
+        dl_start = state_time - timedelta(minutes=30)  # 30-min buffer
         effective = state_time
-        print(f"    {region}: states at {state_time.strftime('%Y%m%d_%H%M')} → "
-              f"IMERG from {dl_start.strftime('%Y%m%d_%H%M')} "
-              f"(path={states_path})")
+        print(
+            f"    {region}: states at {state_time.strftime('%Y%m%d_%H%M')} → "
+            f"IMERG from {dl_start.strftime('%Y%m%d_%H%M')} "
+            f"(path={states_path})"
+        )
     else:
         warm_end = target - cold_start_post_warmup
         dl_start = warm_end - cold_start_warmup - timedelta(minutes=30)
         effective = dl_start + timedelta(minutes=30)
-        print(f"    {region}: no states in {states_path} → cold-start IMERG from "
-              f"{dl_start.strftime('%Y%m%d_%H%M')}")
+        print(
+            f"    {region}: no states in {states_path} → cold-start IMERG from "
+            f"{dl_start.strftime('%Y%m%d_%H%M')}"
+        )
 
     return dl_start, effective
 
 
-def _seed_imerg_from_warmup(imerg_folder: str, warmup_folder: str,
-                            dl_start: datetime, imerg_end: datetime) -> int:
+def _seed_imerg_from_warmup(
+    imerg_folder: str, warmup_folder: str, dl_start: datetime, imerg_end: datetime
+) -> int:
     """Copy existing warmup IMERG TIFs into the cycle shared folder. Returns count."""
     if not warmup_folder or not os.path.isdir(warmup_folder):
         return 0
@@ -157,11 +169,12 @@ def _seed_imerg_from_warmup(imerg_folder: str, warmup_folder: str,
 # main entry point
 # ---------------------------------------------------------------------------
 
+
 def prepare_all_precip(
-    regions_to_run: List[str],
-    region_cycle_times: Dict[str, datetime],
-    region_qpe_sources: Dict[str, str],
-    region_qpf_requested: Dict[str, List[str]],
+    regions_to_run: list[str],
+    region_cycle_times: dict[str, datetime],
+    region_qpe_sources: dict[str, str],
+    region_qpf_requested: dict[str, list[str]],
     config: Any,
     master_log: Any = None,
 ) -> SharedPrecip:
@@ -177,12 +190,11 @@ def prepare_all_precip(
     * The IMERG 4-hour latency gap is filled ONCE per IMERG cycle folder.
     """
     # config shortcuts
-    precip_root = getattr(config, "imerg_precip_folder",
-                          getattr(config, "precipFolder", "EF5_conf/precip/"))
+    precip_root = getattr(
+        config, "imerg_precip_folder", getattr(config, "precipFolder", "EF5_conf/precip/")
+    )
     qpf_store_root = getattr(config, "qpf_store_path", "EF5_conf/qpf_store/")
-    states_root = getattr(config, "statesPath", "EF5_conf/states/")
-    model_states = getattr(config, "modelStates",
-                           ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"])
+    model_states = getattr(config, "modelStates", ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"])
     gap_mode = getattr(config, "qpe_gap_fill_mode", "IMERG_ONLY").strip().upper()
 
     cold_warmup = timedelta(hours=6)
@@ -204,29 +216,31 @@ def prepare_all_precip(
     # ═══════════════════════════════════════════════════════════════════
 
     # IMERG regions grouped by cycle_time_key only (IGNORE QPF differences)
-    imerg_cycle_regions: Dict[str, List[str]] = {}
+    imerg_cycle_regions: dict[str, list[str]] = {}
     # Per-cycle: the cycle_time for that key
-    imerg_cycle_times: Dict[str, datetime] = {}
+    imerg_cycle_times: dict[str, datetime] = {}
     # STREAM-Sat regions (separate pipeline, not IMERG)
-    streamsat_regions: Dict[str, str] = {}  # region → cycle_key
+    streamsat_regions: dict[str, str] = {}  # region → cycle_key
     # Non-IMERG regions (HSAF, SCaMPR)
-    other_qpe_regions: List[str] = []
+    other_qpe_regions: list[str] = []
+
+    from tito_utils.ef5.jobs.helpers import as_source_list, has_source
 
     for region in regions_to_run:
-        qpe = region_qpe_sources.get(region, "IMERG").upper()
+        qpes = as_source_list(region_qpe_sources.get(region, "IMERG"))
         ct = region_cycle_times[region]
         ck = ct.strftime("%Y%m%d%H%M")
-        if qpe == "IMERG":
+        if has_source(qpes, "IMERG"):
             imerg_cycle_regions.setdefault(ck, []).append(region)
             imerg_cycle_times[ck] = ct
-        elif qpe == "STREAM_SAT":
+        if has_source(qpes, "STREAM_SAT"):
             streamsat_regions[region] = ck
-        else:
+        if any(q in ("HSAF", "SCAMPR") for q in qpes) and not has_source(qpes, "IMERG"):
             other_qpe_regions.append(region)
 
     # QPF regions grouped by cycle_time_key (for GFS / AROME sharing)
-    gfs_regions_by_cycle: Dict[str, List[str]] = {}
-    arome_regions_by_cycle_domain: Dict[Tuple[str, str], List[str]] = {}
+    gfs_regions_by_cycle: dict[str, list[str]] = {}
+    arome_regions_by_cycle_domain: dict[tuple[str, str], list[str]] = {}
 
     for region in regions_to_run:
         qpf_list = region_qpf_requested.get(region, [])
@@ -251,15 +265,17 @@ def prepare_all_precip(
         ct = imerg_cycle_times.get(ck, region_cycle_times[rlist[0]])
         shared_store = _with_sep(os.path.join(qpf_store_root, "_shared", ck))
         mkdir_p(shared_store)
-        print(f"***_________Shared GFS cycle {ck} "
-              f"({len(set(rlist))} region(s))_________***")
+        print(f"***_________Shared GFS cycle {ck} ({len(set(rlist))} region(s))_________***")
         try:
             GFS_searcher(
                 getattr(config, "GFS_precip_path", "EF5_conf/precip/gfs/"),
                 shared_store,
                 ct,
                 ct + timedelta(hours=24),
-                config.xmin, config.xmax, config.ymin, config.ymax,
+                config.xmin,
+                config.xmax,
+                config.ymin,
+                config.ymax,
             )
             result.gfs_cache[ck] = os.path.join(shared_store, "gfs_data")
         except Exception as exc:
@@ -274,18 +290,22 @@ def prepare_all_precip(
     if not hindcast:
         for (ck, domain), rlist in arome_regions_by_cycle_domain.items():
             ct = imerg_cycle_times.get(ck, region_cycle_times[rlist[0]])
-            shared_store = _with_sep(
-                os.path.join(qpf_store_root, "_shared_arome", ck, domain))
+            shared_store = _with_sep(os.path.join(qpf_store_root, "_shared_arome", ck, domain))
             mkdir_p(shared_store)
-            print(f"***_________Shared AROME ({domain}) cycle {ck} "
-                  f"({len(set(rlist))} region(s))_________***")
+            print(
+                f"***_________Shared AROME ({domain}) cycle {ck} "
+                f"({len(set(rlist))} region(s))_________***"
+            )
             try:
                 AROME_searcher(
                     getattr(config, "AROME_precip_path", "EF5_conf/precip/arome/"),
                     shared_store,
                     ct,
                     ct + timedelta(hours=24),
-                    config.xmin, config.xmax, config.ymin, config.ymax,
+                    config.xmin,
+                    config.xmax,
+                    config.ymin,
+                    config.ymax,
                     domain,
                 )
                 result.arome_cache[(ck, domain)] = os.path.join(shared_store, "arome_data")
@@ -302,15 +322,21 @@ def prepare_all_precip(
     # (b) we're in realtime mode with IMERG_SCAMPR gap fill or STREAM_SAT+SCaMPR.
     _ss_gap = getattr(config, "stream_sat_gap_fill_mode", "SCAMPR").strip().upper()
     _ss_wants_scampr = _ss_gap in (
-        "SCAMPR", "SCAMPR_QPE", "SCAMPR_ONLY",
+        "SCAMPR",
+        "SCAMPR_QPE",
+        "SCAMPR_ONLY",
     )
-    if (not hindcast and gap_mode == "IMERG_SCAMPR") or any(
-        region_qpe_sources.get(r, "").upper() == "SCAMPR" for r in regions_to_run
-    ) or (not hindcast and any(
-        # STREAM_SAT gap fill only in realtime (hindcast uses QPF-only)
-        region_qpe_sources.get(r, "").upper() == "STREAM_SAT" and _ss_wants_scampr
-        for r in regions_to_run
-    )):
+    if (
+        (not hindcast and gap_mode == "IMERG_SCAMPR")
+        or any(has_source(region_qpe_sources.get(r), "SCAMPR") for r in regions_to_run)
+        or (
+            not hindcast
+            and any(
+                has_source(region_qpe_sources.get(r), "STREAM_SAT") and _ss_wants_scampr
+                for r in regions_to_run
+            )
+        )
+    ):
         scampr_root = getattr(config, "scampr_precip_folder", "EF5_conf/precip/scampr/")
         result.scampr_folder = _with_sep(os.path.join(scampr_root, "_shared"))
         mkdir_p(result.scampr_folder)
@@ -328,9 +354,12 @@ def prepare_all_precip(
         print("***_________Shared SCaMPR download_________***")
         try:
             get_new_scampr_precip(
-                current_timestamp=ref_ct, precipFolder=result.scampr_folder,
-                xmin=config.xmin, ymin=config.ymin,
-                xmax=config.xmax, ymax=config.ymax,
+                current_timestamp=ref_ct,
+                precipFolder=result.scampr_folder,
+                xmin=config.xmin,
+                ymin=config.ymin,
+                xmax=config.xmax,
+                ymax=config.ymax,
                 latency_minutes=int(getattr(config, "scampr_latency_minutes", 20)),
             )
         except Exception as exc:
@@ -349,8 +378,7 @@ def prepare_all_precip(
 
         # cleanup
         try:
-            cleanup_precip(ct, imerg_folder, imerg_folder,
-                           keep_gap_fill=False, older_qpe_hours=6.5)
+            cleanup_precip(ct, imerg_folder, imerg_folder, keep_gap_fill=False, older_qpe_hours=6.5)
         except Exception as exc:
             print(f"    Warning: IMERG cleanup [{ck}]: {exc}")
 
@@ -363,19 +391,23 @@ def prepare_all_precip(
             region_path_key,
             resolve_region_resolution,
         )
+
         _res = resolve_region_resolution(
             ref_region,
             getattr(config, "model_resolution", "90m"),
             getattr(config, "region_resolution_map", {}),
         )
         _rkey = region_path_key(ref_region, _res)
-        imerg_state_root = getattr(
-            config, "imerg_state_folder", "EF5_conf/states/imerg/")
+        imerg_state_root = getattr(config, "imerg_state_folder", "EF5_conf/states/imerg/")
         ref_states_path = os.path.join(imerg_state_root, _rkey)
 
         dl_start, eff_start = _resolve_imerg_download_window(
-            ref_region, ct, ref_states_path, model_states,
-            cold_warmup, cold_post,
+            ref_region,
+            ct,
+            ref_states_path,
+            model_states,
+            cold_warmup,
+            cold_post,
             hindcast=hindcast,
         )
 
@@ -387,24 +419,21 @@ def prepare_all_precip(
             imerg_end = ct - timedelta(hours=4)
 
         # Prefer files already downloaded for warmup (same product, long archive).
-        warmup_folder = os.path.join(
-            precip_root, "_warmup", "_shared_imerg")
-        n_seed = _seed_imerg_from_warmup(
-            imerg_folder, warmup_folder, dl_start, imerg_end)
+        warmup_folder = os.path.join(precip_root, "_warmup", "_shared_imerg")
+        n_seed = _seed_imerg_from_warmup(imerg_folder, warmup_folder, dl_start, imerg_end)
         if n_seed:
             print(f"    IMERG [{ck}]: seeded {n_seed} file(s) from warmup cache")
 
         # Check what we already have (after seed)
-        existing = sorted(glob.glob(os.path.join(
-            imerg_folder, "imerg.qpe.*.30minAccum.tif")))
+        existing = sorted(glob.glob(os.path.join(imerg_folder, "imerg.qpe.*.30minAccum.tif")))
         if existing:
             # Need coverage from dl_start through imerg_end — not only "latest"
-            earliest = datetime.strptime(
-                os.path.basename(existing[0])[10:22], "%Y%m%d%H%M")
-            latest_dt = datetime.strptime(
-                os.path.basename(existing[-1])[10:22], "%Y%m%d%H%M")
+            earliest = datetime.strptime(os.path.basename(existing[0])[10:22], "%Y%m%d%H%M")
+            latest_dt = datetime.strptime(os.path.basename(existing[-1])[10:22], "%Y%m%d%H%M")
             need_start = dl_start
-            if earliest <= dl_start + timedelta(minutes=30) and latest_dt >= imerg_end - timedelta(minutes=30):
+            if earliest <= dl_start + timedelta(minutes=30) and latest_dt >= imerg_end - timedelta(
+                minutes=30
+            ):
                 # Spot-check: if first/last OK, still fill holes via get_gpm (skip exists)
                 print(
                     f"    IMERG [{ck}]: have {len(existing)} file(s) "
@@ -433,10 +462,11 @@ def prepare_all_precip(
     if streamsat_regions:
         # ── Group regions by STREAM-Sat domain ──────────────────────
         from tito_utils.qpe_utils.stream_sat_utils import (
-            run_and_convert_streamsat,
             get_domain_for_region,
+            run_and_convert_streamsat,
         )
-        domain_regions: Dict[str, List[str]] = {}
+
+        domain_regions: dict[str, list[str]] = {}
         for region in streamsat_regions:
             try:
                 domain = get_domain_for_region(region)
@@ -449,13 +479,11 @@ def prepare_all_precip(
         win_hours = int(getattr(config, "stream_sat_window_hours", 48))
         warm_hours = int(getattr(config, "stream_sat_warmup_hours", 12))
         max_w = getattr(config, "stream_sat_max_workers", None)
-        timeout_s = int(getattr(config, "stream_sat_pipeline_timeout", 7200))
         tif_root_base = getattr(config, "stream_sat_precip_folder", "EF5_conf/precip/stream_sat/")
         tif_naming = getattr(config, "stream_sat_tif_naming", "streamsat")
 
         # Resolve tif_root_base relative to TITO root
-        tito_root = os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__))))
+        tito_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if not os.path.isabs(tif_root_base):
             tif_root_base = os.path.join(tito_root, tif_root_base)
 
@@ -472,16 +500,19 @@ def prepare_all_precip(
             if hindcast:
                 ss_end_dt = region_cycle_times.get(representative) + timedelta(minutes=30)
                 from tito_utils.logging_utils import debug_print, is_debug, user_print
+
                 if is_debug():
                     debug_print(
                         f"    STREAM-Sat hindcast --end "
                         f"{ss_end_dt.strftime('%Y-%m-%dT%H:%M')} "
-                        f"(cycle {region_cycle_times.get(representative)})")
+                        f"(cycle {region_cycle_times.get(representative)})"
+                    )
             else:
                 from tito_utils.logging_utils import debug_print
+
                 debug_print(
-                    "    STREAM-Sat operational --end omitted "
-                    "(pipeline uses now − IMERG latency)")
+                    "    STREAM-Sat operational --end omitted (pipeline uses now − IMERG latency)"
+                )
 
             # Domain-specific precip folder:
             #   precip/stream_sat/caribbean/ensP1/...  (Caribbean regions)
@@ -489,17 +520,17 @@ def prepare_all_precip(
             domain_tif_root = os.path.join(tif_root_base, domain)
 
             from tito_utils.logging_utils import debug_print, is_debug, user_print
+
             if is_debug():
                 debug_print(
-                    f"***_________STREAM-Sat [{domain}] for "
-                    f"{domains_regions} [{ck}]_________***")
+                    f"***_________STREAM-Sat [{domain}] for {domains_regions} [{ck}]_________***"
+                )
             else:
-                user_print(
-                    f"    STREAM-Sat [{domain}] for "
-                    f"{', '.join(domains_regions)} …")
+                user_print(f"    STREAM-Sat [{domain}] for {', '.join(domains_regions)} …")
             if master_log:
-                master_log.info("STREAM-Sat [%s] start — regions: %s end=%s",
-                                domain, domains_regions, ss_end_dt)
+                master_log.info(
+                    "STREAM-Sat [%s] start — regions: %s end=%s", domain, domains_regions, ss_end_dt
+                )
 
             # Drop NC/TIF products older than cycle−keep_hours (default 48h)
             try:
@@ -507,8 +538,13 @@ def prepare_all_precip(
                 ct_ss = region_cycle_times.get(representative)
                 # NC live under STREAM-Sat-realtime/extension/realtime/output/<domain>/
                 ss_pkg = os.path.join(
-                    tito_root, "tito_utils", "qpe_utils",
-                    "STREAM-Sat-realtime", "extension", "realtime", "output",
+                    tito_root,
+                    "tito_utils",
+                    "qpe_utils",
+                    "STREAM-Sat-realtime",
+                    "extension",
+                    "realtime",
+                    "output",
                     domain,
                 )
                 # Also clean any leftover scratch dirs' parent output
@@ -539,13 +575,12 @@ def prepare_all_precip(
                 # Share result across ALL regions in this domain
                 for region in domains_regions:
                     result.streamsat_info[region] = info
-                user_print(
-                    f"    STREAM-Sat [{domain}] ready — "
-                    f"{info['ensemble_size']} members")
+                user_print(f"    STREAM-Sat [{domain}] ready — {info['ensemble_size']} members")
                 debug_print(
                     f"    [{domain}]: STREAM-Sat ready — "
                     f"{info['ensemble_size']} members in {info['tif_root']}"
-                    f" (shared: {', '.join(domains_regions)})")
+                    f" (shared: {', '.join(domains_regions)})"
+                )
 
             except Exception as exc:
                 print(f"    STREAM-Sat [{domain}] failed: {exc}")
@@ -556,23 +591,21 @@ def prepare_all_precip(
     # 6b. StormLab-GFS QPF — run pipeline + convert NC → GeoTIFFs
     # ═══════════════════════════════════════════════════════════════════
     stormlab_regions = [
-        r for r in regions_to_run
-        if any(str(s).strip().upper() == "STORMLAB"
-               for s in region_qpf_requested.get(r, []))
+        r
+        for r in regions_to_run
+        if any(str(s).strip().upper() == "STORMLAB" for s in region_qpf_requested.get(r, []))
     ]
     if stormlab_regions:
-        from tito_utils.qpf_utils.stormlab_utils import run_and_convert_stormlab
         from tito_utils.logging_utils import debug_print, is_debug, user_print
+        from tito_utils.qpf_utils.stormlab_utils import run_and_convert_stormlab
 
         ref_ct = region_cycle_times[stormlab_regions[0]]
         if is_debug():
-            debug_print(
-                f"***_________StormLab-GFS QPF for {stormlab_regions}_________***")
+            debug_print(f"***_________StormLab-GFS QPF for {stormlab_regions}_________***")
         else:
             user_print(f"    StormLab QPF for {', '.join(stormlab_regions)} …")
         if master_log:
-            master_log.info("StormLab start — regions=%s cycle_time=%s",
-                            stormlab_regions, ref_ct)
+            master_log.info("StormLab start — regions=%s cycle_time=%s", stormlab_regions, ref_ct)
         try:
             sl_map = run_and_convert_stormlab(
                 stormlab_regions,
@@ -580,7 +613,9 @@ def prepare_all_precip(
                 ensemble_size=int(getattr(config, "stormlab_ensemble_size", 10)),
                 forcing_members=int(getattr(config, "stormlab_forcing_members", 1)),
                 run_pipeline=bool(getattr(config, "stormlab_run_pipeline", True)),
-                tif_root_base=getattr(config, "stormlab_precip_folder", "EF5_conf/precip/stormlab/"),
+                tif_root_base=getattr(
+                    config, "stormlab_precip_folder", "EF5_conf/precip/stormlab/"
+                ),
                 nc_root=getattr(config, "stormlab_nc_root", None),
                 source=str(getattr(config, "stormlab_source", "auto")),
                 timeout_seconds=int(getattr(config, "stormlab_pipeline_timeout", 14400)),
@@ -613,19 +648,21 @@ def prepare_all_precip(
 
         print(f"***_________{qpe} QPE for {region}_________***")
         try:
-            cleanup_precip(ct, folder, folder, keep_gap_fill=False,
-                           older_qpe_hours=6.5)
+            cleanup_precip(ct, folder, folder, keep_gap_fill=False, older_qpe_hours=6.5)
         except Exception as exc:
             print(f"    Warning: {qpe} cleanup [{region}]: {exc}")
 
         if qpe == "HSAF":
             try:
                 get_new_hsaf_precip(
-                    current_timestamp=ct, precipFolder=folder,
+                    current_timestamp=ct,
+                    precipFolder=folder,
                     ftp_user=config.hsaf_ftp_user,
                     ftp_pass=config.hsaf_ftp_pass,
-                    xmin=config.xmin, ymin=config.ymin,
-                    xmax=config.xmax, ymax=config.ymax,
+                    xmin=config.xmin,
+                    ymin=config.ymin,
+                    xmax=config.xmax,
+                    ymax=config.ymax,
                     latency_minutes=int(getattr(config, "hsaf_latency_minutes", 20)),
                 )
             except Exception as exc:
@@ -633,16 +670,19 @@ def prepare_all_precip(
         elif qpe == "SCAMPR":
             try:
                 get_new_scampr_precip(
-                    current_timestamp=ct, precipFolder=folder,
-                    xmin=config.xmin, ymin=config.ymin,
-                    xmax=config.xmax, ymax=config.ymax,
+                    current_timestamp=ct,
+                    precipFolder=folder,
+                    xmin=config.xmin,
+                    ymin=config.ymin,
+                    xmax=config.xmax,
+                    ymax=config.ymax,
                     latency_minutes=int(getattr(config, "scampr_latency_minutes", 20)),
                 )
             except Exception as exc:
                 print(f"    SCaMPR failed for {region}: {exc}")
 
         # Store in result so orchestrator can find it
-        if not hasattr(result, '_other_qpe'):
+        if not hasattr(result, "_other_qpe"):
             result._other_qpe = {}
         result._other_qpe[region] = folder
 
@@ -664,6 +704,7 @@ def prepare_all_precip(
 # internal: single IMERG download
 # ---------------------------------------------------------------------------
 
+
 def _do_imerg_download(
     folder: str,
     dl_start: datetime,
@@ -676,13 +717,19 @@ def _do_imerg_download(
         print(f"    IMERG [{label}] window empty")
         return
 
-    print(f"    IMERG [{label}]: {dl_start.strftime('%Y%m%d_%H%M')} → "
-          f"{imerg_end.strftime('%Y%m%d_%H%M')}")
+    print(
+        f"    IMERG [{label}]: {dl_start.strftime('%Y%m%d_%H%M')} → "
+        f"{imerg_end.strftime('%Y%m%d_%H%M')}"
+    )
 
     get_gpm_files(
         folder,
         dl_start,
         imerg_end - timedelta(minutes=30),
-        config.server, config.email_gpm,
-        config.xmin, config.ymin, config.xmax, config.ymax,
+        config.server,
+        config.email_gpm,
+        config.xmin,
+        config.ymin,
+        config.xmax,
+        config.ymax,
     )

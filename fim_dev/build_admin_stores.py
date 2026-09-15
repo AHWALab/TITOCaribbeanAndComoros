@@ -52,20 +52,27 @@ def read_units(shp_path, name_field="ADM1_EN", pcode_field="ADM1_PCODE"):
     units = []
     for sr in r.iterShapeRecords():
         geom = sr.shape.__geo_interface__
-        units.append({
-            "name": sr.record[ni],
-            "pcode": sr.record[pi],
-            "geom": geom,
-            "bbox": sr.shape.bbox,  # (minx, miny, maxx, maxy)
-        })
+        units.append(
+            {
+                "name": sr.record[ni],
+                "pcode": sr.record[pi],
+                "geom": geom,
+                "bbox": sr.shape.bbox,  # (minx, miny, maxx, maxy)
+            }
+        )
     return units
 
 
 def island_grid(dmax_dir):
     first = sorted(glob.glob(os.path.join(dmax_dir, "dmax.*.tif")))[0]
     with rasterio.open(first) as r:
-        return {"transform": r.transform, "width": r.width, "height": r.height,
-                "bounds": tuple(r.bounds), "crs": str(r.crs) if r.crs else WGS84}
+        return {
+            "transform": r.transform,
+            "width": r.width,
+            "height": r.height,
+            "bounds": tuple(r.bounds),
+            "crs": str(r.crs) if r.crs else WGS84,
+        }
 
 
 def bbox_overlap(b1, b2):
@@ -87,8 +94,12 @@ def storm_totals_and_unit_means(pcp_dir, units_on_island, grid, log):
     """Return ({sample_id: {pcode: mean_mm}}, {sample_id: domain_mean_mm})."""
     masks = {}
     for u in units_on_island:
-        m = geometry_mask([u["geom"]], out_shape=(grid["height"], grid["width"]),
-                          transform=grid["transform"], invert=True)
+        m = geometry_mask(
+            [u["geom"]],
+            out_shape=(grid["height"], grid["width"]),
+            transform=grid["transform"],
+            invert=True,
+        )
         masks[u["pcode"]] = m
         if not m.any():
             log(f"  WARNING: unit {u['pcode']} {u['name']} has no cells on this grid")
@@ -99,8 +110,9 @@ def storm_totals_and_unit_means(pcp_dir, units_on_island, grid, log):
         with rasterio.open(p) as r:
             tot = r.read().astype("float64").sum(axis=0)  # (H, W) storm total, mm
         domain[sid] = float(tot.mean())
-        per_unit[sid] = {pc: (float(tot[m].mean()) if m.any() else float("nan"))
-                         for pc, m in masks.items()}
+        per_unit[sid] = {
+            pc: (float(tot[m].mean()) if m.any() else float("nan")) for pc, m in masks.items()
+        }
         if (i + 1) % 25 == 0:
             log(f"  rain totals {i + 1}/{len(files)}")
     return per_unit, domain
@@ -118,17 +130,26 @@ def unit_window(unit, grid, buffer_cells=10):
     return Window(col0, row0, col1 - col0, row1 - row0)
 
 
-def build_unit_store(unit, island, grid, dmax_dir, mags, out_dir, tmp_dir,
-                     country, build_store, log):
+def build_unit_store(
+    unit, island, grid, dmax_dir, mags, out_dir, tmp_dir, country, build_store, log
+):
     win = unit_window(unit, grid)
     tr = rasterio.windows.transform(win, grid["transform"])
     slug = slugify(unit["name"])
     store_name = f"fim_store_{unit['pcode']}_{slug}_v1.zarr"
     os.makedirs(tmp_dir, exist_ok=True)
     depth_files = {}
-    profile = dict(driver="GTiff", dtype="float32", count=1,
-                   width=int(win.width), height=int(win.height),
-                   transform=tr, crs=grid["crs"], compress="deflate", nodata=None)
+    profile = dict(
+        driver="GTiff",
+        dtype="float32",
+        count=1,
+        width=int(win.width),
+        height=int(win.height),
+        transform=tr,
+        crs=grid["crs"],
+        compress="deflate",
+        nodata=None,
+    )
     for p in sorted(glob.glob(os.path.join(dmax_dir, "dmax.*.tif"))):
         sid = sample_id(p)
         with rasterio.open(p) as r:
@@ -140,16 +161,25 @@ def build_unit_store(unit, island, grid, dmax_dir, mags, out_dir, tmp_dir,
     unit_mags = {sid: mags[sid][unit["pcode"]] for sid in depth_files}
     store_path = os.path.join(out_dir, store_name)
     build_store(
-        depth_files, store_path, unit_mags,
-        extent_threshold_m=0.05, crs=grid["crs"],
-        magnitude_source=(f"pcpout storm totals (band sum, mm), mean over "
-                          f"ADM1 unit {unit['pcode']} {unit['name']}, Aug 2026"),
+        depth_files,
+        store_path,
+        unit_mags,
+        extent_threshold_m=0.05,
+        crs=grid["crs"],
+        magnitude_source=(
+            f"pcpout storm totals (band sum, mm), mean over "
+            f"ADM1 unit {unit['pcode']} {unit['name']}, Aug 2026"
+        ),
         extra_attrs={
-            "country": country, "adm1_pcode": unit["pcode"],
-            "adm1_name": unit["name"], "island_model": island,
-            "depth_note": ("depth from dmax uint8 centimeters, divided by 100; "
-                           "values saturate at 2.55 m"),
-        })
+            "country": country,
+            "adm1_pcode": unit["pcode"],
+            "adm1_name": unit["name"],
+            "island_model": island,
+            "depth_note": (
+                "depth from dmax uint8 centimeters, divided by 100; values saturate at 2.55 m"
+            ),
+        },
+    )
     for f in depth_files.values():
         os.remove(f)
     zip_path = store_path + ".zip"
@@ -159,8 +189,10 @@ def build_unit_store(unit, island, grid, dmax_dir, mags, out_dir, tmp_dir,
                 fp = os.path.join(dirpath, fn)
                 z.write(fp, os.path.relpath(fp, store_path))
     mb = os.path.getsize(zip_path) / 1e6
-    log(f"  {unit['pcode']} {unit['name']}: window {int(win.width)}x{int(win.height)}, "
-        f"zip {mb:.1f} MB")
+    log(
+        f"  {unit['pcode']} {unit['name']}: window {int(win.width)}x{int(win.height)}, "
+        f"zip {mb:.1f} MB"
+    )
     return store_name, zip_path
 
 
@@ -217,15 +249,18 @@ likelihood_bands:
 
 def run_job(job, out_root, build_store, only=None, unit_filter=None, log=print):
     country = job["country"]
-    units = read_units(job["shapefile"], job.get("name_field", "ADM1_EN"),
-                       job.get("pcode_field", "ADM1_PCODE"))
+    units = read_units(
+        job["shapefile"], job.get("name_field", "ADM1_EN"), job.get("pcode_field", "ADM1_PCODE")
+    )
     grids = {isl: island_grid(cfg["dmax_dir"]) for isl, cfg in job["islands"].items()}
     for g in grids.values():
         if g["crs"] in ("None", "", None):
             g["crs"] = WGS84
     assign = {u["pcode"]: unit_island(u, grids) for u in units}
-    log(f"{country}: {len(units)} ADM1 units; island assignment: "
-        + ", ".join(f"{u['pcode']}->{assign[u['pcode']] or 'NONE (skip)'}" for u in units))
+    log(
+        f"{country}: {len(units)} ADM1 units; island assignment: "
+        + ", ".join(f"{u['pcode']}->{assign[u['pcode']] or 'NONE (skip)'}" for u in units)
+    )
 
     store_dir = os.path.join(out_root, "fim_store", country)
     cfg_dir = os.path.join(out_root, "fim_config")
@@ -242,7 +277,8 @@ def run_job(job, out_root, build_store, only=None, unit_filter=None, log=print):
                 continue
             log(f"{country}/{isl}: rain totals for {len(on_isl)} units ...")
             per_unit, domain = storm_totals_and_unit_means(
-                cfg["pcpout_dir"], on_isl, grids[isl], log)
+                cfg["pcpout_dir"], on_isl, grids[isl], log
+            )
             all_mags[isl] = per_unit
             all_domain[isl] = domain
         json.dump({"per_unit": all_mags, "domain": all_domain}, open(mags_path, "w"))
@@ -262,30 +298,49 @@ def run_job(job, out_root, build_store, only=None, unit_filter=None, log=print):
             continue
         mags = data["per_unit"][isl]
         store_name, _zip = build_unit_store(
-            u, isl, grids[isl], job["islands"][isl]["dmax_dir"], mags,
-            store_dir, os.path.join(out_root, "_tmp_crops"), country,
-            build_store, log)
+            u,
+            isl,
+            grids[isl],
+            job["islands"][isl]["dmax_dir"],
+            mags,
+            store_dir,
+            os.path.join(out_root, "_tmp_crops"),
+            country,
+            build_store,
+            log,
+        )
         vals = sorted((mags[sid][u["pcode"]], sid) for sid in mags)
         ref = vals[0][1]  # smallest-rain scenario for the overbank mask
         slug = slugify(u["name"])
         aoc = dict(AOC_TEMPLATE)
-        aoc["features"] = [{"type": "Feature",
-                            "properties": {"country": country, "pcode": u["pcode"],
-                                           "name": u["name"]},
-                            "geometry": u["geom"]}]
+        aoc["features"] = [
+            {
+                "type": "Feature",
+                "properties": {"country": country, "pcode": u["pcode"], "name": u["name"]},
+                "geometry": u["geom"],
+            }
+        ]
         aoc_name = f"{country}_{u['pcode']}_{slug}_aoc.geojson"
         json.dump(aoc, open(os.path.join(aoc_dir, aoc_name), "w"))
-        yml = YAML_TEMPLATE.format(country=country, name=u["name"], pcode=u["pcode"],
-                                   slug=slug, island=isl, store=store_name,
-                                   ref_scenario=ref)
+        yml = YAML_TEMPLATE.format(
+            country=country,
+            name=u["name"],
+            pcode=u["pcode"],
+            slug=slug,
+            island=isl,
+            store=store_name,
+            ref_scenario=ref,
+        )
         open(os.path.join(cfg_dir, f"{country}_{slug}.yaml"), "w").write(yml)
         mvals = [mags[sid][u["pcode"]] for sid in mags]
-        manifest.append([u["pcode"], u["name"], isl, store_name,
-                         f"{min(mvals):.1f}", f"{max(mvals):.1f}"])
+        manifest.append(
+            [u["pcode"], u["name"], isl, store_name, f"{min(mvals):.1f}", f"{max(mvals):.1f}"]
+        )
     with open(os.path.join(out_root, f"manifest_{country}.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["pcode", "name", "island_model", "store", "magnitude_min_mm",
-                    "magnitude_max_mm"])
+        w.writerow(
+            ["pcode", "name", "island_model", "store", "magnitude_min_mm", "magnitude_max_mm"]
+        )
         w.writerows(manifest)
     log(f"{country}: done, manifest written")
 
@@ -293,16 +348,19 @@ def run_job(job, out_root, build_store, only=None, unit_filter=None, log=print):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--jobs", required=True)
-    ap.add_argument("--fimutils", required=True,
-                    help="folder that contains tito_utils/ (for the store builder)")
+    ap.add_argument(
+        "--fimutils", required=True, help="folder that contains tito_utils/ (for the store builder)"
+    )
     ap.add_argument("--out", default="out_stores")
     ap.add_argument("--only-magnitudes", action="store_true")
     ap.add_argument("--only-stores", action="store_true")
-    ap.add_argument("--units", default="",
-                    help="comma separated ADM1 pcodes to build (default: all)")
+    ap.add_argument(
+        "--units", default="", help="comma separated ADM1 pcodes to build (default: all)"
+    )
     a = ap.parse_args()
     sys.path.insert(0, a.fimutils)
     from tito_utils.fim_utils.store import build_store
+
     jobs = json.load(open(a.jobs))
     only = "magnitudes" if a.only_magnitudes else ("stores" if a.only_stores else None)
     unit_filter = set(x for x in a.units.split(",") if x) or None

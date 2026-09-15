@@ -15,12 +15,8 @@ FIM_DIR = sys.argv[1] if len(sys.argv) > 1 else "fim_config"
 OUT_DIR = sys.argv[2] if len(sys.argv) > 2 else "out_ibf_yamls"
 
 META = {
-    "Antigua": {
-        "slug": "antigua", "work_crs": "EPSG:32620",
-        "label": "Antigua and Barbuda"},
-    "Barbados": {
-        "slug": "barbados", "work_crs": "EPSG:32621",
-        "label": "Barbados"},
+    "Antigua": {"slug": "antigua", "work_crs": "EPSG:32620", "label": "Antigua and Barbuda"},
+    "Barbados": {"slug": "barbados", "work_crs": "EPSG:32621", "label": "Barbados"},
 }
 
 TEMPLATE = """# IBF receptor product: {label}, {unit_label} (paired with the FIM site
@@ -95,11 +91,17 @@ def main():
             unit_label = site.split("_", 1)[1]
             out = os.path.join(OUT_DIR, f"{site}_ibf.yaml")
             with open(out, "w") as fh:
-                fh.write(TEMPLATE.format(
-                    label=META[country]["label"], unit_label=unit_label,
-                    site=site, country=country, slug=META[country]["slug"],
-                    work_crs=META[country]["work_crs"],
-                    products_root=fim["products_root"]))
+                fh.write(
+                    TEMPLATE.format(
+                        label=META[country]["label"],
+                        unit_label=unit_label,
+                        site=site,
+                        country=country,
+                        slug=META[country]["slug"],
+                        work_crs=META[country]["work_crs"],
+                        products_root=fim["products_root"],
+                    )
+                )
             n += 1
             print("wrote", out)
     print(f"{n} IBF yamls")

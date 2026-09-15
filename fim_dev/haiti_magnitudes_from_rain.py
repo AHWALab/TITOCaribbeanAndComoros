@@ -7,6 +7,7 @@ polygon. Here the polygon is the hydrodynamic model footprint, which is also
 the area of concern the real time side samples its rain over, so the store
 index and the cycle rain are the same physical quantity.
 """
+
 import glob
 import json
 import os
@@ -25,8 +26,14 @@ SITES = {"Gris": ("gris", "Haiti_Gris"), "LaQuinte": ("laquinte", "Haiti_LaQuint
 
 def cell_weights(geom, src, refine=32):
     fine_t = src.transform * Affine.scale(1.0 / refine, 1.0 / refine)
-    fine = rasterize([(geom, 1)], out_shape=(src.height * refine, src.width * refine),
-                     transform=fine_t, fill=0, dtype="uint8", all_touched=False)
+    fine = rasterize(
+        [(geom, 1)],
+        out_shape=(src.height * refine, src.width * refine),
+        transform=fine_t,
+        fill=0,
+        dtype="uint8",
+        all_touched=False,
+    )
     return fine.reshape(src.height, refine, src.width, refine).mean(axis=(1, 3))
 
 
@@ -56,23 +63,44 @@ def main():
             mags[sid] = float((tot * w).sum() / tot_w)
             names[sid] = scen
         v = np.array([mags[s] for s in sorted(mags)])
-        print(f"== {site}: {len(mags)} scenarios, grid {w.shape[1]}x{w.shape[0]} {crs} {res:.5f} deg")
-        print(f"   weighted cells {tot_w:.3f}, polygon area {area_cells:.3f} cells, "
-              f"coverage {tot_w / area_cells * 100:.2f} percent")
-        print(f"   magnitude mm  min {v.min():.1f}  median {np.median(v):.1f}  max {v.max():.1f}  "
-              f"zeros {(v == 0).sum()}")
-        out[site] = {"magnitudes": mags, "scenario_names": names,
-                     "diagnostics": {"n_scenarios": len(mags),
-                                     "rain_grid": [int(w.shape[1]), int(w.shape[0])],
-                                     "rain_crs": str(crs), "rain_res_deg": float(res),
-                                     "rain_bounds": [float(b) for b in bounds],
-                                     "cells_covered": round(float(tot_w), 4),
-                                     "polygon_area_cells": round(float(area_cells), 4),
-                                     "coverage_of_footprint": round(float(tot_w / area_cells), 4)}}
-    json.dump({"method": ("area weighted mean of the band summed storm total over the "
-                          "hydrodynamic model footprint, refined rasterization factor 32"),
-               "sites": out}, open(f"{ROOT}/magnitudes_Haiti_from_rain.json", "w"), indent=1)
+        print(
+            f"== {site}: {len(mags)} scenarios, grid {w.shape[1]}x{w.shape[0]} {crs} {res:.5f} deg"
+        )
+        print(
+            f"   weighted cells {tot_w:.3f}, polygon area {area_cells:.3f} cells, "
+            f"coverage {tot_w / area_cells * 100:.2f} percent"
+        )
+        print(
+            f"   magnitude mm  min {v.min():.1f}  median {np.median(v):.1f}  max {v.max():.1f}  "
+            f"zeros {(v == 0).sum()}"
+        )
+        out[site] = {
+            "magnitudes": mags,
+            "scenario_names": names,
+            "diagnostics": {
+                "n_scenarios": len(mags),
+                "rain_grid": [int(w.shape[1]), int(w.shape[0])],
+                "rain_crs": str(crs),
+                "rain_res_deg": float(res),
+                "rain_bounds": [float(b) for b in bounds],
+                "cells_covered": round(float(tot_w), 4),
+                "polygon_area_cells": round(float(area_cells), 4),
+                "coverage_of_footprint": round(float(tot_w / area_cells), 4),
+            },
+        }
+    json.dump(
+        {
+            "method": (
+                "area weighted mean of the band summed storm total over the "
+                "hydrodynamic model footprint, refined rasterization factor 32"
+            ),
+            "sites": out,
+        },
+        open(f"{ROOT}/magnitudes_Haiti_from_rain.json", "w"),
+        indent=1,
+    )
     import csv
+
     with open(f"{ROOT}/magnitudes_Haiti_from_rain.csv", "w", newline="") as fh:
         wtr = csv.writer(fh)
         wtr.writerow(["site", "storm_id", "scenario_name", "magnitude_mm"])

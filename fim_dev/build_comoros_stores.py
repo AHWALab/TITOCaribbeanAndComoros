@@ -12,6 +12,7 @@ Outputs, per municipality
   fim_config/aoc/Comoros_<PCODE>_<Slug>_aoc.geojson
 plus manifest_Comoros.csv and magnitudes_Comoros_per_unit.json
 """
+
 # NOTE ON PATHS: the constants below are the paths of the machine this was
 # built on (the delivered Comoros rasters, the com_admin3 shapefile and the
 # magnitude table). Point them at your own copies before rerunning. Needs
@@ -26,11 +27,11 @@ import unicodedata
 import zipfile
 import zlib
 
+import geopandas as gpd
 import numpy as np
 import rasterio
-from rasterio.windows import Window
-import geopandas as gpd
 import zarr
+from rasterio.windows import Window
 
 BLOB_DIR = "/mnt/user-data/uploads/FIM_version/Data/_comoros_build/blobs"
 INDEX = "/mnt/user-data/uploads/FIM_version/Data/_comoros_build/index_final.json"
@@ -155,9 +156,12 @@ def main():
         ids, stack = load_island_stack(island, index)
         sub = adm[adm.adm1_pcode == adm1]
         sub_p = sub.to_crs(crs)
-        print(f"   stack {stack.shape} {stack.nbytes/1e6:.0f} MB, {len(sub)} municipalities", flush=True)
+        print(
+            f"   stack {stack.shape} {stack.nbytes / 1e6:.0f} MB, {len(sub)} municipalities",
+            flush=True,
+        )
 
-        for (_, r), (_, rp) in zip(sub.iterrows(), sub_p.iterrows()):
+        for (_, r), (_, rp) in zip(sub.iterrows(), sub_p.iterrows(), strict=False):
             pcode, name = r.adm3_pcode, r.adm3_name
             sl = slug(name)
             minx, miny, maxx, maxy = rp.geometry.bounds
@@ -170,8 +174,7 @@ def main():
             if c1 <= c0 or r1 <= r0:
                 print(f"   {pcode} {name}: NO OVERLAP with the island grid, skipped")
                 continue
-            win_transform = rasterio.windows.transform(
-                Window(c0, r0, c1 - c0, r1 - r0), transform)
+            win_transform = rasterio.windows.transform(Window(c0, r0, c1 - c0, r1 - r0), transform)
 
             m = mags_all["magnitudes"][pcode]
             order = sorted(ids, key=lambda s: m[s])
@@ -194,64 +197,128 @@ def main():
             L = max(len(s) for s in order)
             sid = create(root, "storm_id", (n,), f"S{L}", (n,))
             sid[:] = np.array([s.encode() for s in order], dtype=f"S{L}")
-            root.attrs.update({
-                "crs": str(crs), "transform": list(np.asarray(win_transform)[:6]),
-                "extent_threshold_m": EXTENT_M, "source_nodata": None,
-                "magnitude_source": (
-                    "real RainyDay storm totals: area weighted mean over the "
-                    f"municipality of the band summed {BOX_OF[island]} scenario "
-                    "rain geotiff (200 scenarios, 72 bands, 0.027 degree grid)"),
-                "n_storms": n, "grid_shape": [ny, nx],
-                "depth_source": (f"{island} island model maximum depth rasters "
-                                 "(float64 metres), stored at 1 cm precision"),
-                "admin_unit": {"pcode": pcode, "name": name,
-                               "adm1": r.adm1_name, "adm2": r.adm2_name},
-            })
+            root.attrs.update(
+                {
+                    "crs": str(crs),
+                    "transform": list(np.asarray(win_transform)[:6]),
+                    "extent_threshold_m": EXTENT_M,
+                    "source_nodata": None,
+                    "magnitude_source": (
+                        "real RainyDay storm totals: area weighted mean over the "
+                        f"municipality of the band summed {BOX_OF[island]} scenario "
+                        "rain geotiff (200 scenarios, 72 bands, 0.027 degree grid)"
+                    ),
+                    "n_storms": n,
+                    "grid_shape": [ny, nx],
+                    "depth_source": (
+                        f"{island} island model maximum depth rasters "
+                        "(float64 metres), stored at 1 cm precision"
+                    ),
+                    "admin_unit": {
+                        "pcode": pcode,
+                        "name": name,
+                        "adm1": r.adm1_name,
+                        "adm2": r.adm2_name,
+                    },
+                }
+            )
             with open(os.path.join(out, "index.csv"), "w", newline="") as fh:
                 w = csv.writer(fh)
                 w.writerow(["storm_index", "storm_id", "magnitude_mm"])
-                for i, (s, mm) in enumerate(zip(order, mags)):
+                for i, (s, mm) in enumerate(zip(order, mags, strict=False)):
                     w.writerow([i, s, round(float(mm), 2)])
             with open(os.path.join(out, "meta.json"), "w") as fh:
                 json.dump(dict(root.attrs), fh, indent=2)
             size = zip_store(out, out + ".zip")
             shutil.rmtree(out)
 
-            gj = {"type": "FeatureCollection", "features": [{
-                "type": "Feature",
-                "properties": {"country": "Comoros", "pcode": pcode, "name": name,
-                               "island": r.adm1_name},
-                "geometry": json.loads(gpd.GeoSeries([r.geometry], crs=adm.crs).to_json())
-                            ["features"][0]["geometry"]}]}
+            gj = {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "country": "Comoros",
+                            "pcode": pcode,
+                            "name": name,
+                            "island": r.adm1_name,
+                        },
+                        "geometry": json.loads(gpd.GeoSeries([r.geometry], crs=adm.crs).to_json())[
+                            "features"
+                        ][0]["geometry"],
+                    }
+                ],
+            }
             with open(f"{OUT}/fim_config/aoc/Comoros_{pcode}_{sl}_aoc.geojson", "w") as fh:
                 json.dump(gj, fh)
             with open(f"{OUT}/fim_config/Comoros_{sl}.yaml", "w") as fh:
-                fh.write(YAML.format(name=name, pcode=pcode, island=island,
-                                     island_label=r.adm1_name, box=BOX_OF[island],
-                                     slug=sl, store=store_name, overbank=order[0]))
+                fh.write(
+                    YAML.format(
+                        name=name,
+                        pcode=pcode,
+                        island=island,
+                        island_label=r.adm1_name,
+                        box=BOX_OF[island],
+                        slug=sl,
+                        store=store_name,
+                        overbank=order[0],
+                    )
+                )
             wet = float((stack[:, r0:r1, c0:c1] >= EXTENT_M * 100).mean())
-            manifest.append([pcode, name, r.adm1_name, island, store_name, n,
-                             f"{nx}x{ny}", round(float(mags.min()), 1),
-                             round(float(mags.max()), 1), round(size / 1e6, 2),
-                             round(wet * 100, 2)])
-            per_unit[pcode] = {"name": name, "island": r.adm1_name,
-                               "island_model": island, "n_scenarios": n,
-                               "magnitudes_mm": m}
-            print(f"   {pcode} {name[:22]:<22} {nx:>4}x{ny:<4} zip {size/1e6:6.2f} MB "
-                  f"mm[{mags.min():6.1f}..{mags.max():6.1f}] wet {wet*100:4.1f}%", flush=True)
+            manifest.append(
+                [
+                    pcode,
+                    name,
+                    r.adm1_name,
+                    island,
+                    store_name,
+                    n,
+                    f"{nx}x{ny}",
+                    round(float(mags.min()), 1),
+                    round(float(mags.max()), 1),
+                    round(size / 1e6, 2),
+                    round(wet * 100, 2),
+                ]
+            )
+            per_unit[pcode] = {
+                "name": name,
+                "island": r.adm1_name,
+                "island_model": island,
+                "n_scenarios": n,
+                "magnitudes_mm": m,
+            }
+            print(
+                f"   {pcode} {name[:22]:<22} {nx:>4}x{ny:<4} zip {size / 1e6:6.2f} MB "
+                f"mm[{mags.min():6.1f}..{mags.max():6.1f}] wet {wet * 100:4.1f}%",
+                flush=True,
+            )
         del stack
 
     mode = "a" if only and os.path.exists(f"{OUT}/manifest_Comoros.csv") else "w"
     with open(f"{OUT}/manifest_Comoros.csv", mode, newline="") as fh:
         w = csv.writer(fh)
         if mode == "w":
-            w.writerow(["pcode", "name", "island", "island_model", "store", "n_scenarios",
-                        "grid_wxh", "magnitude_min_mm", "magnitude_max_mm", "zip_mb",
-                        "wet_cells_pct"])
+            w.writerow(
+                [
+                    "pcode",
+                    "name",
+                    "island",
+                    "island_model",
+                    "store",
+                    "n_scenarios",
+                    "grid_wxh",
+                    "magnitude_min_mm",
+                    "magnitude_max_mm",
+                    "zip_mb",
+                    "wet_cells_pct",
+                ]
+            )
         w.writerows(manifest)
     jp = f"{OUT}/magnitudes_Comoros_per_unit.json"
     if only and os.path.exists(jp):
-        old = json.load(open(jp)); old.update(per_unit); per_unit = old
+        old = json.load(open(jp))
+        old.update(per_unit)
+        per_unit = old
     json.dump(per_unit, open(jp, "w"), indent=1)
     print(f"\nwrote {len(manifest)} stores this run")
 

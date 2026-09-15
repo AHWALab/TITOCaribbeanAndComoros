@@ -1,0 +1,83 @@
+name: Docker
+
+on:
+  push:
+    branches: [main, TITO_Haiti]
+    paths:
+      - "Dockerfile"
+      - "tito_env.yml"
+      - "docker-entrypoint.sh"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "Caribbean_Comoros_config.py"
+      - "orchestrator.py"
+      - "hindcast_manager.py"
+      - "tito_utils/**"
+      - ".github/workflows/docker.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "tito_env.yml"
+      - "docker-entrypoint.sh"
+      - "docker-compose.yml"
+      - ".dockerignore"
+      - "Caribbean_Comoros_config.py"
+      - "orchestrator.py"
+      - "hindcast_manager.py"
+      - "tito_utils/**"
+      - ".github/workflows/docker.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-tito:
+    name: Build TITO image + import smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build tito:ci
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          tags: tito:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test (imports)
+        run: |
+          docker run --rm --entrypoint /opt/conda/envs/tito_env2/bin/python tito:ci -c \
+            "import numpy, xarray, rasterio; from osgeo import gdal; import pysteps, zarr, tito_utils; print('tito imports OK')"
+
+  build-ef5:
+    name: Build EF5 image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ef5-container:ci
+        uses: docker/build-push-action@v6
+        with:
+          context: EF5/docker
+          file: EF5/docker/Dockerfile
+          push: false
+          load: true
+          tags: ef5-container:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test (binary exists)
+        run: docker run --rm --entrypoint /bin/sh ef5-container:ci -c "test -x /ef5/bin/ef5 && echo 'ef5 binary OK'"

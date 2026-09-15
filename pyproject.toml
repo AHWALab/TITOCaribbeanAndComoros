@@ -1,0 +1,40 @@
+[project]
+name = "tito-haiti"
+version = "0.5.0"
+description = "TITO Haiti production package (EF5 + QPE/QPF + FIM)"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<9",
+    "ruff==0.16.3",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+required-version = "0.16.3"
+extend-exclude = [
+    "tito_utils/qpe_utils/STREAM-Sat-realtime/",
+    "tito_utils/qpf_utils/StormLab-GFS-realtime/",
+    "trainings/",
+    "dist/",
+    "EF5/",
+    "outputs/",
+    "fim_store/",
+    "offline_precips/",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+ignore = [
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"Caribbean_Comoros_config.py" = ["E402"]
+"tests/**" = ["S101"]

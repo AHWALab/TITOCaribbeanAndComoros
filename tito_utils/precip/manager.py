@@ -34,78 +34,12 @@ def prepare_cycle_precip(
 
     Returns the shared precip handle from ``prepare_all_precip``
     (imerg folders, scampr folder, streamsat info, gfs/arome caches).
-
-    When ``TITO_OFFLINE=1`` (training flag from ``--offline``), never hits the
-    network: stages local archive / EF5_conf precip and returns SharedPrecip.
     """
     if os.environ.get("TITO_OFFLINE", "").strip() in ("1", "true", "TRUE", "yes"):
-        # Hard guard — works even if sitecustomize / monkey-patch did not load
-        # (e.g. Apptainer --cleanenv before launcher fix).
-        try:
-            from offline.stage_offline_precips import install_offline_hook
-
-            # install patches this function; call the patched path once
-            install_offline_hook(config)
-            import tito_utils.precip.manager as _self
-
-            if _self.prepare_cycle_precip is not prepare_cycle_precip:
-                return _self.prepare_cycle_precip(
-                    regions_to_run,
-                    region_cycle_times,
-                    region_qpe_sources,
-                    region_qpf_requested,
-                    config,
-                    master_log=master_log,
-                )
-            # install failed to replace us — build shared directly
-            from pathlib import Path
-
-            from offline.stage_offline_precips import (
-                _stage_from_ef5_layout,
-                build_shared_precip,
-                stage,
-            )
-
-            root = Path(__file__).resolve().parents[2]
-            src = Path(os.environ.get("TITO_OFFLINE_PRECIP", str(root / "offline_precips")))
-            # All region cycles must be in the training offline window
-            from offline.stage_offline_precips import validate_offline_cycle
-
-            for _r, _ct in region_cycle_times.items():
-                validate_offline_cycle(_ct.strftime("%Y%m%d%H%M"), src)
-            ct0 = next(iter(region_cycle_times.values()))
-            ck = ct0.strftime("%Y%m%d%H%M")
-            ss = int(getattr(config, "stream_sat_ensemble_size", 10))
-            sl = int(getattr(config, "stormlab_ensemble_size", 5))
-            print("==== TITO OFFLINE precip (hard guard, no downloads) ====")
-            print(f"  cycle: {ck} (training archive only)")
-            if src.is_dir() and any(src.iterdir()):
-                from offline.stage_offline_precips import _stormlab_domain
-
-                region0 = next(iter(regions_to_run), "Antigua")
-                stage(
-                    project_root=root,
-                    source=src,
-                    ss_ens=ss,
-                    sl_ens=sl,
-                    cycle_key=ck,
-                    region_slug=_stormlab_domain(region0),
-                )
-            else:
-                _stage_from_ef5_layout(root, ss_ens=ss, sl_ens=sl, cycle_key=ck)
-            return build_shared_precip(
-                config,
-                list(regions_to_run),
-                dict(region_cycle_times),
-                dict(region_qpe_sources),
-                {k: list(v) for k, v in region_qpf_requested.items()},
-            )
-        except Exception as exc:
-            print(f"    ERROR: TITO_OFFLINE=1 but offline staging failed: {exc}")
-            print(
-                "    Refusing to download while offline. Fix offline_precips/ or unset TITO_OFFLINE."
-            )
-            raise
+        raise RuntimeError(
+            "TITO_OFFLINE/--offline is no longer supported: offline mode and "
+            "offline_precips/ were removed from this deployment. Unset TITO_OFFLINE."
+        )
 
     return prepare_all_precip(
         list(regions_to_run),

@@ -179,25 +179,12 @@ echo   Network : bridge (Docker Desktop)
 REM No --network host on Docker Desktop Windows
 if not exist "%ROOT%\fim_config" mkdir "%ROOT%\fim_config"
 if not exist "%ROOT%\fim_store" mkdir "%ROOT%\fim_store"
-if not exist "%ROOT%\offline_precips" mkdir "%ROOT%\offline_precips"
-if not exist "%ROOT%\offline" mkdir "%ROOT%\offline"
-
-REM Detect --offline in args (training: no precip downloads)
-set "TITO_OFFLINE_ENV="
-set "TITO_OFFLINE_PY="
-echo %*| findstr /I /C:"--offline" >nul
-if not errorlevel 1 (
-  set "TITO_OFFLINE_ENV=-e TITO_OFFLINE=1 -e TITO_OFFLINE_PRECIP=/app/offline_precips"
-  set "TITO_OFFLINE_PY=-e PYTHONPATH=/app:/app/offline"
-)
 
 docker run --rm ^
   -v "%ROOT%\EF5_conf:/app/EF5_conf" ^
   -v "%ROOT%\outputs:/app/outputs" ^
   -v "%ROOT%\fim_config:/app/fim_config:ro" ^
   -v "%ROOT%\fim_store:/app/fim_store:ro" ^
-  -v "%ROOT%\offline_precips:/app/offline_precips" ^
-  -v "%ROOT%\offline:/app/offline" ^
   -v "%ROOT%\Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro" ^
   -v "%ROOT%\orchestrator.py:/app/orchestrator.py:ro" ^
   -v "%ROOT%\hindcast_manager.py:/app/hindcast_manager.py:ro" ^
@@ -211,7 +198,6 @@ docker run --rm ^
   -e "PYTHONUNBUFFERED=1" ^
   -e "TZ=Etc/UTC" ^
   -e "STORMLAB_USE_TITO_ENV=1" ^
-  %TITO_OFFLINE_ENV% %TITO_OFFLINE_PY% ^
   "%TITO_IMAGE%" %*
 exit /b %ERRORLEVEL%
 

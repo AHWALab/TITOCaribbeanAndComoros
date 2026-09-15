@@ -26,7 +26,6 @@ extend-exclude = [
     "EF5/",
     "outputs/",
     "fim_store/",
-    "offline_precips/",
 ]
 
 [tool.ruff.lint]

@@ -76,6 +76,8 @@ clear_precip_after_cycle = True
 postprocess_outputs = True
 states_keep_hours = 100
 outputs_keep_hours = 24
+# tito_hourly_*.log and pipeline_*.log under outputs/logs/
+logs_keep_hours = 100
 warmup_precip_source_map = {
     "Guatemala": "IMERG",
 }

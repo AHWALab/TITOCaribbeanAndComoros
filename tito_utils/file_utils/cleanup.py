@@ -263,7 +263,7 @@ def clear_live_precip(config, cycle_time, master_log=None):
 
     Removes downloaded/derived forcing GeoTIFFs and EF5 staging so the next
     cycle starts clean. Preserves the IMERG warmup archive (``_warmup``) and
-    never touches ``offline_precips/``.
+    the ``.gitkeep`` placeholders that keep the runtime folders in git.
     """
 
     def _say(msg):
@@ -284,10 +284,12 @@ def clear_live_precip(config, cycle_time, master_log=None):
         return False
 
     def _wipe_dir(root):
-        """Remove contents of *root* but keep *root* itself."""
+        """Remove contents of *root* but keep *root* itself and .gitkeep."""
         if not root or not os.path.isdir(root):
             return
         for name in os.listdir(root):
+            if name == ".gitkeep":
+                continue
             _rm(os.path.join(root, name))
 
     # STREAM-Sat / StormLab GeoTIFF member trees (domain folders).

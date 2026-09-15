@@ -265,6 +265,8 @@ def _run_single_cycle(
         console.info("[bold]Pre-clean:[/] wiping precipEF5 …")
     for root, dirs, files in os.walk(precipEF5Folder, topdown=False):
         for f in files:
+            if f == ".gitkeep":
+                continue
             try:
                 os.remove(os.path.join(root, f))
             except OSError:

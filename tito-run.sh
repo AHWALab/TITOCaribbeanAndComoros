@@ -21,8 +21,6 @@
 #
 # ── Hindcast ────────────────────────────────────────────────────────────────
 #   ./tito-run.sh hindcast "2026-07-22 00:00" "2026-07-22 06:00" --regions Guatemala
-#   Training offline (no downloads — uses offline_precips/ or staged EF5_conf precip):
-#   ./tito-run.sh hindcast "2023-06-21 07:00" "2023-06-21 08:00" --regions Guatemala --offline
 #
 # ── Windows ─────────────────────────────────────────────────────────────────
 #   Prefer pure CMD (no PowerShell / execution-policy issues):
@@ -255,7 +253,7 @@ detect_runtime() {
 
 # EF5_conf holds basic/parameters/pet/templates/states/precip/precipEF5/qpf_store
 DATA_MOUNTS=(
-    EF5_conf outputs fim_config fim_store offline_precips offline
+    EF5_conf outputs fim_config fim_store
 )
 
 # ── Docker ─────────────────────────────────────────────────────────────────
@@ -305,13 +303,6 @@ run_docker() {
         -e STORMLAB_USE_TITO_ENV=1
         --rm
     )
-    # Forward offline training mode into the container
-    if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
-        args+=(-e TITO_OFFLINE=1)
-        args+=(-e "TITO_OFFLINE_PRECIP=${TITO_OFFLINE_PRECIP:-/app/offline_precips}")
-        # /app for `import offline`; /app/offline so sitecustomize.py auto-loads
-        args+=(-e "PYTHONPATH=/app:/app/offline${PYTHONPATH:+:$PYTHONPATH}")
-    fi
 
     # --network host is reliable only on native Linux.
     # Docker Desktop (Mac/Windows) uses a VM; default bridge still has outbound net.
@@ -364,22 +355,14 @@ run_apptainer() {
         --bind "$SCRIPT_DIR/docker-entrypoint.sh:/app/docker-entrypoint.sh:ro"
     )
 
-    # --cleanenv drops host env; pass offline flags explicitly when requested
+    # --cleanenv drops host env; pass the runtime env explicitly
     local env_csv="EF5_RUNTIME=local,EF5_LOCAL_BIN=/app/EF5/bin/ef5,TITO_FIM_ROOT=/app,PYTHONUNBUFFERED=1,TZ=Etc/UTC,STORMLAB_USE_TITO_ENV=1"
-    local offline=0
-    if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
-        offline=1
-        env_csv+=",TITO_OFFLINE=1,TITO_OFFLINE_PRECIP=/app/offline_precips,TITO_OFFLINE_CONFIG=Caribbean_Comoros_config,PYTHONPATH=/app:/app/offline"
-    fi
 
     echo "==== TITO launcher ===="
     echo "  Runtime : $cmd"
     echo "  Project : $SCRIPT_DIR"
     echo "  SIF     : $TITO_SIF"
     echo "  EF5     : $EF5_LOCAL_BIN (in-process, no nested Apptainer)"
-    if [[ "$offline" == "1" ]]; then
-        echo "  Offline : YES (no precip downloads)"
-    fi
 
     exec "$cmd" run --cleanenv \
         --env "$env_csv" \

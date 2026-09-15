@@ -25,7 +25,6 @@ This is the production deployment package for the Guatemala domain. It orchestra
 - [Output layout](#output-layout)
 - [Flood inundation mapping (FIM)](#flood-inundation-mapping-fim)
 - [IBF receptor products (optional)](#ibf-receptor-products-optional)
-- [Offline mode](#offline-mode)
 - [Maintenance and recovery](#maintenance-and-recovery)
 - [CI/CD and releases](#cicd-and-releases)
 - [Troubleshooting](#troubleshooting)
@@ -85,23 +84,22 @@ The launcher auto-detects the runtime; override with `TITO_RUNTIME=docker|apptai
 
 ## Quick start
 
+Build images locally. Do not ship a docker image tar.
+
 ```bash
 cd Deployment_versions/Guatemala
 
-# 1. Provide images (once). Either load pre-built archives from dist/...
-./tito-run.sh load-images
+# 1. Compile Docker images (TITO + EF5). First time ~10–15 min.
+./container-build.sh
 
-# ...or build them from source (Docker + 10–15 min):
-./container-build.sh            # TITO + EF5 Docker images
-./container-build.sh --sif      # also convert to Apptainer .sif (needs apptainer)
+# 2. If this host is Apptainer/Singularity (HPC), convert next:
+./docker-to-apptainer.sh
 
-# 2. Run one operational cycle for Guatemala
+# 3. Run one operational cycle
 ./tito-run.sh operational --regions Guatemala
-
-# 3. (HPC / no Docker) same cycle with Apptainer
+# Apptainer:
 TITO_RUNTIME=apptainer ./tito-run.sh operational --regions Guatemala
 
-# Interactive shell inside the runtime
 ./tito-run.sh shell
 ```
 
@@ -274,16 +272,6 @@ Add a site by dropping `<Region>_<Site>.yaml` in `fim_config/` (see `fim_config/
 
 When `fim_config/ibf/<Site>_ibf.yaml` exists, the FIM hook also runs the IBF pipeline (`tito_utils/ibf_utils/`) and writes receptor-level products (buildings/roads/admin GPKG + summary CSV). Without that YAML the step logs `no fim_config/ibf/... , skip` and continues. Guatemala currently has no IBF YAML, so only FIM products are produced.
 
-## Offline mode
-
-Air-gapped validation without downloads, driven by the pre-staged `offline_precips/` archive:
-
-```bash
-./tito-run.sh hindcast "2023-06-21 07:00" "2023-06-21 08:00" --regions Guatemala --offline
-```
-
-The archive is refreshed from a good online run with `bash offline/materialize_offline_precips.sh`; see [offline/README.md](offline/README.md). Offline mode refuses timestamps outside the staged archive and never changes online behavior.
-
 ## Maintenance and recovery
 
 | Task | Command |
@@ -328,7 +316,6 @@ Dependabot (`.github/dependabot.yml`) opens weekly updates for GitHub Actions, D
 | FIM skipped for 900 m | Expected — FIM is 90 m only |
 | Cycle skipped by cron | Another cycle holds `outputs/logs/tito_cron.lock` or is still running (`manage_cron.sh status`) |
 | Missing states / warmup every cycle | State timestamps outside the 48 h lookback — check `EF5_conf/states/...` contents and system clock (UTC) |
-| Offline refused cycle | Timestamp not present in the staged `offline_precips/` archive |
 
 ## Security
 

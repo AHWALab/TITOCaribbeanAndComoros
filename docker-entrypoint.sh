@@ -20,7 +20,6 @@ cd /app
 
 # ── Parse common optional flags ────────────────────────────────────────────
 REGIONS_ARG=""
-OFFLINE=0
 REMAINING_ARGS=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,8 +28,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --offline)
-            OFFLINE=1
-            shift
+            echo "ERROR: --offline is no longer supported (offline mode was removed from this deployment)." >&2
+            exit 1
             ;;
         *)
             REMAINING_ARGS+=("$1")
@@ -43,22 +42,11 @@ set -- "${REMAINING_ARGS[@]}"
 MODE="${1:-operational}"
 shift || true
 
-if [[ "$OFFLINE" == "1" ]]; then
-    export TITO_OFFLINE=1
-    export TITO_OFFLINE_PRECIP="${TITO_OFFLINE_PRECIP:-/app/offline_precips}"
-    export TITO_OFFLINE_CONFIG=Caribbean_Comoros_config
-    export PYTHONPATH="/app:/app/offline${PYTHONPATH:+:$PYTHONPATH}"
-    echo "==== OFFLINE training mode (no precip downloads) ===="
-fi
-
 case "$MODE" in
     operational)
         echo "==== TITO Operational Mode ===="
         echo "Cycle: $(date -u --iso-8601=seconds)"
         [ -n "$REGIONS_ARG" ] && echo "Regions: ${REGIONS_ARG#--regions }"
-        if [[ "$OFFLINE" == "1" ]]; then
-            echo "NOTE: --offline is intended for the fixed training hindcast window."
-        fi
         exec python orchestrator.py Caribbean_Comoros_config.py $REGIONS_ARG
         ;;
 
@@ -69,10 +57,6 @@ case "$MODE" in
         echo "From: $HINDCAST_START"
         echo "To:   $HINDCAST_END"
         [ -n "$REGIONS_ARG" ] && echo "Regions: ${REGIONS_ARG#--regions }"
-        if [[ "$OFFLINE" == "1" ]]; then
-            exec python offline/run_offline_hindcast.py \
-                "$HINDCAST_START" "$HINDCAST_END" $REGIONS_ARG
-        fi
         exec python hindcast_manager.py Caribbean_Comoros_config.py "$HINDCAST_START" "$HINDCAST_END" $REGIONS_ARG
         ;;
 

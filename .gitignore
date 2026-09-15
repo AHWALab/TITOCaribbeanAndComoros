@@ -45,11 +45,6 @@ fim_store/**/*.zarr/
 fim_store/**/*.zarr
 tito_utils/qpf_utils/StormLab-GFS-realtime/v1.1.zip
 
-# Offline precip archive (large; materialize locally)
-offline_precips/**/*.tif
-offline_precips/**/*.nc
-!offline_precips/README*
-
 # Raster/binary data files — never commit these (except basic/ and parameters/)
 *.tif
 *.tiff

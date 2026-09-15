@@ -33,6 +33,7 @@ scenarios are listed in the store attrs and marked in index.csv, and the maps
 will be replaced when the remaining deliveries arrive (rerun this script,
 nothing else changes).
 """
+
 import csv
 import json
 import os
@@ -52,17 +53,28 @@ EXTENT_M = 0.05
 ZLEVEL_DEPTH = 19
 ZLEVEL_EXTENT = 9
 CRS = "EPSG:32618"
-PLACEHOLDER = {"Gris": "sample_0004"}   # real delivered map used for missing scenarios
+PLACEHOLDER = {"Gris": "sample_0004"}  # real delivered map used for missing scenarios
 
 SITES = {
-    "Gris": {"key": "gris", "res": 2.0, "origin": (779271.552, 2061763.471),
-             "grid": (4995, 7160), "gauges": ["Q_cuenca_griss_m3s"],
-             "series": ["ts.cuenca_griss.crest.{cycle}.csv"]},
-    "LaQuinte": {"key": "laquinte", "res": 2.0, "origin": (740413.47, 2156979.145),
-                 "grid": (3557, 3417),
-                 "gauges": ["Q_cuenca_laquinta_1_m3s", "Q_cuenca_laquinta_2_m3s"],
-                 "series": ["ts.cuenca_laquinta_1.crest.{cycle}.csv",
-                            "ts.cuenca_laquinta_2.crest.{cycle}.csv"]},
+    "Gris": {
+        "key": "gris",
+        "res": 2.0,
+        "origin": (779271.552, 2061763.471),
+        "grid": (4995, 7160),
+        "gauges": ["Q_cuenca_griss_m3s"],
+        "series": ["ts.cuenca_griss.crest.{cycle}.csv"],
+    },
+    "LaQuinte": {
+        "key": "laquinte",
+        "res": 2.0,
+        "origin": (740413.47, 2156979.145),
+        "grid": (3557, 3417),
+        "gauges": ["Q_cuenca_laquinta_1_m3s", "Q_cuenca_laquinta_2_m3s"],
+        "series": [
+            "ts.cuenca_laquinta_1.crest.{cycle}.csv",
+            "ts.cuenca_laquinta_2.crest.{cycle}.csv",
+        ],
+    },
 }
 
 
@@ -80,8 +92,10 @@ def load_map(entry, grid):
     sx = entry["pixel_scale"][0]
     ry = np.minimum((np.arange(H) * 2.0 / sy).astype(int), a.shape[0] - 1)
     rx = np.minimum((np.arange(W) * 2.0 / sx).astype(int), a.shape[1] - 1)
-    note = (f"delivered at {sx:g} m on a {a.shape[1]}x{a.shape[0]} grid, resampled "
-            f"nearest neighbour onto the {W}x{H} 2 m site grid")
+    note = (
+        f"delivered at {sx:g} m on a {a.shape[1]}x{a.shape[0]} grid, resampled "
+        f"nearest neighbour onto the {W}x{H} 2 m site grid"
+    )
     return np.ascontiguousarray(a[np.ix_(ry, rx)]), note
 
 
@@ -112,9 +126,13 @@ def build(site):
     missing = [s for s in order if s not in st]
     if missing and not ph:
         raise SystemExit(f"{site}: {len(missing)} maps missing and no placeholder set")
-    print(f"== {site}: {n} scenarios, {n - len(missing)} delivered maps, "
-          f"{len(missing)} placeholder copies of {ph}" if missing else
-          f"== {site}: {n} scenarios, all maps delivered", flush=True)
+    print(
+        f"== {site}: {n} scenarios, {n - len(missing)} delivered maps, "
+        f"{len(missing)} placeholder copies of {ph}"
+        if missing
+        else f"== {site}: {n} scenarios, all maps delivered",
+        flush=True,
+    )
 
     os.makedirs(f"{OUT}/fim_store/Haiti", exist_ok=True)
     sd = f"{OUT}/fim_store/Haiti/fim_store_Haiti_{site}_v1.zarr"
@@ -122,8 +140,7 @@ def build(site):
     # resumable: progress is checkpointed so a killed run continues; the format
     # tag guards against resuming into a store built by an older revision
     prog = json.load(open(prog_path)) if os.path.exists(prog_path) else None
-    if (prog and prog.get("order") == order and prog.get("fmt") == "u16z19"
-            and os.path.isdir(sd)):
+    if prog and prog.get("order") == order and prog.get("fmt") == "u16z19" and os.path.isdir(sd):
         root = zarr.open_group(sd, mode="a")
         depth, extent = root["depth"], root["extent"]
         notes, wet_frac = prog["notes"], prog["wet_frac"]
@@ -132,22 +149,33 @@ def build(site):
     else:
         shutil.rmtree(sd, ignore_errors=True)
         root = zarr.open_group(sd, mode="w")
-        depth = root.create_array("depth", shape=(n, H, W), dtype="uint16",
-                                  chunks=(1, H, W),
-                                  compressors=[zc.ZstdCodec(level=ZLEVEL_DEPTH)])
-        extent = root.create_array("extent", shape=(n, H, W), dtype="uint8",
-                                   chunks=(1, H, W),
-                                   compressors=[zc.ZstdCodec(level=ZLEVEL_EXTENT)])
+        depth = root.create_array(
+            "depth",
+            shape=(n, H, W),
+            dtype="uint16",
+            chunks=(1, H, W),
+            compressors=[zc.ZstdCodec(level=ZLEVEL_DEPTH)],
+        )
+        extent = root.create_array(
+            "extent",
+            shape=(n, H, W),
+            dtype="uint8",
+            chunks=(1, H, W),
+            compressors=[zc.ZstdCodec(level=ZLEVEL_EXTENT)],
+        )
         notes, wet_frac, done = {}, [], 0
     budget = float(os.environ.get("BUILD_BUDGET", "1e9"))
     import time as _t
+
     t0 = _t.time()
     ph_cache = None
     for k in range(done, n):
         if _t.time() - t0 > budget:
             print(f"   budget reached at {k} of {n}, rerun to continue", flush=True)
-            json.dump({"order": order, "notes": notes, "wet_frac": wet_frac,
-                       "fmt": "u16z19"}, open(prog_path, "w"))
+            json.dump(
+                {"order": order, "notes": notes, "wet_frac": wet_frac, "fmt": "u16z19"},
+                open(prog_path, "w"),
+            )
             return None
         s = order[k]
         if s in st:
@@ -163,8 +191,10 @@ def build(site):
         extent[k] = (q >= int(EXTENT_M * 100)).astype("uint8")
         wet_frac.append(float((q >= int(EXTENT_M * 100)).mean()))
         if k % 10 == 9 or k == n - 1:
-            json.dump({"order": order, "notes": notes, "wet_frac": wet_frac,
-                       "fmt": "u16z19"}, open(prog_path, "w"))
+            json.dump(
+                {"order": order, "notes": notes, "wet_frac": wet_frac, "fmt": "u16z19"},
+                open(prog_path, "w"),
+            )
             print(f"   {k + 1}/{n}", flush=True)
     mm = np.array([mags[s] for s in order], dtype="float64")
     root.create_array("magnitude_mm", shape=(n,), dtype="float64", chunks=(n,))[:] = mm
@@ -177,54 +207,80 @@ def build(site):
     fa = root.create_array("fluvial_q", shape=q.shape, dtype="float64")
     fa[:] = q
 
-    root.attrs.update({
-        "crs": CRS, "transform": [res, 0.0, x0, 0.0, -res, y0],
-        "extent_threshold_m": EXTENT_M, "source_nodata": None,
-        "n_storms": n, "grid_shape": [H, W],
-        "depth_scale": 0.01, "depth_units": "centimeters",
-        "magnitude_source": (
-            "real RainyDay storm totals: area weighted mean of the band summed "
-            "scenario rain geotiff over the hydrodynamic model footprint "
-            "(200 scenarios, 72 bands, 0.027 degree grid)"),
-        "depth_source": (
-            f"{site}.zip delivery, MaximumDepth.tif of each sample's "
-            "MaxVeloc-dept.zip (float32 metres, 2 m grid), stored as uint16 "
-            "centimetres"),
-        "scenario_names": {s: names[s] for s in order},
-        "real_maps_of_scenarios": [n - len(missing), n],
-        "placeholder_scenarios": sorted(missing),
-        "placeholder_source": ph if missing else "",
-        "placeholder_note": (
-            f"the {len(missing)} scenarios listed carry a COPY of {ph}'s map "
-            "as a stand in until their flood maps are delivered; their "
-            "magnitudes and discharges are real" if missing else ""),
-        "resampling_notes": notes,
-        "fluvial_index_names": cfg["gauges"],
-        "fluvial_index_source": (
-            f"HAITI_outputs_Q_{'GRISS' if site == 'Gris' else 'LAQUINTA'}.zip, per "
-            "scenario maximum of the CREST discharge series"),
-        "fluvial_mu": [float(v) for v in q.mean(axis=0)],
-        "fluvial_sigma": [float(v) for v in q.std(axis=0, ddof=1)],
-    })
+    root.attrs.update(
+        {
+            "crs": CRS,
+            "transform": [res, 0.0, x0, 0.0, -res, y0],
+            "extent_threshold_m": EXTENT_M,
+            "source_nodata": None,
+            "n_storms": n,
+            "grid_shape": [H, W],
+            "depth_scale": 0.01,
+            "depth_units": "centimeters",
+            "magnitude_source": (
+                "real RainyDay storm totals: area weighted mean of the band summed "
+                "scenario rain geotiff over the hydrodynamic model footprint "
+                "(200 scenarios, 72 bands, 0.027 degree grid)"
+            ),
+            "depth_source": (
+                f"{site}.zip delivery, MaximumDepth.tif of each sample's "
+                "MaxVeloc-dept.zip (float32 metres, 2 m grid), stored as uint16 "
+                "centimetres"
+            ),
+            "scenario_names": {s: names[s] for s in order},
+            "real_maps_of_scenarios": [n - len(missing), n],
+            "placeholder_scenarios": sorted(missing),
+            "placeholder_source": ph if missing else "",
+            "placeholder_note": (
+                f"the {len(missing)} scenarios listed carry a COPY of {ph}'s map "
+                "as a stand in until their flood maps are delivered; their "
+                "magnitudes and discharges are real"
+                if missing
+                else ""
+            ),
+            "resampling_notes": notes,
+            "fluvial_index_names": cfg["gauges"],
+            "fluvial_index_source": (
+                f"HAITI_outputs_Q_{'GRISS' if site == 'Gris' else 'LAQUINTA'}.zip, per "
+                "scenario maximum of the CREST discharge series"
+            ),
+            "fluvial_mu": [float(v) for v in q.mean(axis=0)],
+            "fluvial_sigma": [float(v) for v in q.std(axis=0, ddof=1)],
+        }
+    )
     with open(os.path.join(sd, "index.csv"), "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["storm_index", "storm_id", "scenario_name", "magnitude_mm"]
-                   + cfg["gauges"] + ["map_status", "wet_fraction"])
+        w.writerow(
+            ["storm_index", "storm_id", "scenario_name", "magnitude_mm"]
+            + cfg["gauges"]
+            + ["map_status", "wet_fraction"]
+        )
         for i, s in enumerate(order):
-            w.writerow([i, s, names[s], round(float(mm[i]), 2)]
-                       + [round(float(v), 2) for v in q[i]]
-                       + ["real" if s in st else f"placeholder_copy_of_{ph}",
-                          round(wet_frac[i], 6)])
+            w.writerow(
+                [i, s, names[s], round(float(mm[i]), 2)]
+                + [round(float(v), 2) for v in q[i]]
+                + ["real" if s in st else f"placeholder_copy_of_{ph}", round(wet_frac[i], 6)]
+            )
     with open(os.path.join(sd, "meta.json"), "w") as fh:
         json.dump(dict(root.attrs), fh, indent=2)
     size = zip_store(sd, sd + ".zip")
     shutil.rmtree(sd)
-    print(f"   zip {size/1e6:.1f} MB, magnitudes {mm.min():.2f}..{mm.max():.1f} mm, "
-          f"Q {q.min():.0f}..{q.max():.0f} m3/s, overbank ref {order[0]}", flush=True)
-    return {"site": site, "n": n, "real_maps": n - len(missing),
-            "zip_mb": round(size / 1e6, 2), "order": order,
-            "mag_min": float(mm.min()), "mag_max": float(mm.max()),
-            "placeholder": ph if missing else "", "notes": notes}
+    print(
+        f"   zip {size / 1e6:.1f} MB, magnitudes {mm.min():.2f}..{mm.max():.1f} mm, "
+        f"Q {q.min():.0f}..{q.max():.0f} m3/s, overbank ref {order[0]}",
+        flush=True,
+    )
+    return {
+        "site": site,
+        "n": n,
+        "real_maps": n - len(missing),
+        "zip_mb": round(size / 1e6, 2),
+        "order": order,
+        "mag_min": float(mm.min()),
+        "mag_max": float(mm.max()),
+        "placeholder": ph if missing else "",
+        "notes": notes,
+    }
 
 
 if __name__ == "__main__":

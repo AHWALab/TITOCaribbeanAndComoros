@@ -47,12 +47,13 @@ from shapely.geometry import MultiPolygon
 def clean_geometry(geom, geom_metric, min_part_m2):
     """Drop parts smaller than min_part_m2; return (geometry, dropped list)."""
     parts = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
-    pm = list(geom_metric.geoms) if geom_metric.geom_type == "MultiPolygon" \
-        else [geom_metric]
-    keep = [p for p, q in zip(parts, pm) if q.area >= min_part_m2]
-    dropped = [{"area_m2": round(q.area, 1),
-                "bbox": [round(v, 5) for v in p.bounds]}
-               for p, q in zip(parts, pm) if q.area < min_part_m2]
+    pm = list(geom_metric.geoms) if geom_metric.geom_type == "MultiPolygon" else [geom_metric]
+    keep = [p for p, q in zip(parts, pm, strict=False) if q.area >= min_part_m2]
+    dropped = [
+        {"area_m2": round(q.area, 1), "bbox": [round(v, 5) for v in p.bounds]}
+        for p, q in zip(parts, pm, strict=False)
+        if q.area < min_part_m2
+    ]
     if not keep:
         raise SystemExit("every polygon part was dropped; lower --min-part-m2")
     return (MultiPolygon(keep) if len(keep) > 1 else keep[0]), dropped
@@ -61,8 +62,14 @@ def clean_geometry(geom, geom_metric, min_part_m2):
 def cell_weights(geom, src, refine=32):
     """Fraction of every raster cell covered by geom (exact extract equivalent)."""
     fine_t = src.transform * Affine.scale(1.0 / refine, 1.0 / refine)
-    fine = rasterize([(geom, 1)], out_shape=(src.height * refine, src.width * refine),
-                     transform=fine_t, fill=0, dtype="uint8", all_touched=False)
+    fine = rasterize(
+        [(geom, 1)],
+        out_shape=(src.height * refine, src.width * refine),
+        transform=fine_t,
+        fill=0,
+        dtype="uint8",
+        all_touched=False,
+    )
     return fine.reshape(src.height, refine, src.width, refine).mean(axis=(1, 3))
 
 
@@ -77,8 +84,9 @@ def main():
     ap.add_argument("--shapefile", required=True)
     ap.add_argument("--id-field", default="ADM1_PCODE")
     ap.add_argument("--name-field", default="ADM1_EN")
-    ap.add_argument("--grid", action="append", required=True,
-                    help="CODE[,CODE...]=folder of scenario geotiffs")
+    ap.add_argument(
+        "--grid", action="append", required=True, help="CODE[,CODE...]=folder of scenario geotiffs"
+    )
     ap.add_argument("--metric-crs", default="EPSG:32620")
     ap.add_argument("--min-part-m2", type=float, default=10000.0)
     ap.add_argument("--refine", type=int, default=32)
@@ -102,8 +110,9 @@ def main():
             raise SystemExit(f"unit {code} not in {a.shapefile}")
         i = sel[0]
         name = str(adm.loc[i, a.name_field])
-        geom, dropped = clean_geometry(adm.loc[i, "geometry"],
-                                       adm_m.loc[i, "geometry"], a.min_part_m2)
+        geom, dropped = clean_geometry(
+            adm.loc[i, "geometry"], adm_m.loc[i, "geometry"], a.min_part_m2
+        )
         files = sorted(glob.glob(os.path.join(folder, "*.tif")))
         if not files:
             raise SystemExit(f"no geotiffs in {folder}")
@@ -111,8 +120,12 @@ def main():
         with rasterio.open(files[0]) as src0:
             w = cell_weights(geom, src0, a.refine)
             cell_area = abs(src0.transform.a * src0.transform.e)
-            ref = (src0.width, src0.height,
-                   tuple(np.round(np.asarray(src0.transform)[:6], 9)), str(src0.crs))
+            ref = (
+                src0.width,
+                src0.height,
+                tuple(np.round(np.asarray(src0.transform)[:6], 9)),
+                str(src0.crs),
+            )
         covered = float(w.sum())
         expected = geom.area / cell_area
         coverage = covered / expected if expected else float("nan")
@@ -125,8 +138,12 @@ def main():
             if not re.match(r"^sample_\d+$", sid):
                 raise SystemExit(f"unexpected file name {os.path.basename(f)}")
             with rasterio.open(f) as src:
-                sig = (src.width, src.height,
-                       tuple(np.round(np.asarray(src.transform)[:6], 9)), str(src.crs))
+                sig = (
+                    src.width,
+                    src.height,
+                    tuple(np.round(np.asarray(src.transform)[:6], 9)),
+                    str(src.crs),
+                )
                 if sig != ref:
                     raise SystemExit(f"{f}: grid differs from the first scenario")
                 tot = src.read(masked=True).sum(axis=0).filled(0.0).astype("float64")
@@ -134,28 +151,45 @@ def main():
             rows.append((code, name, sid, mags[sid], os.path.basename(f)))
         result[code] = mags
         vals = np.array(list(mags.values()))
-        diag[code] = {"name": name, "n_scenarios": len(mags),
-                      "grid_folder": folder,
-                      "cells_covered": round(covered, 3),
-                      "coverage_of_unit_area": round(coverage, 4),
-                      "dropped_parts": dropped,
-                      "magnitude_mm": {"min": round(float(vals.min()), 1),
-                                       "median": round(float(np.median(vals)), 1),
-                                       "max": round(float(vals.max()), 1),
-                                       "zero_scenarios": int((vals == 0).sum())}}
-        print(f"{code} {name:<14} n={len(mags):3d} cells={covered:6.2f} "
-              f"coverage={coverage*100:5.1f}%  mm min/med/max="
-              f"{vals.min():7.1f}/{np.median(vals):7.1f}/{vals.max():7.1f}"
-              + (f"  DROPPED {len(dropped)} part(s)" if dropped else ""))
+        diag[code] = {
+            "name": name,
+            "n_scenarios": len(mags),
+            "grid_folder": folder,
+            "cells_covered": round(covered, 3),
+            "coverage_of_unit_area": round(coverage, 4),
+            "dropped_parts": dropped,
+            "magnitude_mm": {
+                "min": round(float(vals.min()), 1),
+                "median": round(float(np.median(vals)), 1),
+                "max": round(float(vals.max()), 1),
+                "zero_scenarios": int((vals == 0).sum()),
+            },
+        }
+        print(
+            f"{code} {name:<14} n={len(mags):3d} cells={covered:6.2f} "
+            f"coverage={coverage * 100:5.1f}%  mm min/med/max="
+            f"{vals.min():7.1f}/{np.median(vals):7.1f}/{vals.max():7.1f}"
+            + (f"  DROPPED {len(dropped)} part(s)" if dropped else "")
+        )
 
     with open(a.out, "w") as fh:
-        json.dump({"magnitudes": result, "diagnostics": diag,
-                   "method": ("area weighted mean of the band summed storm total "
-                              "over the unit polygon, refined rasterization "
-                              f"factor {a.refine}")}, fh, indent=1)
+        json.dump(
+            {
+                "magnitudes": result,
+                "diagnostics": diag,
+                "method": (
+                    "area weighted mean of the band summed storm total "
+                    "over the unit polygon, refined rasterization "
+                    f"factor {a.refine}"
+                ),
+            },
+            fh,
+            indent=1,
+        )
     print("wrote", a.out)
     if a.csv:
         import csv as _csv
+
         with open(a.csv, "w", newline="") as fh:
             w_ = _csv.writer(fh)
             w_.writerow(["unit_code", "unit_name", "storm_id", "magnitude_mm", "file"])

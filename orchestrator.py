@@ -425,6 +425,7 @@ def _run_single_cycle(
                     cycle_ts,
                     rkey,
                     data_path=getattr(config, "dataPath", "outputs/"),
+                    budget_s=getattr(config, "postprocess_budget_s", None),
                 )
             except Exception as _pp_exc:
                 print(f"    postprocess skipped (non-fatal): {_pp_exc}")

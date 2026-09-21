@@ -7,7 +7,7 @@ console_verbosity = "user"
 # string: {"Guatemala": "900m"}   list: {"Guatemala": ["900m", "90m"]}
 # Layers/templates/states/outputs use {region}_{resolution} (e.g. guatemala_90m).
 # FIM runs on 90m only.
-region_resolution_map = {"Haiti": "90m"}
+region_resolution_map = {"Haiti": ["900m", "90m"]}
 regions_to_run = ["Haiti"]
 
 systemModel = "crest"
@@ -74,7 +74,7 @@ warmup_days = 90
 imerg_max_workers = 8
 clear_precip_after_cycle = True
 postprocess_outputs = True
-states_keep_hours = 100
+states_keep_hours = 24
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
 logs_keep_hours = 100

@@ -2,7 +2,7 @@
 # Hourly operational TITO via Apptainer (or Docker).
 #
 # Resolutions are now configured inside Caribbean_Comoros_config.py:
-#   region_resolution_map = {"Haiti": "90m"}
+#   region_resolution_map = {"Haiti": ["900m", "90m"]}
 # One orchestrator invocation runs them in order and shares a single precip
 # prep, so this script just launches TITO once. States/outputs stay split
 # (guatemala_900m vs guatemala_90m); FIM only runs on 90m.
@@ -55,7 +55,7 @@ run_hourly() {
         fi
     fi
 
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     local rc=0
     TITO_RUNTIME="$TITO_RUNTIME" "$TITO_RUN" operational --regions "$REGION" \
         && echo "OK: $REGION operational" \

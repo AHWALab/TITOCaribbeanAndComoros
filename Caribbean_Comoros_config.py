@@ -70,11 +70,17 @@ scampr_latency_minutes = 20
 
 # ── Warmup / retention ─────────────────────────────────────────────────────
 warmup_enabled = True
-warmup_days = 90
+warmup_days = 45
 imerg_max_workers = 8
 clear_precip_after_cycle = True
 postprocess_outputs = True
-states_keep_hours = 100
+# Wall-clock cap for the postprocess summaries, in seconds (0 disables).
+# Measured worst case is ~550 s (guatemala_90m: 190 member rasters, ~25 GB of
+# 1-row deflate strips), so 1200 s is ~2x headroom: it only trips on a stall.
+# On overrun the summaries already written are kept and the rest are skipped,
+# so a slow pass cannot run into the next hourly cycle.
+postprocess_budget_s = 1200
+states_keep_hours = 12
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
 logs_keep_hours = 100
@@ -84,7 +90,7 @@ warmup_precip_source_map = {
 
 # ── STREAM-Sat ─────────────────────────────────────────────────────────────
 stream_sat_ensemble_size = 10
-ef5_max_workers = 12
+ef5_max_workers = 2
 stream_sat_window_hours = 48
 stream_sat_keep_hours = 48
 stream_sat_warmup_hours = 12

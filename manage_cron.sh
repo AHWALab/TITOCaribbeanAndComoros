@@ -55,7 +55,7 @@ run_hourly() {
         fi
     fi
 
-    cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR" || return 1
     local rc=0
     TITO_RUNTIME="$TITO_RUNTIME" "$TITO_RUN" operational --regions "$REGION" \
         && echo "OK: $REGION operational" \

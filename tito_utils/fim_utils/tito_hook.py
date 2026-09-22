@@ -367,7 +367,7 @@ _CHAIN_TEMPLATES = {
         ],
     },
     "imerg_stormlab": {
-        "member": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
+        "member": "{cycle}/{rkey}/stormlab/ensOut{ens}",
         "rain_components": [
             {
                 "name": "imerg",
@@ -383,13 +383,13 @@ _CHAIN_TEMPLATES = {
             },
             {
                 "name": "stormlab",
-                "template": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}",
+                "template": "{cycle}/{rkey}/stormlab/ensOut{ens}",
                 "grid": "qpe_accum",
                 "required": True,
             },
         ],
         "trigger_sources": [
-            {"template": "{cycle}/{rkey}/stormlab/ensOut{ens}_sl{sl}"},
+            {"template": "{cycle}/{rkey}/stormlab/ensOut{ens}"},
             {"template": "{cycle}/{rkey}/imerg"},
         ],
     },
@@ -515,9 +515,68 @@ def _explain_no_runs(outputs_root: str, template: str, cycle: str, chain: str) -
         lines.append(f"  under outputs/{cycle}/: (missing or empty)")
     lines.append(
         "  tip: FIM needs the forecast folder for this chain "
-        "(imerg_gfs → …/gfs/; stream_sat_stormlab → …/stormlab/ensOut*_sl*/)"
+        "(imerg_gfs → …/gfs/; imerg_stormlab → …/stormlab/ensOut*; "
+        "stream_sat_stormlab → …/stormlab/ensOut*_sl*/)"
     )
     return "\n".join(lines)
+
+
+_FIM_MODES = (
+    "pluvial",
+    "fluvial",
+    "combined",
+    "pluvial_overbank",
+    "fluvial_overbank",
+)
+
+
+def _mosaic_tifs(paths: Sequence[str], out_path: str) -> None:
+    import rasterio
+    from rasterio.merge import merge
+
+    srcs = [rasterio.open(p) for p in paths]
+    try:
+        mosaic, transform = merge(srcs, method="max")
+        meta = srcs[0].meta.copy()
+        meta.update(
+            height=mosaic.shape[1],
+            width=mosaic.shape[2],
+            transform=transform,
+            compress="lzw",
+        )
+    finally:
+        for s in srcs:
+            s.close()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with rasterio.open(out_path, "w", **meta) as dst:
+        dst.write(mosaic)
+
+
+def _mosaic_fim_chain_products(chain_root: str) -> int:
+    """Merge per-site FIM GeoTIFFs into chain_root/<mode>/*.tif."""
+    from collections import defaultdict
+
+    groups = defaultdict(list)
+    if not os.path.isdir(chain_root):
+        return 0
+    for name in os.listdir(chain_root):
+        site_dir = os.path.join(chain_root, name)
+        if not os.path.isdir(site_dir) or name in _FIM_MODES:
+            continue
+        for mode in _FIM_MODES:
+            mdir = os.path.join(site_dir, mode)
+            if not os.path.isdir(mdir):
+                continue
+            for fn in os.listdir(mdir):
+                if fn.endswith(".tif"):
+                    groups[(mode, fn)].append(os.path.join(mdir, fn))
+    n = 0
+    for (mode, fn), paths in groups.items():
+        if not paths:
+            continue
+        _mosaic_tifs(paths, os.path.join(chain_root, mode, fn))
+        n += 1
+    return n
 
 
 def run_fim_for_cycle(
@@ -614,6 +673,7 @@ def run_fim_for_cycle(
     os.environ.setdefault("TITO_FIM_ROOT", root)
     data_root = getattr(config, "dataPath", "outputs/") if config else "outputs/"
     summaries: list[dict] = []
+    chain_roots: set[str] = set()
 
     for yml in yaml_paths:
         site = os.path.basename(yml)
@@ -655,7 +715,9 @@ def run_fim_for_cycle(
         chain = chains[0] if chains else "unknown"
         try:
             for chain in chains:
-                products_root = os.path.join(data_root.rstrip("/\\"), cycle, rkey, "fim", chain)
+                chain_root = os.path.join(data_root.rstrip("/\\"), cycle, rkey, "fim", chain)
+                products_root = os.path.join(chain_root, site_stem)
+                chain_roots.add(chain_root)
                 import yaml
 
                 with open(yml) as fh:
@@ -761,5 +823,12 @@ def run_fim_for_cycle(
                     "error": str(exc),
                 }
             )
+
+    for cr in sorted(chain_roots):
+        n = _mosaic_fim_chain_products(cr)
+        if n:
+            log(f"  FIM: mosaicked {n} island product(s) → {cr}")
+            if master_log:
+                master_log.info("FIM mosaic %s files → %s", n, cr)
 
     return summaries

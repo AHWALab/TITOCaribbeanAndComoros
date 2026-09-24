@@ -62,12 +62,12 @@ qpf_source = "AROME"
 # Operational QPE is HSAF. Pair with AROME (default) or GFS.
 # Do not combine IMERG with HSAF. Warmup precip is always IMERG.
 region_forcing_map = {
-    "Comoros": {"qpe_source": "HSAF", "qpf_source": "AROME"},
+    "Comoros": {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
 }
 
 # STREAM-Sat Phase B (ops): "SCAMPR" | "HSAF" | "NONE"
 # Hindcast always skips gap-fill regardless of this value.
-stream_sat_gap_fill_mode = "NONE"
+stream_sat_gap_fill_mode = "HSAF"
 # HSAF runs through T; no SCaMPR/IMERG gap-fill on the HSAF chain.
 qpe_gap_fill_mode = "IMERG_ONLY"
 scampr_latency_minutes = 20
@@ -78,17 +78,17 @@ warmup_days = 90
 imerg_max_workers = 8
 clear_precip_after_cycle = True
 postprocess_outputs = True
-states_keep_hours = 100
+states_keep_hours = 24
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
-logs_keep_hours = 100
+logs_keep_hours = 24
 warmup_precip_source_map = {
     "Comoros": "IMERG",
 }
 
 # ── STREAM-Sat ─────────────────────────────────────────────────────────────
 stream_sat_ensemble_size = 10
-ef5_max_workers = 1
+ef5_max_workers = None
 stream_sat_window_hours = 48
 stream_sat_keep_hours = 48
 stream_sat_warmup_hours = 12

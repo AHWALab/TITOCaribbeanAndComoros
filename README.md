@@ -16,11 +16,11 @@ This `main` branch is the repository index — it contains **no code**. Each reg
 |--------|--------|------|---------------------------|-----|-----|
 | Guatemala | [`TITO_Guatemala`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Guatemala) | 900 m + 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Santa Ines Petapa (Morales store ready, site pending) | on — 90 m FIM sites |
 | Antigua and Barbuda | [`TITO_Antigua`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Antigua) | 30 m | STREAM-Sat → SCaMPR → StormLab | 30 m — 7 ADM1 unit sites + country mosaic | on — 7 ADM1 units |
-| Barbados | [`TITO_Barbados`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Barbados) | 30 m | STREAM-Sat → SCaMPR → StormLab | 30 m — 11 parish sites + country mosaic | on — 11 parishes |
+| Barbados | [`TITO_Barbados`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Barbados) | 30 m | STREAM-Sat → SCaMPR → StormLab (50 members) | 30 m — 11 parish sites + country mosaic | on — 11 parishes |
 | Haiti | [`TITO_Haiti`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Haiti) | 900 m + 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Riviere Grise, La Quinte | on — 90 m FIM sites |
 | Comoros | [`TITO_Comoros`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Comoros) | 30 m | STREAM-Sat → **HSAF** → StormLab | 30 m — 55 ADM3 municipality sites + country mosaic | off — no receptor data yet |
 
-Every region runs **STREAM-Sat (10 members) → gap-fill → StormLab (5 members)** operationally, set per region in `region_forcing_map`. The gap-fill is **SCaMPR** everywhere except **Comoros (HSAF)**. IMERG, AROME, GFS and WRF are supported options, not the operational default. On the 90 m grids (Guatemala, Haiti) EF5 runs only the FIM basins, not the whole country.
+Every region runs **STREAM-Sat (10 members) → gap-fill → StormLab (5 members; 50 in Barbados)** operationally, set per region in `region_forcing_map`. The gap-fill is **SCaMPR** everywhere except **Comoros (HSAF)**. IMERG, AROME, GFS and WRF are supported options, not the operational default. On the 90 m grids (Guatemala, Haiti) EF5 runs only the FIM basins, not the whole country.
 
 Each branch README carries the full configuration reference, `EF5_conf/` documentation, output layout, operational procedures, and troubleshooting for that domain.
 
@@ -62,14 +62,25 @@ Windows CMD equivalents are included (`tito-run.cmd`, `load-docker-images.cmd`).
 - IBF (receptor impacts) runs right after each FIM site that has `fim_config/ibf/<Site>_ibf.yaml`, writing `ibf/<Site>/`.
 - Outputs are cycle-first: `outputs/<YYYYMMDD.HHMMSS>/<region>_<resolution>/`.
 
-### Retention and warmup (per region, `Caribbean_Comoros_config.py`)
-| Region | EF5 states | Cycle outputs | Logs | Warmup |
-|--------|-----------|---------------|------|--------|
-| Guatemala | 12 h | 24 h | 24 h | 45 d |
-| Antigua and Barbuda | 10 h | 24 h | 100 h | 45 d |
-| Barbados | 100 h | 24 h | 100 h | 90 d |
-| Haiti | 24 h | 24 h | 24 h | 90 d |
-| Comoros | 24 h | 24 h | 24 h | 90 d |
+### Retention, warmup and EF5 workers (per region, `Caribbean_Comoros_config.py`)
+| Region | EF5 states | Cycle outputs | Logs | Warmup | `ef5_max_workers` |
+|--------|-----------|---------------|------|--------|-------------------|
+| Guatemala | 48 h | 24 h | 24 h | 45 d | 2 |
+| Antigua and Barbuda | 48 h | 24 h | 100 h | 45 d | 4 |
+| Barbados | 48 h | 24 h | 100 h | 90 d | 12 |
+| Haiti | 48 h | 24 h | 24 h | 90 d | 9 |
+| Comoros | 48 h | 24 h | 24 h | 90 d | 4 |
+
+States are kept 48 h to match the Phase A lookback: each cycle warm-starts from the newest state in that window (normally the previous hour's), so 48 h is the longest outage that resumes without a cold start.
+
+### Deployment environment variables (all optional)
+| Variable | Effect |
+|----------|--------|
+| `EF5_MAX_WORKERS` | Concurrent EF5 jobs per phase; overrides `ef5_max_workers` (forwarded by `tito-run.sh`). Size it to the host's memory. |
+| `STREAM_SAT_OUTPUT_DIR` | STREAM-Sat half-hourly output folder (default: inside the code tree). Relative = from the project root. |
+| `STREAM_SAT_STATE_DIR` | STREAM-Sat noise-state folder, for cross-run continuity (default: inside the code tree). |
+
+A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 ### EF5 inputs (`EF5_conf/`)
 | Folder | Contents |

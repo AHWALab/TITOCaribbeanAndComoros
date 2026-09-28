@@ -32,7 +32,7 @@ This is the production deployment package for the Guatemala domain. It orchestra
 Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
 
 - 90 m EF5 runs only the FIM basins, not the whole country; FIM and IBF follow the same sites.
-- FIM stores ship in git (`fim_store/Guatemala/`, LFS; Morales as `.partNN`); run `python fim_store/unzip_stores.py Guatemala` once after cloning.
+- FIM stores ship in git (`fim_store/Guatemala/`, LFS; Morales as `.partNN`); `./container-build.sh` fetches (Git LFS) and unpacks them automatically — or run `python fim_store/unzip_stores.py Guatemala` yourself (`./container-build.sh --stores-only` does just this step).
 - Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
@@ -281,7 +281,7 @@ logs/
 
 FIM runs **after the forecast phase**, for **90 m** sites only, triggered per site YAML in `fim_config/`. Rain totals come from `qpeaccum` components (never `qpfaccum`), and failures are non-fatal. Full details: [README_FIM.md](README_FIM.md).
 
-One-time store setup:
+One-time store setup (`./container-build.sh` already does this in its Step 0):
 
 ```bash
 python fim_store/unzip_stores.py Guatemala     # joins split parts if needed, unzips .zarr

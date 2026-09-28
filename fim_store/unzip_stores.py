@@ -14,6 +14,9 @@ Usage, from the repository root or from fim_store/:
 
     python fim_store/unzip_stores.py
     python fim_store/unzip_stores.py Guatemala
+
+container-build.sh runs this automatically (after `git lfs pull` when the
+clone only holds LFS pointer files).
 """
 
 import os
@@ -33,6 +36,36 @@ def _walk_zips(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.endswith(skip_sfx)]
         yield dirpath, dirnames, filenames
+
+
+LFS_POINTER = b"version https://git-lfs"
+
+
+def _is_lfs_pointer(path):
+    """True when a clone without Git LFS left a small pointer file instead
+    of the real archive (unzipping it would fail with BadZipFile)."""
+    try:
+        if os.path.getsize(path) > 1024:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read(len(LFS_POINTER)) == LFS_POINTER
+    except OSError:
+        return False
+
+
+def _check_not_pointers(root):
+    pointers = [
+        os.path.relpath(os.path.join(d, fn), HERE)
+        for d, _dirs, files in _walk_zips(root)
+        for fn in files
+        if re.search(r"\.zarr\.zip(\.part\d+)?$", fn) and _is_lfs_pointer(os.path.join(d, fn))
+    ]
+    if pointers:
+        raise SystemExit(
+            f"{len(pointers)} store file(s) are Git LFS pointers, not archives "
+            f"(e.g. {pointers[0]}).\n"
+            "Fetch them first:  git lfs install && git lfs pull --include 'fim_store/**'"
+        )
 
 
 def _already_extracted(out_dir):
@@ -117,6 +150,7 @@ def main(argv=None):
         root = cand
         print(f"only: {country}", flush=True)
 
+    _check_not_pointers(root)
     join_parts(root)
     done = skipped = 0
     for dirpath, _dirnames, filenames in _walk_zips(root):

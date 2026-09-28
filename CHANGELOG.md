@@ -6,6 +6,11 @@ All notable changes to the TITO Comoros deployment package are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `container-build.sh` Step 0 fetches (`git lfs pull`, when the clone only holds LFS pointers) and unpacks the FIM stores, so no separate `unzip_stores.py` run is needed; `--stores-only` runs just that, `--no-stores` skips it. A store problem only warns: it never stops the image build.
+- `fim_store/unzip_stores.py` added (this branch had none, although the README pointed to it); it reports LFS pointer files clearly instead of failing with `BadZipFile`.
+
 ### Changed
 
 - EF5 concurrency: the `EF5_MAX_WORKERS` environment variable now overrides `ef5_max_workers` (it used to apply only when the config was `None`), `tito-run.sh` forwards it into Docker/Apptainer, and the config keeps an explicit value. The CPU fallback counts only the CPUs the container may use (affinity + cgroup quota), not the host's.

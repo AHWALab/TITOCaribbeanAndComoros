@@ -42,7 +42,8 @@ STATES_DIR="$SCRIPT_DIR/EF5_conf/states"
 is_keep_tif() {
     local b="$1"
     case "$b" in
-        *20251010_0000*|*20251010_000000*|*20251010.0000*|*20251010.000000*|*202510100000*) return 0 ;;
+        # *_0000* / *.0000* already cover the _000000 / .000000 spellings
+        *20251010_0000*|*20251010.0000*|*202510100000*) return 0 ;;
         *) return 1 ;;
     esac
 }

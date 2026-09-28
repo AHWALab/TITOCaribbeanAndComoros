@@ -25,12 +25,15 @@ This is the production deployment package for the Guatemala domain. It orchestra
 | Warmup | IMERG, `warmup_days = 45` |
 | FIM | 90 m only (900 m skipped): Santa Ines Petapa (pluvial + fluvial); Morales store ready, site pending the Motagua gauges in the 90 m basin list |
 | IBF | enabled — `ibf_data/Guatemala/` (INE 2018 census per municipio; Overture buildings and roads from the IBFv1.0 v10 package, cut to the FIM basins) |
+| EF5 workers | `ef5_max_workers = 2`; the `EF5_MAX_WORKERS` environment variable overrides it |
+| State retention | `states_keep_hours = 48` (the 48 h state lookback) |
 | Control template | `EF5_conf/templates/ef5_Guatemala_90m_control_template.txt`, `ef5_Guatemala_900m_control_template.txt` |
 
 Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
 
 - 90 m EF5 runs only the FIM basins, not the whole country; FIM and IBF follow the same sites.
 - FIM stores ship in git (`fim_store/Guatemala/`, LFS; Morales as `.partNN`); run `python fim_store/unzip_stores.py Guatemala` once after cloning.
+- Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
 
@@ -150,7 +153,7 @@ Operational guardrails built into the scheduler:
 
 - **Single-flight**: a `flock` lock (`outputs/logs/tito_cron.lock`) plus a process/container check skips a new cycle while a previous one is still running.
 - **Per-run log**: every cron invocation tees to `outputs/logs/tito_hourly_<UTC timestamp>.log`; the orchestrator writes `outputs/logs/pipeline_<cycle>.log` and per-EF5-job logs under `outputs/<cycle>/<region_res>/`.
-- **Retention**: `states_keep_hours = 100`, `outputs_keep_hours = 24` (enforced by `tito_utils/postprocess/archive_manager.py`).
+- **Retention**: `states_keep_hours = 48`, `outputs_keep_hours = 24` (enforced by `tito_utils/postprocess/archive_manager.py`).
 - **Precip cleanup**: `clear_precip_after_cycle = True` wipes `EF5_conf/precip`, `EF5_conf/precipEF5`, `EF5_conf/qpf_store` inputs after the cycle; states and outputs are kept.
 
 Console verbosity: `console_verbosity = "user"` in the config, `TITO_CONSOLE_VERBOSITY=debug`, or `--debug-console` on the orchestrator for full developer logs.
@@ -165,11 +168,11 @@ Everything lives in `Caribbean_Comoros_config.py` (imported as a Python module b
 | `regions_to_run` | `["Guatemala"]` | Regions for this deployment. |
 | `region_forcing_map` | `{"Guatemala": {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"}}` | Per-region QPE/QPF chain; QPF may be a list (Cartesian product). |
 | `stream_sat_ensemble_size` / `stormlab_ensemble_size` | `10` / `5` | Ensemble members (STREAM-Sat Phase A, StormLab Phase C). |
-| `ef5_max_workers` | `12` | Parallel EF5 jobs. Lower it on memory-constrained hosts (OOM = exit 137). |
+| `ef5_max_workers` | `2` | Parallel EF5 jobs per phase; the `EF5_MAX_WORKERS` environment variable overrides it. Lower it on memory-constrained hosts (OOM = exit 137). |
 | `stream_sat_gap_fill_mode` | `"SCAMPR"` | Phase B gap product for the STREAM-Sat chain (`SCAMPR` / `HSAF` / `NONE`). |
 | `warmup_enabled` / `warmup_days` | `True` / `45` | Cold-start warmup; precipitation source from `warmup_precip_source_map` (always IMERG). |
 | `run_LR` / `LR_timestep` / `dry_run_hours` | `True` / `"60u"` / `6` | Forecast phase, long-range timestep, dry tail after the forecast. |
-| `states_keep_hours` / `outputs_keep_hours` | `100` / `24` | Retention for states and cycle output folders. |
+| `states_keep_hours` / `outputs_keep_hours` | `48` / `24` | Retention for states and cycle output folders. |
 | `statesPath`, `precipEF5Folder`, `qpf_store_path`, `dataPath` | `EF5_conf/...`, `outputs/` | Storage roots (see next section). |
 | `modelStates` | `crest_SM`, `kwr_IR`, `kwr_pCQ`, `kwr_pOQ` | EF5 state variables chained between cycles. |
 | `SEND_ALERTS` / `alert_recipients` | `False` / placeholders | SMTP alerting (credentials via env, see [Security](#security)). |

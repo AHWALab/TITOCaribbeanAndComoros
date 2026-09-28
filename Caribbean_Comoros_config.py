@@ -80,7 +80,9 @@ postprocess_outputs = True
 # On overrun the summaries already written are kept and the rest are skipped,
 # so a slow pass cannot run into the next hourly cycle.
 postprocess_budget_s = 1200
-states_keep_hours = 12
+# Keep 48 h: Phase A warm-starts from the newest state within its 48 h
+# lookback, so this is the longest outage that resumes without a cold start.
+states_keep_hours = 48
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
 logs_keep_hours = 24
@@ -90,6 +92,10 @@ warmup_precip_source_map = {
 
 # ── STREAM-Sat ─────────────────────────────────────────────────────────────
 stream_sat_ensemble_size = 10
+# Concurrent EF5 jobs per phase. The EF5_MAX_WORKERS environment variable
+# overrides this (set it per host / AWS task size). Each EF5 job holds its
+# grids in memory, so keep an explicit value: None would fall back to all
+# usable CPUs, which can run out of memory.
 ef5_max_workers = 2
 stream_sat_window_hours = 48
 stream_sat_keep_hours = 48

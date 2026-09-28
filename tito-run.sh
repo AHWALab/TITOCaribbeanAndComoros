@@ -303,6 +303,10 @@ run_docker() {
         -e STORMLAB_USE_TITO_ENV=1
         --rm
     )
+    # Optional: EF5 concurrency override (wins over ef5_max_workers in the config)
+    if [[ -n "${EF5_MAX_WORKERS:-}" ]]; then
+        args+=(-e "EF5_MAX_WORKERS=$EF5_MAX_WORKERS")
+    fi
 
     # --network host is reliable only on native Linux.
     # Docker Desktop (Mac/Windows) uses a VM; default bridge still has outbound net.
@@ -357,6 +361,10 @@ run_apptainer() {
 
     # --cleanenv drops host env; pass the runtime env explicitly
     local env_csv="EF5_RUNTIME=local,EF5_LOCAL_BIN=/app/EF5/bin/ef5,TITO_FIM_ROOT=/app,PYTHONUNBUFFERED=1,TZ=Etc/UTC,STORMLAB_USE_TITO_ENV=1"
+    # Optional: EF5 concurrency override (wins over ef5_max_workers in the config)
+    if [[ -n "${EF5_MAX_WORKERS:-}" ]]; then
+        env_csv+=",EF5_MAX_WORKERS=$EF5_MAX_WORKERS"
+    fi
 
     echo "==== TITO launcher ===="
     echo "  Runtime : $cmd"

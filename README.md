@@ -19,12 +19,14 @@ This is the production deployment package for the Barbados domain (30m).
 |--|--|
 | Region | `Barbados` |
 | Resolution | `30m` |
-| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (5 members), `region_forcing_map` |
+| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (50 members), `region_forcing_map` |
 | Gap-fill | SCaMPR (`stream_sat_gap_fill_mode = "SCAMPR"`) |
 | Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
 | Warmup | IMERG, `warmup_days = 90` |
 | FIM | 30 m, 11 parish sites; per-site products + country mosaic — FIM must run |
 | IBF | enabled — `ibf_data/Barbados/` (COD-AB 2019 ADM1 + census population; Overture buildings and roads) |
+| EF5 workers | `ef5_max_workers = 12`; the `EF5_MAX_WORKERS` environment variable overrides it |
+| State retention | `states_keep_hours = 48` (the 48 h state lookback) |
 | Control template | `EF5_conf/templates/ef5_Barbados_30m_control_template.txt` |
 | Hindcast example | `2010-10-30 00:00` |
 
@@ -33,6 +35,7 @@ Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLa
 - FIM is required at 30 m (do not skip STEP 8); each site writes `fim/<chain>/<Site>/`, then the sites are merged (max) into `fim/<chain>/<mode>/`.
 - Hindcast: AROME has no archive, so historical runs cannot use an AROME chain.
 - FIM stores ship in git as `fim_store/Barbados/*.zarr.zip` (LFS); run `python fim_store/unzip_stores.py Barbados` once after cloning.
+- Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
 
@@ -104,7 +107,7 @@ flowchart LR
     E --> G[Summaries + retention]
 ```
 
-Retention: states 100 h, outputs 24 h, logs 100 h (`Caribbean_Comoros_config.py`).
+Retention: states 48 h, outputs 24 h, logs 100 h (`Caribbean_Comoros_config.py`).
 
 ---
 
@@ -186,7 +189,7 @@ Override credentials with env vars: `TITO_SMTP_*`, `TITO_HSAF_FTP_*`, `TITO_GPM_
 
 | Symptom | Fix |
 |---------|-----|
-| EF5 exit 137 | OOM — lower `ef5_max_workers` |
+| EF5 exit 137 | OOM — lower `ef5_max_workers` or set `EF5_MAX_WORKERS` |
 | EF5 exit 127 | Rebuild TITO image (`./container-build.sh --no-ef5`) |
 | Cron skipped | `./manage_cron.sh status` — lock still held |
 | Missing states | Check 48 h lookback and UTC clock |

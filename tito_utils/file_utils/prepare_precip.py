@@ -549,6 +549,11 @@ def prepare_all_precip(
                 )
                 # Also clean any leftover scratch dirs' parent output
                 nc_dirs = [ss_pkg]
+                from tito_utils.qpe_utils.stream_sat_utils import streamsat_env_dir
+
+                env_out = streamsat_env_dir("STREAM_SAT_OUTPUT_DIR")
+                if env_out is not None:
+                    nc_dirs.append(str(env_out / domain))
                 cleanup_streamsat_outputs(
                     ct_ss or datetime.utcnow(),
                     nc_output_dirs=nc_dirs,

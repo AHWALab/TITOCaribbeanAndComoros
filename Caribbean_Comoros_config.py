@@ -77,7 +77,9 @@ warmup_days = 90
 imerg_max_workers = 8
 clear_precip_after_cycle = True
 postprocess_outputs = True
-states_keep_hours = 100
+# Keep 48 h: Phase A warm-starts from the newest state within its 48 h
+# lookback, so this is the longest outage that resumes without a cold start.
+states_keep_hours = 48
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
 logs_keep_hours = 100
@@ -87,6 +89,10 @@ warmup_precip_source_map = {
 
 # ── STREAM-Sat ─────────────────────────────────────────────────────────────
 stream_sat_ensemble_size = 10
+# Concurrent EF5 jobs per phase. The EF5_MAX_WORKERS environment variable
+# overrides this (set it per host / AWS task size). Each EF5 job holds its
+# grids in memory, so keep an explicit value: None would fall back to all
+# usable CPUs, which can run out of memory.
 ef5_max_workers = 12
 stream_sat_window_hours = 48
 stream_sat_keep_hours = 48

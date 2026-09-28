@@ -63,6 +63,16 @@ def load_config(path: Path) -> dict:
     missing = [k for k in required if k not in cfg]
     if missing:
         raise ValueError(f"config missing keys: {missing}")
+    # Optional deployment overrides: keep the per-half-hour output and the
+    # cross-run noise state outside the code folder (e.g. persistent storage
+    # next to EF5_conf), so a reinstall does not silently reset continuity.
+    # Unset = the paths in this YAML, unchanged.
+    env_out = os.environ.get("STREAM_SAT_OUTPUT_DIR", "").strip()
+    if env_out:
+        cfg["output_dir"] = env_out
+    env_state = os.environ.get("STREAM_SAT_STATE_DIR", "").strip()
+    if env_state:
+        cfg["state_dir"] = env_state
     cfg["output_dir"] = Path(cfg["output_dir"]).expanduser().resolve()
     # streamsat_dir defaults to the repository root (where master files live)
     cfg["streamsat_dir"] = Path(

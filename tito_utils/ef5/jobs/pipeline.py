@@ -255,7 +255,6 @@ def run_ef5_job_pipeline(
             ss_state_root = getattr(
                 config, "stream_sat_state_folder", "EF5_conf/states/stream_sat/"
             )
-            ss_out_root = getattr(config, "stream_sat_output_folder", "outputs/stream_sat/")
 
             # Build all phases; Phase B/C control files are finalized after A
             # so gap-state seeding can make ss_end states visible to EF5.
@@ -264,7 +263,6 @@ def run_ef5_job_pipeline(
                 hindcast_mode=hindcast_mode,
                 stream_sat_gap_mode=stream_sat_gap_mode,
                 stream_sat_state_root=ss_state_root,
-                stream_sat_output_root=ss_out_root,
                 master_log=master_log,
                 phases=("A",),
                 **build_kwargs,
@@ -304,7 +302,6 @@ def run_ef5_job_pipeline(
                 hindcast_mode=hindcast_mode,
                 stream_sat_gap_mode=stream_sat_gap_mode,
                 stream_sat_state_root=ss_state_root,
-                stream_sat_output_root=ss_out_root,
                 master_log=master_log,
                 phases=("B",),
                 **build_kwargs,
@@ -331,7 +328,6 @@ def run_ef5_job_pipeline(
                 hindcast_mode=hindcast_mode,
                 stream_sat_gap_mode=stream_sat_gap_mode,
                 stream_sat_state_root=ss_state_root,
-                stream_sat_output_root=ss_out_root,
                 master_log=master_log,
                 phases=("C",),
                 **build_kwargs,

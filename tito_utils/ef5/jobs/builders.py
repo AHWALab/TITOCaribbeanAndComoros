@@ -557,7 +557,6 @@ def build_streamsat_ensemble_jobs(
     hindcast_mode: bool,
     stream_sat_gap_mode: str,
     stream_sat_state_root: str,
-    stream_sat_output_root: str,
     master_log: Any | None = None,
     phases: tuple | None = None,
 ) -> None:

@@ -12,13 +12,15 @@ This `main` branch is the repository index — it contains **no code**. Each reg
 
 ## Regional branches
 
-| Region | Branch | Grid | QPE → gap-fill → forecast | FIM |
-|--------|--------|------|---------------------------|-----|
-| Guatemala | [`TITO_Guatemala`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Guatemala) | 900 m + 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Santa Ines Petapa, Morales |
-| Antigua and Barbuda | [`TITO_Antigua`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Antigua) | 30 m | IMERG → SCaMPR → AROME | 30 m — 7 ADM1 unit stores |
-| Barbados | [`TITO_Barbados`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Barbados) | 30 m | IMERG → SCaMPR → StormLab (50 members) | 30 m — 11 parish stores |
-| Haiti | [`TITO_Haiti`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Haiti) | 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Riviere Grise, La Quinte |
-| Comoros | [`TITO_Comoros`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Comoros) | 30 m | HSAF → AROME (warmup always IMERG) | 30 m — 55 ADM3 municipalities |
+| Region | Branch | Grid | QPE → gap-fill → forecast | FIM | IBF |
+|--------|--------|------|---------------------------|-----|-----|
+| Guatemala | [`TITO_Guatemala`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Guatemala) | 900 m + 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Santa Ines Petapa (Morales store ready, site pending) | on — 90 m FIM sites |
+| Antigua and Barbuda | [`TITO_Antigua`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Antigua) | 30 m | STREAM-Sat → SCaMPR → StormLab | 30 m — 7 ADM1 unit sites + country mosaic | on — 7 ADM1 units |
+| Barbados | [`TITO_Barbados`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Barbados) | 30 m | STREAM-Sat → SCaMPR → StormLab | 30 m — 11 parish sites + country mosaic | on — 11 parishes |
+| Haiti | [`TITO_Haiti`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Haiti) | 900 m + 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Riviere Grise, La Quinte | on — 90 m FIM sites |
+| Comoros | [`TITO_Comoros`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Comoros) | 30 m | STREAM-Sat → **HSAF** → StormLab | 30 m — 55 ADM3 municipality sites + country mosaic | off — no receptor data yet |
+
+Every region runs **STREAM-Sat (10 members) → gap-fill → StormLab (5 members)** operationally, set per region in `region_forcing_map`. The gap-fill is **SCaMPR** everywhere except **Comoros (HSAF)**. IMERG, AROME, GFS and WRF are supported options, not the operational default. On the 90 m grids (Guatemala, Haiti) EF5 runs only the FIM basins, not the whole country.
 
 Each branch README carries the full configuration reference, `EF5_conf/` documentation, output layout, operational procedures, and troubleshooting for that domain.
 
@@ -54,13 +56,20 @@ Windows CMD equivalents are included (`tito-run.cmd`, `load-docker-images.cmd`).
 - One orchestrator invocation per cycle. Resolutions listed in `region_resolution_map` run in order and share a single precipitation preparation.
 - Phase A QPE ensemble → Phase B gap-fill → Phase C forecast-as-QPE → FIM → ensemble summaries → retention.
 - Warmup precipitation is always **IMERG**, for every region (never HSAF).
-- HSAF regions (Comoros) never combine IMERG with HSAF; HSAF gap-fill is for rendering only.
+- Comoros uses **HSAF** as the Phase B gap-fill between STREAM-Sat and StormLab (every other region uses SCaMPR); IMERG is never combined with HSAF.
 - EF5 states are chained per product with a **48 h lookback**; warmup ends at **T−40 h**; forecast runs never save states.
-- FIM runs only after the forecast phase.
+- FIM runs only after the forecast phase. Each FIM site writes `fim/<chain>/<Site>/`; island regions also merge the sites into a country mosaic `fim/<chain>/<mode>/`.
+- IBF (receptor impacts) runs right after each FIM site that has `fim_config/ibf/<Site>_ibf.yaml`, writing `ibf/<Site>/`.
 - Outputs are cycle-first: `outputs/<YYYYMMDD.HHMMSS>/<region>_<resolution>/`.
 
-### Retention defaults
-- EF5 states: 100 h · cycle outputs: 24 h · logs: 100 h.
+### Retention and warmup (per region, `Caribbean_Comoros_config.py`)
+| Region | EF5 states | Cycle outputs | Logs | Warmup |
+|--------|-----------|---------------|------|--------|
+| Guatemala | 12 h | 24 h | 24 h | 45 d |
+| Antigua and Barbuda | 10 h | 24 h | 100 h | 45 d |
+| Barbados | 100 h | 24 h | 100 h | 90 d |
+| Haiti | 24 h | 24 h | 24 h | 90 d |
+| Comoros | 24 h | 24 h | 24 h | 90 d |
 
 ### EF5 inputs (`EF5_conf/`)
 | Folder | Contents |
@@ -86,7 +95,8 @@ Dependabot keeps GitHub Actions, Docker, and Python dependencies current. Workfl
 ## Data and artifacts
 
 - `outputs/`, EF5 states, and extracted FIM stores are never committed.
-- FIM stores ship as `<name>.zarr.zip` (or split `.partNN` archives) and are unzipped locally with `python fim_store/unzip_stores.py`.
+- FIM stores ship through Git LFS as `fim_store/<Region>/<name>.zarr.zip` (or split `.partNN` archives); after cloning run `git lfs pull` and `python fim_store/unzip_stores.py <Region>` once.
+- IBF receptor preloads ship through Git LFS in `ibf_data/<Country>/` (each branch carries only its own country). The IBF team's multi-GB country packages are not in the repository; `fim_dev/build_ibf_preload_v10.py` cuts them down to the FIM basins.
 - Container images are built locally (`container-build.sh`) or converted for HPC (`docker-to-apptainer.sh`).
 - Credentials are never stored in the repository; SMTP, HSAF FTP, and GPM accounts are provided through environment variables (`TITO_SMTP_*`, `TITO_HSAF_FTP_*`, `TITO_GPM_EMAIL`).
 

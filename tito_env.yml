@@ -19,6 +19,9 @@ dependencies:
   - rioxarray
   - pyproj
   - shapely
+  # ibf_utils receptor layer (vector IO)
+  - geopandas
+  - pyogrio
   - proj
   # pysteps: noise FFT only in STREAM-Sat (no OpenCV features)
   - pysteps

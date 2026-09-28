@@ -23,6 +23,9 @@ services:
       #     survive container restarts) ──────────────────────────────────
       - ./EF5_conf:/app/EF5_conf:rw
       - ./outputs:/app/outputs:rw
+      - ./fim_config:/app/fim_config:ro
+      - ./fim_store:/app/fim_store:ro
+      - ./ibf_data:/app/ibf_data:ro
       - ./EF5:/app/EF5:ro
       # Mount config so edits apply without rebuilding the image
       - ./Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro

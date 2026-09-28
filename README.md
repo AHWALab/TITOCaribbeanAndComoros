@@ -13,8 +13,32 @@ This is the production deployment package for the Guatemala domain. It orchestra
 
 ---
 
+## Domain defaults
+
+| | |
+|--|--|
+| Region | `Guatemala` |
+| Resolution | `900m` + `90m` (`region_resolution_map`), one precipitation preparation |
+| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (5 members), `region_forcing_map` |
+| Gap-fill | SCaMPR (`stream_sat_gap_fill_mode = "SCAMPR"`) |
+| Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
+| Warmup | IMERG, `warmup_days = 45` |
+| FIM | 90 m only (900 m skipped): Santa Ines Petapa (pluvial + fluvial); Morales store ready, site pending the Motagua gauges in the 90 m basin list |
+| IBF | enabled — `ibf_data/Guatemala/` (INE 2018 census per municipio; Overture buildings and roads from the IBFv1.0 v10 package, cut to the FIM basins) |
+| Control template | `EF5_conf/templates/ef5_Guatemala_90m_control_template.txt`, `ef5_Guatemala_900m_control_template.txt` |
+
+Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
+
+- 90 m EF5 runs only the FIM basins, not the whole country; FIM and IBF follow the same sites.
+- FIM stores ship in git (`fim_store/Guatemala/`, LFS; Morales as `.partNN`); run `python fim_store/unzip_stores.py Guatemala` once after cloning.
+
+Warmup precipitation is **always IMERG** (never HSAF), for every region.
+
+---
+
 ## Contents
 
+- [Domain defaults](#domain-defaults)
 - [What a cycle produces](#what-a-cycle-produces)
 - [Pipeline](#pipeline)
 - [Runtime options](#runtime-options)
@@ -24,7 +48,7 @@ This is the production deployment package for the Guatemala domain. It orchestra
 - [EF5 configuration (`EF5_conf/`)](#ef5-configuration-ef5_conf)
 - [Output layout](#output-layout)
 - [Flood inundation mapping (FIM)](#flood-inundation-mapping-fim)
-- [IBF receptor products (optional)](#ibf-receptor-products-optional)
+- [IBF receptor products](#ibf-receptor-products)
 - [Maintenance and recovery](#maintenance-and-recovery)
 - [CI/CD and releases](#cicd-and-releases)
 - [Troubleshooting](#troubleshooting)
@@ -143,7 +167,7 @@ Everything lives in `Caribbean_Comoros_config.py` (imported as a Python module b
 | `stream_sat_ensemble_size` / `stormlab_ensemble_size` | `10` / `5` | Ensemble members (STREAM-Sat Phase A, StormLab Phase C). |
 | `ef5_max_workers` | `12` | Parallel EF5 jobs. Lower it on memory-constrained hosts (OOM = exit 137). |
 | `stream_sat_gap_fill_mode` | `"SCAMPR"` | Phase B gap product for the STREAM-Sat chain (`SCAMPR` / `HSAF` / `NONE`). |
-| `warmup_enabled` / `warmup_days` | `True` / `90` | Cold-start warmup; precipitation source from `warmup_precip_source_map` (always IMERG). |
+| `warmup_enabled` / `warmup_days` | `True` / `45` | Cold-start warmup; precipitation source from `warmup_precip_source_map` (always IMERG). |
 | `run_LR` / `LR_timestep` / `dry_run_hours` | `True` / `"60u"` / `6` | Forecast phase, long-range timestep, dry tail after the forecast. |
 | `states_keep_hours` / `outputs_keep_hours` | `100` / `24` | Retention for states and cycle output folders. |
 | `statesPath`, `precipEF5Folder`, `qpf_store_path`, `dataPath` | `EF5_conf/...`, `outputs/` | Storage roots (see next section). |
@@ -240,7 +264,8 @@ outputs/20260912.210000/
     scampr/                         # Phase B gap grids
     stormlab/ensOutN_slM/           # Phase C StormLab ensembles
     summary/                        # qpeaccum|maxunitq|maxsm _nowcast|forecast _min|median|max
-    fim/<chain>/                    # e.g. fim/stream_sat_stormlab/
+    fim/<chain>/<Site>/<mode>/      # per-site FIM, e.g. fim/stream_sat_stormlab/Guatemala_SantaInesPetapa/combined_overbank/
+    ibf/<Site>/                     # IBF receptor products (90 m sites with an IBF YAML)
   guatemala_90m/                    # same, plus FIM (90 m only)
 logs/
   tito_hourly_<UTC>.log             # cron run log
@@ -264,13 +289,13 @@ Current sites:
 | YAML | Site | Hazards |
 |------|------|---------|
 | `fim_config/Guatemala_SantaInesPetapa.yaml` | Santa Ines Petapa (cuenca Villalobos) | pluvial + fluvial + combined |
-| `fim_config/Guatemala_Morales.yaml` | Morales (Rio Motagua) | prepared, `enabled: false` until its store ships |
+| `fim_config/Guatemala_Morales.yaml` | Morales (Rio Motagua) | store ready (`fim_store/Guatemala/`); `enabled: false` until the 90 m basin list simulates the Motagua gauges |
 
 Add a site by dropping `<Region>_<Site>.yaml` in `fim_config/` (see `fim_config/README.md` and `fim_config/examples/`); matching `<Region>*.yaml` files are picked up automatically.
 
-## IBF receptor products (optional)
+## IBF receptor products
 
-When `fim_config/ibf/<Site>_ibf.yaml` exists, the FIM hook also runs the IBF pipeline (`tito_utils/ibf_utils/`) and writes receptor-level products (buildings/roads/admin GPKG + summary CSV). Without that YAML the step logs `no fim_config/ibf/... , skip` and continues. Guatemala currently has no IBF YAML, so only FIM products are produced.
+When `fim_config/ibf/<Site>_ibf.yaml` exists and `ibf_regions["Guatemala"]` is enabled, the FIM hook runs the IBF pipeline (`tito_utils/ibf_utils/`) on the site's fresh `combined_overbank` probability grids and writes receptor-level products to `outputs/<cycle>/guatemala_90m/ibf/<Site>/` (buildings / roads / admin GPKG, admin summary CSV, summary JSON). Receptors come from `ibf_data/Guatemala/`, the IBFv1.0 v10 package cut to the municipios touching the FIM sites by `fim_dev/build_ibf_preload_v10.py` (the multi GB team package itself is not in the repo). IBF YAMLs exist for Santa Ines Petapa and Morales; Morales runs once its FIM site is enabled.
 
 ## Maintenance and recovery
 

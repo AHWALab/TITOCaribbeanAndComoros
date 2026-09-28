@@ -92,3 +92,13 @@ tito_utils/qpe_utils/STREAM-Sat-realtime/extension/realtime/output/
 
 # Local scratch / training dumps
 trainings/
+
+# Hourly SGE cron-replacement job (submit locally; not committed)
+tito_*_hourly_job.sh
+
+# IBF team country packages (multi GB): kept outside the repo, see
+# fim_dev/build_ibf_preload_v10.py; only the cut ibf_data/<Country>/ ships
+ibf_data/*.zip
+
+# Morales ships as .partNN files; the joined zip is made by fim_store/unzip_stores.py
+fim_store/Guatemala/fim_store_Morales_v1.zarr.zip

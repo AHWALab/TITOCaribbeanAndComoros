@@ -83,7 +83,7 @@ postprocess_budget_s = 1200
 states_keep_hours = 12
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
-logs_keep_hours = 100
+logs_keep_hours = 24
 warmup_precip_source_map = {
     "Guatemala": "IMERG",
 }
@@ -149,8 +149,14 @@ fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
 fim_regions = {
     "Guatemala": {"enabled": True, "thresholds_m": fim_default_thresholds_m},
 }
+# Each site writes outputs/<cycle>/guatemala_90m/fim/<chain>/<Site>/. No
+# merged country mosaic: the 90m basin sites are far apart on 5 m grids.
+fim_mosaic_sites = False
 
 # ── IBF ────────────────────────────────────────────────────────────────────
+# Receptors: ibf_data/Guatemala/ (IBFv1.0 v10 package cut to the municipios
+# of the 90m FIM sites, see fim_dev/build_ibf_preload_v10.py); one IBF YAML
+# per FIM site in fim_config/ibf/.
 ibf_enabled = True
 ibf_regions = {
     "Guatemala": {

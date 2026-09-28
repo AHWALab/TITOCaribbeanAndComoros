@@ -1,14 +1,12 @@
-# fim_store: scenario flood map stores, one folder per country
+# fim_store: scenario flood map stores for Guatemala
 
-Layout: fim_store/<Region>/ where <Region> is the exact region key from
-regions_to_run in Caribbean_Comoros_config.py.
+Layout: fim_store/Guatemala/ (the region key from regions_to_run in
+Caribbean_Comoros_config.py). This deployment carries Guatemala only.
 
-    Guatemala/   Santa Ines Petapa store READY (real indexes on both axes);
-                 Morales prepared, waiting for its flood map library
-    Antigua/     Antigua and Barbuda, waiting for analog maps
-    Barbados/    waiting for analog maps
-    Comoros/     waiting for analog maps
-    Haiti/       waiting for analog maps
+    Guatemala/   Santa Ines Petapa store READY and ACTIVE (90m FIM);
+                 Morales store READY (see Guatemala/README_Guatemala.md),
+                 FIM site not active: the 90m EF5 basin does not yet
+                 simulate the Motagua (fim_config/Guatemala_Morales.yaml)
 
 Each store is a zarr library of pre-simulated flood maps (max depth and
 extent per scenario) carrying the matching indexes: rainfall magnitude per
@@ -26,9 +24,9 @@ It extracts every zip that is not yet unzipped and skips the rest, so it is
 always safe to run. The unzipped .zarr folders and all model outputs stay
 out of git.
 
-Adding a country or site: the README_ADD_STORE.md inside each country
-folder is the five step drop-in checklist (upload zip, unzip, AOC polygon,
-site YAML from the template, switch the region on in the main config).
+Adding a site: upload the store zip to fim_store/Guatemala/, unzip, add the
+AOC polygon and the site YAML, and make sure the 90m EF5 basin list writes
+the site's boundary gauge series (outputts=true).
 
 Building and indexing stores: fim_dev/build_store_guatemala.py builds a
 store from a flood map library; fim_dev/attach_real_magnitudes_santaines.py

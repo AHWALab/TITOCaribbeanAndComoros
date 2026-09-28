@@ -1,0 +1,63 @@
+{
+  "country": "Guatemala",
+  "built_by": "fim_dev/build_ibf_preload_v10.py",
+  "package": "IBFv10_Guatemala.zip",
+  "sources": {
+    "admin": {
+      "member": "input_data/Guatemala_municipios_Pop_Vuln.shp",
+      "id_field": "CODIGO",
+      "name_field": "MUNICIPIO",
+      "population_field": "Poblaci\u00f3n",
+      "pop_source": "INE Guatemala census 2018 by municipio (Guatemala_municipios_Pop_Vuln, IBFv1.0 package)"
+    },
+    "overture": {
+      "member": "input_data/guatemala_overture/guatemala_overture_bld_rds.gpkg"
+    },
+    "land_use": {
+      "member": "input_data/Guatemala_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif"
+    }
+  },
+  "sites": {
+    "Guatemala_SantaInesPetapa": {
+      "admin_units": 7
+    },
+    "Guatemala_Morales": {
+      "admin_units": 1
+    }
+  },
+  "site_buffer_m": 1000.0,
+  "bbox_4326": [
+    -90.67355400999998,
+    14.242288920000021,
+    -88.48936643999997,
+    15.620988500000067
+  ],
+  "counts": {
+    "admin_units": 8,
+    "population_total": 1923989.0,
+    "buildings": 656434,
+    "buildings_with_subtype": 37158,
+    "road_segments": 82557,
+    "road_class_top": {
+      "residential": 47740,
+      "service": 13211,
+      "tertiary": 5455,
+      "secondary": 3080,
+      "footway": 2668,
+      "unclassified": 2596,
+      "primary": 2365,
+      "trunk": 1426
+    },
+    "ghs_value_histogram": {
+      "0": 283683006,
+      "1": 15071294,
+      "2": 138172,
+      "255": 124478312
+    }
+  },
+  "files": {
+    "Guatemala_admin_population.gpkg": 417792,
+    "guatemala_overture_bld_rds.gpkg": 196427776,
+    "Guatemala_GHS_BUILT_C_FUN_E2018_R2023A_54009_10.tif": 9632638
+  }
+}

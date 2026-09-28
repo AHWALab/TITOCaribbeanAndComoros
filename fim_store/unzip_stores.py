@@ -13,7 +13,7 @@ moves into place, which is much faster than unzipping onto /Dedicated.
 Usage, from the repository root or from fim_store/:
 
     python fim_store/unzip_stores.py
-    python fim_store/unzip_stores.py Haiti
+    python fim_store/unzip_stores.py Guatemala
 """
 
 import os

@@ -1,0 +1,37 @@
+[
+  {
+    "country": "Guatemala",
+    "slug": "guatemala",
+    "zip": "ibf_data/IBFv10_Guatemala.zip",
+    "work_crs": "EPSG:32615",
+    "sites": [
+      {
+        "name": "Guatemala_SantaInesPetapa",
+        "store": "fim_store/Guatemala/fim_store_SantaInesPetapa_v1.zarr",
+        "aoc": "fim_config/aoc/Guatemala_SantaInesPetapa_aoc.geojson"
+      },
+      {
+        "name": "Guatemala_Morales",
+        "store": "fim_store/Guatemala/fim_store_Morales_v1.zarr"
+      }
+    ],
+    "admin": {
+      "member": "input_data/Guatemala_municipios_Pop_Vuln.shp",
+      "id_field": "CODIGO",
+      "name_field": "MUNICIPIO",
+      "population_field": "Poblaci\u00f3n",
+      "pop_source": "INE Guatemala census 2018 by municipio (Guatemala_municipios_Pop_Vuln, IBFv1.0 package)",
+      "keep_fields": [
+        "CODIGO",
+        "MUNICIPIO",
+        "DEPTO"
+      ]
+    },
+    "overture": {
+      "member": "input_data/guatemala_overture/guatemala_overture_bld_rds.gpkg",
+      "buildings_layer": "guatemala_overture_buildings",
+      "segments_layer": "guatemala_overture_segments"
+    },
+    "ghs_member": "input_data/Guatemala_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif"
+  }
+]

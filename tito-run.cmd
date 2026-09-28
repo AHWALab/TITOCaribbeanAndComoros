@@ -185,6 +185,7 @@ docker run --rm ^
   -v "%ROOT%\outputs:/app/outputs" ^
   -v "%ROOT%\fim_config:/app/fim_config:ro" ^
   -v "%ROOT%\fim_store:/app/fim_store:ro" ^
+  -v "%ROOT%\ibf_data:/app/ibf_data:ro" ^
   -v "%ROOT%\Caribbean_Comoros_config.py:/app/Caribbean_Comoros_config.py:ro" ^
   -v "%ROOT%\orchestrator.py:/app/orchestrator.py:ro" ^
   -v "%ROOT%\hindcast_manager.py:/app/hindcast_manager.py:ro" ^

@@ -1,0 +1,59 @@
+# IBF receptor product: Guatemala, Santa Ines Petapa (paired with the FIM site
+# Guatemala_SantaInesPetapa.yaml; same stem plus _ibf). 90m FIM basin site.
+#
+# Static data: ibf_data/Guatemala/, cut from the IBF team's IBFv1.0 v10
+# package (IBFv10_Guatemala.zip) to the admin units touching the 90m FIM
+# sites by fim_dev/build_ibf_preload_v10.py (see manifest_ibf_Guatemala.json).
+# Admin units are kept whole so the dasymetric population share and the IWF
+# baselines cover each unit's full building stock, not only the FIM window.
+#
+# In orchestrated runs tito_hook overrides fim_products with the cycle
+# first path (outputs/<cycle>/guatemala_90m/fim/<chain>/Guatemala_SantaInesPetapa/<mode>) and the
+# ibf_regions block in Caribbean_Comoros_config.py OVERRIDES
+# severity_thresholds_m, hazard_flag_cutoff and reporting_threshold.
+region: Guatemala_SantaInesPetapa
+
+receptors:
+  buildings:
+    source: ibf_data/Guatemala/guatemala_overture_bld_rds.gpkg
+    layer: buildings
+    id_field: id
+    subtype_field: subtype
+  roads:
+    source: ibf_data/Guatemala/guatemala_overture_bld_rds.gpkg
+    layer: roads
+    id_field: id
+    class_field: class
+    # IBFv1.0 v10 road classes
+    keep_classes: [motorway, trunk, primary, secondary, tertiary, residential]
+  admin:
+    source: ibf_data/Guatemala/Guatemala_admin_population.gpkg
+    layer: admin
+    id_field: ADM_ID
+    name_field: ADM_NAME
+    population_field: population   # INE 2018 census per municipio
+  land_use:
+    source: ibf_data/Guatemala/Guatemala_GHS_BUILT_C_FUN_E2018_R2023A_54009_10.tif
+  work_crs: "EPSG:32615"
+  domain_buffer_m: 250
+  cache_dir: outputs/ibf_cache
+
+fim_products:
+  # P+F site: the combined (pluvial max fluvial) grids, overbank flavour
+  # (baseline channel water removed), as in the IBFv1.0 v10 runs
+  root: outputs/{cycle}/guatemala_90m/fim/stream_sat_stormlab/Guatemala_SantaInesPetapa/{mode}
+  mode: combined_overbank
+  prefer_overbank: true
+
+classification:
+  reporting_threshold: 0.05
+  severity_thresholds_m:
+    minor: 0.10
+    significant: 0.30
+    severe: 0.70
+  hazard_flag_cutoff: 0.50    # user default; IBFv1.0 v10 used 0.40
+
+outputs:
+  # Orchestrated runs override to outputs/<cycle>/guatemala_90m/ibf/Guatemala_SantaInesPetapa/
+  root: outputs/ibf/{region}
+  append_cycle: true

@@ -2,7 +2,7 @@
 
 **TITO (Threading Inputs to Outputs)** runs the **EF5** hydrologic model with satellite QPE, ensemble nowcasting/QPF and flood inundation mapping for **Haiti**.
 
-This is the production deployment package for the Haiti domain (90m).
+This is the production deployment package for the Haiti domain (900 m + 90 m; FIM and IBF at 90 m).
 
 [![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](CHANGELOG.md)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
@@ -18,17 +18,20 @@ This is the production deployment package for the Haiti domain (90m).
 | | |
 |--|--|
 | Region | `Haiti` |
-| Resolution | `90m` |
-| QPE / QPF | STREAM_SAT / STORMLAB |
-| Cycle chain | STREAM-Sat + SCaMPR gap + StormLab |
-| FIM | 90 m, Riviere Grise and La Quinte (pluvial + fluvial) |
-| IBF | off until receptor data is available |
+| Resolution | `900m` + `90m` (`region_resolution_map`), one precipitation preparation |
+| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (5 members), `region_forcing_map` |
+| Gap-fill | SCaMPR (`stream_sat_gap_fill_mode = "SCAMPR"`) |
+| Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
+| Warmup | IMERG, `warmup_days = 90` |
+| FIM | 90 m only (900 m skipped): Riviere Grise and La Quinte, pluvial + fluvial; per-site products, no mosaic (`fim_mosaic_sites = False`) |
+| IBF | enabled — `ibf_data/Haiti/` (GADM adm4 + WorldPop 2025; Overture buildings, roads, places from the IBFv1.0 v10 package, cut to the FIM basins) |
 | Control template | `EF5_conf/templates/ef5_Haiti_90m_control_template.txt` |
 | Hindcast example | `2023-06-02 18:00` |
 
-- Default operational chain matches Guatemala: STREAM-Sat ensemble, SCaMPR gap to T, StormLab forecast as QPE.
-- FIM runs at 90 m only (skip 900 m).
-- `ef5_max_workers = 9`.
+Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
+
+- 90 m EF5 runs only the FIM basins, not the whole country; FIM and IBF follow the same sites.
+- FIM stores ship in git as `fim_store/Haiti/*.zarr.zip.partNN` (LFS); run `python fim_store/unzip_stores.py Haiti` once after cloning (joins the parts).
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
 
@@ -145,7 +148,8 @@ EF5 runtime: Docker sibling `ef5-container:latest` or Apptainer local `EF5/bin/e
 outputs/<YYYYMMDD.HHMMSS>/haiti_90m/
   <product>/          # imerg, stream_sat, scampr, stormlab, hsaf, arome, gfs
   summary/
-  fim/<chain>/
+  fim/<chain>/<Site>/<mode>/   # per-site FIM products (+ <mode>/ mosaic on islands)
+  ibf/<Site>/                  # IBF receptor products, when the site has an IBF YAML
 logs/
   tito_hourly_<UTC>.log
   pipeline_<cycle>.log
@@ -185,7 +189,7 @@ Override credentials with env vars: `TITO_SMTP_*`, `TITO_HSAF_FTP_*`, `TITO_GPM_
 | EF5 exit 127 | Rebuild TITO image (`./container-build.sh --no-ef5`) |
 | Cron skipped | `./manage_cron.sh status` — lock still held |
 | Missing states | Check 48 h lookback and UTC clock |
-| FIM skipped | Wrong resolution (FIM is 90m only for this domain) |
+| FIM skipped | Wrong resolution (FIM is 90m only; the 900 m pass always skips) |
 
 ## Cite
 

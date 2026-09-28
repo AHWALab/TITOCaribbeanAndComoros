@@ -39,7 +39,28 @@ warm; small units in seconds.
   pop_source), and the GHS BUILT-C FUN 10 m crop for the dasymetric
   weights. `manifest_ibf_<Country>.json` records sources and counts;
   `fim_dev/build_island_ibf_static.py` rebuilds everything from scratch
-  (Overture download, census CSV merge, GHS tile crop).
+  (Overture download, census CSV merge, GHS tile crop). Since 2026-09 the
+  Overture layers come from the IBF team's v10 package and include
+  `places`; the admin layer stays COD-AB 2019 + census.
+- Guatemala and Haiti (90m FIM basin sites): `ibf_data/<Country>/`, cut
+  from the IBF team's country package (`ibf_data/IBF*_v10_*.zip`) by
+  `fim_dev/build_ibf_preload_v10.py` (jobs in
+  `fim_dev/ibf_preload_jobs_v10.json`). 90m FIM runs only a few basins, so
+  the national files (2.2 GB Haiti, 6.3 GB Guatemala) are reduced to the
+  admin units touching the FIM sites (store grid and/or AOC plus 1 km),
+  kept WHOLE for the dasymetric share: ~200 MB each. Admin fields are
+  normalized to `ADM_ID` / `ADM_NAME` / `population` (Guatemala: INE 2018
+  census per municipio; Haiti: WorldPop 2025 per GADM adm4). A new FIM
+  site needs a `sites` entry in the jobs file and a rebuild; Guatemala
+  Morales is already included.
+
+`ibf_data/` is bind-mounted by `tito-run.sh` / `tito-run.cmd` (never baked
+into the image; the zips are in `.dockerignore`).
+
+Optional `receptors.places` (Overture points of interest, v10 package):
+sampled and classified like buildings, written as `places_ibf`, counted
+per admin unit (`places_count`, `res_*_places_count`,
+`hzrd_*_places_count`); places do not enter the IWF flags, as in v10.
 
 In orchestrated runs `tito_hook` chains IBF right after each FIM site and
 applies the `ibf_regions` overrides from `Caribbean_Comoros_config.py`

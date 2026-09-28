@@ -274,3 +274,93 @@ def test_receptor_cache_reused(synthetic_region):
         rmod._read_clip = original
     assert s["status"] == "ok"
     assert calls["n"] == 0  # cache hit, no re-read
+
+
+def test_places_optional_layer(synthetic_region, tmp_path):
+    """IBFv1.0 v10 places: sampled and classified like the other receptors,
+    counted per admin unit (baseline + per hazard class)."""
+    gpd = pytest.importorskip("geopandas")
+    from shapely.geometry import Point
+
+    from tito_utils.ibf_utils.pipeline_ibf import run_ibf_cycle
+
+    crs = synthetic_region["receptors"]["work_crs"]
+    p = gpd.GeoDataFrame(
+        {"id": ["clinic", "shop"], "name": ["Clinic", "Shop"], "category": ["health", "retail"]},
+        geometry=[Point(500050, 1600050), Point(500005, 1600005)],  # core, dry
+        crs=crs,
+    )
+    src = tmp_path / "places.gpkg"
+    p.to_file(src, layer="places", driver="GPKG")
+    synthetic_region["receptors"]["places"] = {
+        "source": str(src),
+        "layer": "places",
+        "id_field": "id",
+        "name_field": "name",
+        "category_field": "category",
+    }
+
+    s = run_ibf_cycle(synthetic_region, products_dir=synthetic_region["_root"], verbose=False)
+    assert s["status"] == "ok"
+    assert sum(s["places_by_risk"].values()) == 2
+
+    out = os.path.join(
+        synthetic_region["outputs"]["root"], "20230621.070000", "ibf_receptors.20230621.070000.gpkg"
+    )
+    pl = gpd.read_file(out, layer="places_ibf").set_index("feature_id")
+    assert pl.loc["clinic", "risk_level"] == "MEDIUM"
+    assert pl.loc["clinic", "place_category"] == "health"
+    assert pl.loc["shop", "risk_level"] == "VERY LOW"
+    a = gpd.read_file(out, layer="admin_ibf").iloc[0]
+    assert a["places_count"] == 2
+    assert a["hzrd_3_places_count"] == 1  # clinic: p76 = 0.3 >= cutoff
+
+
+def test_vectorized_sampler_matches_reference_loop(tmp_path):
+    """_reduce_many must pick exactly the cells of the per-geometry
+    rasterize loop, including GDAL's boundary rules for lines lying on cell
+    edges and for edge-aligned and sub-cell polygons.
+
+    Known, accepted difference: a line passing EXACTLY through a cell corner,
+    or a segment ending EXACTLY on a cell edge, is walked by GDAL's own
+    line algorithm with special cases not reproduced here. Real receptor
+    coordinates (reprojected floats) never land on grid lines; 2,000 real
+    Haiti roads on the 2 m grid agreed 100 %."""
+    rasterio = pytest.importorskip("rasterio")
+    from rasterio.transform import from_origin
+    from shapely.geometry import LineString, MultiLineString, Point, box
+
+    from tito_utils.ibf_utils.sampling import _InMemoryRaster, _reduce_many
+
+    rng = np.random.default_rng(0)
+    data = rng.integers(0, 4, (20, 20)).astype("float32")
+    data[3, 3] = np.nan
+    path = tmp_path / "grid.tif"
+    with rasterio.open(
+        path, "w", driver="GTiff", height=20, width=20, count=1, dtype="float32",
+        crs="EPSG:32615", transform=from_origin(0, 100, 5, 5), nodata=np.nan,
+    ) as dst:  # fmt: skip
+        dst.write(data, 1)
+    ras = _InMemoryRaster(str(path))
+    geoms = [
+        LineString([(0, 50), (100, 50)]),  # on a horizontal cell edge
+        LineString([(50, 0), (50, 100)]),  # on a vertical cell edge
+        LineString([(0.3, 0.7), (99.1, 98.2)]),
+        LineString([(3, 97), (61, 12), (88, 40)]),
+        MultiLineString([[(10.2, 10.1), (30.4, 11.3)], [(60.3, 60.6), (61.2, 90.4)]]),
+        box(20, 20, 40, 40),  # edge aligned
+        box(21, 21, 22, 22),  # sub-cell, no centre: retry
+        box(-10, -10, 7, 7),  # partly outside
+        box(200, 200, 210, 210),  # fully outside
+        box(12, 12, 18.9, 18.9),
+        Point(12.5, 87.5),
+        Point(15, 85),  # on a cell corner
+    ]
+    for op in ("max", "mode"):
+        for touched in (True, False):
+            t = np.full(len(geoms), touched)
+            ref = np.array([ras.reduce(g, op, touched) for g in geoms])
+            got = _reduce_many(ras, np.array(geoms, dtype=object), op, t)
+            np.testing.assert_array_equal(np.isnan(ref), np.isnan(got), err_msg=f"{op} {touched}")
+            ok = ~np.isnan(ref)
+            np.testing.assert_allclose(got[ok], ref[ok], err_msg=f"{op} touched={touched}")

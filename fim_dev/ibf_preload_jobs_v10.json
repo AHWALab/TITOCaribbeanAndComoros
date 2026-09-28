@@ -1,0 +1,42 @@
+[
+  {
+    "country": "Haiti",
+    "slug": "haiti",
+    "zip": "ibf_data/IBF_v10_HAITI.zip",
+    "work_crs": "EPSG:32618",
+    "sites": [
+      {
+        "name": "Haiti_Gris",
+        "store": "fim_store/Haiti/fim_store_Haiti_Gris_v1.zarr",
+        "aoc": "fim_config/aoc/Haiti_Gris_aoc.geojson"
+      },
+      {
+        "name": "Haiti_LaQuinte",
+        "store": "fim_store/Haiti/fim_store_Haiti_LaQuinte_v1.zarr",
+        "aoc": "fim_config/aoc/Haiti_LaQuinte_aoc.geojson"
+      }
+    ],
+    "admin": {
+      "member": "input_data/gadm/HTI_gadm_adm4_pop.shp",
+      "id_field": "GID_4",
+      "name_field": "NAME_4",
+      "population_field": "wrldpp_sum",
+      "pop_source": "WorldPop 2025 constrained 100 m (hti_pop_2025_CN_100m_R2025A_v1), zonal sum over GADM 4.1 adm4, IBFv1.0 package",
+      "keep_fields": [
+        "GID_4",
+        "NAME_1",
+        "NAME_2",
+        "NAME_3",
+        "NAME_4",
+        "TYPE_4"
+      ]
+    },
+    "overture": {
+      "member": "input_data/Haiti_overture_20260406/Haiti_overture.gpkg",
+      "buildings_layer": "haiti_overture_buildings",
+      "segments_layer": "haiti_overture_segments",
+      "places_layer": "haiti_overture_places"
+    },
+    "ghs_member": "input_data/Haiti_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif"
+  }
+]

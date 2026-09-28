@@ -77,14 +77,14 @@ postprocess_outputs = True
 states_keep_hours = 24
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
-logs_keep_hours = 100
+logs_keep_hours = 24
 warmup_precip_source_map = {
     "Haiti": "IMERG",
 }
 
 # ── STREAM-Sat ─────────────────────────────────────────────────────────────
 stream_sat_ensemble_size = 10
-ef5_max_workers = 9
+ef5_max_workers = None
 stream_sat_window_hours = 48
 stream_sat_keep_hours = 48
 stream_sat_warmup_hours = 12
@@ -143,11 +143,22 @@ fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
 fim_regions = {
     "Haiti": {"enabled": True, "thresholds_m": fim_default_thresholds_m},
 }
+# Each site writes outputs/<cycle>/haiti_90m/fim/<chain>/<Site>/. No merged
+# country mosaic: Gris and La Quinte are ~100 km apart on 2 m grids.
+fim_mosaic_sites = False
 
 # ── IBF ────────────────────────────────────────────────────────────────────
 ibf_enabled = True
+# Receptors: ibf_data/Haiti/ (IBFv1.0 v10 package cut to the admin units of
+# the 90m FIM sites, see fim_dev/build_ibf_preload_v10.py); one IBF YAML
+# per FIM site in fim_config/ibf/.
 ibf_regions = {
-    "Haiti": {"enabled": False},  # FIM is on; IBF waits for receptor data
+    "Haiti": {
+        "enabled": True,
+        "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.70},
+        "hazard_flag_cutoff": 0.50,
+        "reporting_threshold": 0.05,
+    },
 }
 
 # ── NWP archives ───────────────────────────────────────────────────────────

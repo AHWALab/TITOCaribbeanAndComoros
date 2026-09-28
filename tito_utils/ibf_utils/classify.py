@@ -167,7 +167,7 @@ def iwf_flags(summary, iwf_cfg, n_hazard_classes: int):
     return out
 
 
-def summarize_admin(admin, bldgs, roads, cfg, sev_layers):
+def summarize_admin(admin, bldgs, roads, cfg, sev_layers, places=None):
     """Admin exposure summary + IWF flags + matrix overall risk.
 
     Baselines (total_pop, bldg_count, bldg_area_m2, rd_len_m, res_*)
@@ -177,6 +177,9 @@ def summarize_admin(admin, bldgs, roads, cfg, sev_layers):
     is also the only place probability data exists. IWF percentages
     therefore divide window exposure by full-unit totals, matching the
     semantics of the IBFv1.0 municipality-wide run.
+
+    Places (optional, IBFv1.0 v10) add hzrd_{c}_places_count and take part
+    in the unit's matrix risk; they do not enter the IWF flags, as in v10.
     """
     cl = cfg["classification"]
     adm_spec = cfg["receptors"]["admin"]
@@ -203,9 +206,21 @@ def summarize_admin(admin, bldgs, roads, cfg, sev_layers):
     hz_r = _wide(
         roads, aid, "hazard_flag", hz_classes, {"rd_len_m": ("road_length_m", "sum")}, "hzrd"
     )
+    extras = [hz_b, hz_r]
+    if places is not None:
+        extras.append(
+            _wide(
+                places,
+                aid,
+                "hazard_flag",
+                hz_classes,
+                {"places_count": ("feature_id", "count")},
+                "hzrd",
+            )
+        )
 
     summary = admin.drop(columns="geometry").copy()
-    for extra in (hz_b, hz_r):
+    for extra in extras:
         summary = summary.merge(extra, on=aid, how="left")
     num = summary.select_dtypes("number").columns
     summary[num] = summary[num].fillna(0).round(2)
@@ -213,7 +228,10 @@ def summarize_admin(admin, bldgs, roads, cfg, sev_layers):
     summary = iwf_flags(summary, cl["iwf"], n_classes)
 
     # matrix overall risk per unit: worst feature cell in the window
-    feat = pd.concat([bldgs[[aid, "risk_class"]], roads[[aid, "risk_class"]]])
+    parts = [bldgs[[aid, "risk_class"]], roads[[aid, "risk_class"]]]
+    if places is not None and len(places):
+        parts.append(places[[aid, "risk_class"]])
+    feat = pd.concat(parts)
     worst = feat.groupby(aid)["risk_class"].max().rename("risk_class")
     summary = summary.merge(worst, on=aid, how="left")
     summary["risk_class"] = summary["risk_class"].fillna(0).astype(int)

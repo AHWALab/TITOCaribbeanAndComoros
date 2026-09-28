@@ -255,7 +255,7 @@ detect_runtime() {
 
 # EF5_conf holds basic/parameters/pet/templates/states/precip/precipEF5/qpf_store
 DATA_MOUNTS=(
-    EF5_conf outputs fim_config fim_store offline_precips offline
+    EF5_conf outputs fim_config fim_store ibf_data offline_precips offline
 )
 
 # ── Docker ─────────────────────────────────────────────────────────────────

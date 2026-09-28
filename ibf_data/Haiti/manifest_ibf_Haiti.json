@@ -1,0 +1,64 @@
+{
+  "country": "Haiti",
+  "built_by": "fim_dev/build_ibf_preload_v10.py",
+  "package": "IBF_v10_HAITI.zip",
+  "sources": {
+    "admin": {
+      "member": "input_data/gadm/HTI_gadm_adm4_pop.shp",
+      "id_field": "GID_4",
+      "name_field": "NAME_4",
+      "population_field": "wrldpp_sum",
+      "pop_source": "WorldPop 2025 constrained 100 m (hti_pop_2025_CN_100m_R2025A_v1), zonal sum over GADM 4.1 adm4, IBFv1.0 package"
+    },
+    "overture": {
+      "member": "input_data/Haiti_overture_20260406/Haiti_overture.gpkg"
+    },
+    "land_use": {
+      "member": "input_data/Haiti_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif"
+    }
+  },
+  "sites": {
+    "Haiti_Gris": {
+      "admin_units": 10
+    },
+    "Haiti_LaQuinte": {
+      "admin_units": 4
+    }
+  },
+  "site_buffer_m": 1000.0,
+  "bbox_4326": [
+    -72.80506896899993,
+    18.45577812200014,
+    -72.14101409899985,
+    19.627531052000165
+  ],
+  "counts": {
+    "admin_units": 14,
+    "population_total": 2869356.0400000005,
+    "buildings": 703638,
+    "buildings_with_subtype": 2323,
+    "road_segments": 41747,
+    "road_class_top": {
+      "residential": 21207,
+      "service": 4834,
+      "unclassified": 4740,
+      "track": 3037,
+      "path": 2427,
+      "tertiary": 1834,
+      "footway": 1355,
+      "secondary": 1091
+    },
+    "places": 3448,
+    "ghs_value_histogram": {
+      "0": 89088173,
+      "1": 6430702,
+      "2": 49320,
+      "255": 41405565
+    }
+  },
+  "files": {
+    "Haiti_admin_population.gpkg": 188416,
+    "haiti_overture_bld_rds.gpkg": 197689344,
+    "Haiti_GHS_BUILT_C_FUN_E2018_R2023A_54009_10.tif": 4645634
+  }
+}

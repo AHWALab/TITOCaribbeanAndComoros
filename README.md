@@ -34,7 +34,7 @@ Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLa
 
 - FIM is required at 30 m (do not skip STEP 8); each site writes `fim/<chain>/<Site>/`, then the sites are merged (max) into `fim/<chain>/<mode>/`.
 - Hindcast: AROME has no archive, so historical runs cannot use an AROME chain.
-- FIM stores ship in git as `fim_store/Barbados/*.zarr.zip` (LFS); run `python fim_store/unzip_stores.py Barbados` once after cloning.
+- FIM stores ship in git as `fim_store/Barbados/*.zarr.zip` (LFS); `./container-build.sh` fetches (Git LFS) and unpacks them automatically — or run `python fim_store/unzip_stores.py Barbados` yourself (`./container-build.sh --stores-only` does just this step).
 - Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
@@ -159,7 +159,7 @@ logs/
   pipeline_<cycle>.log
 ```
 
-FIM one-time: `python fim_store/unzip_stores.py Barbados`
+FIM stores: unpacked by `./container-build.sh` (Step 0; `--stores-only` to run just that, `--no-stores` to skip), or manually with `python fim_store/unzip_stores.py Barbados`.
 
 ---
 

@@ -53,7 +53,12 @@ jobs:
           cache: pip
 
       - name: Install test dependencies
-        run: python -m pip install --disable-pip-version-check "pytest>=8,<9" numpy pandas pyyaml rasterio pyproj
+        # numpy/pandas/rasterio/pyproj/pyyaml: FIM + IBF modules; shapely:
+        # ibf_utils.sampling; geopandas/pyogrio: IBF end-to-end tests
+        run: >-
+          python -m pip install --disable-pip-version-check
+          "pytest>=8,<9" numpy pandas rasterio pyyaml pyproj shapely
+          geopandas pyogrio
 
       - name: Run unit tests
         run: python -m pytest -q

@@ -13,6 +13,13 @@
 #   ./container-build.sh --sif                # also convert images → .sif
 #   ./container-build.sh --no-ef5             # skip EF5 docker rebuild
 #   ./container-build.sh --no-cache
+#   ./container-build.sh --no-stores          # skip FIM store unpacking
+#   ./container-build.sh --stores-only        # only fetch + unpack FIM stores
+#
+# Step 0 unpacks the FIM scenario stores (fim_store/<Region>/*.zarr.zip) on
+# the host, where they are bind-mounted at run time; stores already
+# unpacked are skipped. A clone made without Git LFS is fixed first with
+# `git lfs pull` for fim_store/ and ibf_data/.
 # ============================================================================
 set -euo pipefail
 # Fail the script if docker build fails even when piped through tee
@@ -26,6 +33,8 @@ BUILD_DOCKER=true
 BUILD_SIF=false
 PARTNER_BUNDLE=false
 NO_CACHE=""
+PREP_STORES=true
+STORES_ONLY=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -34,8 +43,11 @@ for arg in "$@"; do
         --sif-only) BUILD_DOCKER=false; BUILD_EF5=false; BUILD_SIF=true ;;
         --partner) PARTNER_BUNDLE=true; BUILD_SIF=true; BUILD_DOCKER=true; BUILD_EF5=true ;;
         --no-cache) NO_CACHE="--no-cache" ;;
+        --no-stores) PREP_STORES=false ;;
+        --stores-only) STORES_ONLY=true; PREP_STORES=true; BUILD_DOCKER=false; BUILD_EF5=false; BUILD_SIF=false ;;
         -h|--help)
-            sed -n '2,22p' "$0"
+            # the header comment block (everything before `set -euo pipefail`)
+            awk '/^set -euo pipefail/ { exit } NR > 1 { print }' "$0"
             exit 0
             ;;
     esac
@@ -50,6 +62,7 @@ echo "  Build Docker   : $BUILD_DOCKER"
 echo "  Build SIF      : $BUILD_SIF"
 echo "  Partner bundle : $PARTNER_BUNDLE"
 echo "  No cache       : ${NO_CACHE:-false}"
+echo "  FIM stores     : $PREP_STORES"
 echo "=============================================="
 
 have_docker() { command -v docker >/dev/null 2>&1; }
@@ -63,6 +76,72 @@ apptainer_cmd() {
         echo ""
     fi
 }
+
+# ── Step 0: FIM scenario stores (host side, bind-mounted at run time) ─────
+# Never fails the image build: a store problem only disables FIM, so it is
+# reported loudly and the build goes on.
+lfs_pointer_files() {
+    # small files that start with the Git LFS pointer header
+    find "$SCRIPT_DIR/fim_store" "$SCRIPT_DIR/ibf_data" -type f -size -2k \
+        \( -name '*.zarr.zip' -o -name '*.zarr.zip.part*' -o -name '*.gpkg' -o -name '*.tif' \) \
+        -not -path '*.zarr/*' -print 2>/dev/null |
+        while IFS= read -r f; do
+            if head -c 23 "$f" 2>/dev/null | grep -q '^version https://git-lfs'; then
+                echo "$f"
+            fi
+        done
+}
+
+prepare_fim_stores() {
+    echo ""
+    echo ">>> STEP 0: FIM scenario stores ..."
+    if [[ ! -f "$SCRIPT_DIR/fim_store/unzip_stores.py" ]]; then
+        echo "    no fim_store/unzip_stores.py — skipped."
+        return 0
+    fi
+    local n_ptr
+    n_ptr="$(lfs_pointer_files | wc -l | tr -d ' ')"
+    if [[ "$n_ptr" != "0" ]]; then
+        echo "    $n_ptr file(s) are Git LFS pointers (clone made without LFS) — fetching ..."
+        if command -v git >/dev/null 2>&1 && git -C "$SCRIPT_DIR" lfs version >/dev/null 2>&1 \
+            && git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+            if ! git -C "$SCRIPT_DIR" lfs pull --include "fim_store/**,ibf_data/**"; then
+                echo "    WARNING: git lfs pull failed — FIM/IBF data incomplete."
+            fi
+        else
+            echo "    WARNING: git-lfs not available (or not a git clone)."
+            echo "             Install git-lfs, then: git lfs pull --include 'fim_store/**,ibf_data/**'"
+        fi
+    fi
+    local py=""
+    for c in python3 python; do
+        if command -v "$c" >/dev/null 2>&1; then py="$c"; break; fi
+    done
+    if [[ -z "$py" ]]; then
+        echo "    WARNING: no python3 on this host — unpack later with:"
+        echo "             python3 fim_store/unzip_stores.py"
+        return 0
+    fi
+    if "$py" "$SCRIPT_DIR/fim_store/unzip_stores.py"; then
+        echo ">>> FIM stores ready."
+    else
+        echo "    WARNING: FIM stores not unpacked — FIM will skip until fixed"
+        echo "             (rerun: $py fim_store/unzip_stores.py)."
+    fi
+}
+
+if $PREP_STORES; then
+    prepare_fim_stores
+else
+    echo ""
+    echo ">>> STEP 0: Skipping FIM stores (--no-stores)."
+fi
+
+if $STORES_ONLY; then
+    echo ""
+    echo ">>> --stores-only: done (no image builds)."
+    exit 0
+fi
 
 # ── Step 1: EF5 Docker ─────────────────────────────────────────────────────
 if $BUILD_EF5; then

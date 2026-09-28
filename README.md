@@ -33,7 +33,7 @@ This is the production deployment package for the Haiti domain (900 m + 90 m; FI
 Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
 
 - 90 m EF5 runs only the FIM basins, not the whole country; FIM and IBF follow the same sites.
-- FIM stores ship in git as `fim_store/Haiti/*.zarr.zip.partNN` (LFS); run `python fim_store/unzip_stores.py Haiti` once after cloning (joins the parts).
+- FIM stores ship in git as `fim_store/Haiti/*.zarr.zip.partNN` (LFS); `./container-build.sh` fetches (Git LFS) and unpacks them automatically — or run `python fim_store/unzip_stores.py Haiti` yourself (`./container-build.sh --stores-only` does just this step).
 - Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
@@ -158,7 +158,7 @@ logs/
   pipeline_<cycle>.log
 ```
 
-FIM one-time: `python fim_store/unzip_stores.py Haiti`
+FIM stores: unpacked by `./container-build.sh` (Step 0; `--stores-only` to run just that, `--no-stores` to skip), or manually with `python fim_store/unzip_stores.py Haiti`.
 
 ---
 

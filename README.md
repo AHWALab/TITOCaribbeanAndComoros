@@ -19,17 +19,19 @@ This is the production deployment package for the Comoros domain (30m).
 |--|--|
 | Region | `Comoros` |
 | Resolution | `30m` |
-| QPE / QPF | HSAF / AROME (GFS also valid) |
-| Cycle chain | HSAF + AROME |
-| FIM | 30 m, 55 ADM3 municipality stores (pluvial) |
-| IBF | off until receptor data is available |
+| Operational chain | STREAM-Sat (10 members) → HSAF gap-fill → StormLab (5 members), `region_forcing_map` |
+| Gap-fill | **HSAF** (`stream_sat_gap_fill_mode = "HSAF"`) — the only region not gap-filled with SCaMPR |
+| Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
+| Warmup | IMERG, `warmup_days = 90` (never HSAF) |
+| FIM | 30 m, 55 ADM3 municipality sites (pluvial); per-site products + country mosaic |
+| IBF | off (`ibf_regions["Comoros"] = False`) until receptor data is delivered |
 | Control template | `EF5_conf/templates/ef5_Comoros_30m_control_template.txt` |
 | Hindcast example | `2024-04-27 00:00` |
 
-- Operational QPE is **HSAF**, paired with AROME (default) or GFS. Do **not** combine IMERG with HSAF.
-- Warmup precipitation is **always IMERG**, even though operational QPE is HSAF.
-- HSAF does not support a 48-hour lookback the way IMERG does; TITO still searches 48 h for states.
-- HSAF gap-fill is not used as a substitute for IMERG. `ef5_max_workers = 1` (sequential).
+Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
+
+- Do not combine IMERG with HSAF; HSAF is the gap-fill between STREAM-Sat and the StormLab forecast.
+- FIM stores ship in git as `fim_store/Comoros/*.zarr.zip` (LFS); run `python fim_store/unzip_stores.py Comoros` once after cloning.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
 
@@ -146,7 +148,8 @@ EF5 runtime: Docker sibling `ef5-container:latest` or Apptainer local `EF5/bin/e
 outputs/<YYYYMMDD.HHMMSS>/comoros_30m/
   <product>/          # imerg, stream_sat, scampr, stormlab, hsaf, arome, gfs
   summary/
-  fim/<chain>/
+  fim/<chain>/<Site>/<mode>/   # per-site FIM products (+ <mode>/ mosaic on islands)
+  ibf/<Site>/                  # IBF receptor products, when the site has an IBF YAML
 logs/
   tito_hourly_<UTC>.log
   pipeline_<cycle>.log

@@ -95,3 +95,7 @@ trainings/
 
 # Hourly SGE cron-replacement job (submit locally; not committed)
 tito_*_hourly_job.sh
+
+# IBF team country packages (multi GB): kept outside the repo, see
+# fim_dev/build_ibf_preload_v10.py; only the cut ibf_data/<Country>/ ships
+ibf_data/*.zip

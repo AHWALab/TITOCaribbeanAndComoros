@@ -25,6 +25,8 @@ This is the production deployment package for the Haiti domain (900 m + 90 m; FI
 | Warmup | IMERG, `warmup_days = 90` |
 | FIM | 90 m only (900 m skipped): Riviere Grise and La Quinte, pluvial + fluvial; per-site products, no mosaic (`fim_mosaic_sites = False`) |
 | IBF | enabled — `ibf_data/Haiti/` (GADM adm4 + WorldPop 2025; Overture buildings, roads, places from the IBFv1.0 v10 package, cut to the FIM basins) |
+| EF5 workers | `ef5_max_workers = 9`; the `EF5_MAX_WORKERS` environment variable overrides it |
+| State retention | `states_keep_hours = 48` (the 48 h state lookback) |
 | Control template | `EF5_conf/templates/ef5_Haiti_90m_control_template.txt` |
 | Hindcast example | `2023-06-02 18:00` |
 
@@ -32,6 +34,7 @@ Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLa
 
 - 90 m EF5 runs only the FIM basins, not the whole country; FIM and IBF follow the same sites.
 - FIM stores ship in git as `fim_store/Haiti/*.zarr.zip.partNN` (LFS); run `python fim_store/unzip_stores.py Haiti` once after cloning (joins the parts).
+- Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
 
@@ -103,7 +106,7 @@ flowchart LR
     E --> G[Summaries + retention]
 ```
 
-Retention: states 100 h, outputs 24 h, logs 100 h (`Caribbean_Comoros_config.py`).
+Retention: states 48 h, outputs 24 h, logs 24 h (`Caribbean_Comoros_config.py`).
 
 ---
 
@@ -185,7 +188,7 @@ Override credentials with env vars: `TITO_SMTP_*`, `TITO_HSAF_FTP_*`, `TITO_GPM_
 
 | Symptom | Fix |
 |---------|-----|
-| EF5 exit 137 | OOM — lower `ef5_max_workers` |
+| EF5 exit 137 | OOM — lower `ef5_max_workers` or set `EF5_MAX_WORKERS` |
 | EF5 exit 127 | Rebuild TITO image (`./container-build.sh --no-ef5`) |
 | Cron skipped | `./manage_cron.sh status` — lock still held |
 | Missing states | Check 48 h lookback and UTC clock |

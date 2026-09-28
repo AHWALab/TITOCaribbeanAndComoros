@@ -52,6 +52,20 @@ CONFIG_COMOROS = STREAMSAT_REPO / "extension" / "config_comoros.yaml"
 
 # Output dir for GeoTIFFs
 DEFAULT_TIF_ROOT = Path(__file__).resolve().parent.parent.parent / "precip" / "stream_sat"
+TITO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def streamsat_env_dir(var: str) -> Path | None:
+    """Absolute STREAM_SAT_OUTPUT_DIR / STREAM_SAT_STATE_DIR, or None if unset.
+
+    Relative values are taken from the TITO project root (next to EF5_conf).
+    """
+    val = os.environ.get(var, "").strip()
+    if not val:
+        return None
+    path = Path(val).expanduser()
+    return path if path.is_absolute() else (TITO_ROOT / path).resolve()
+
 
 # EF5-compatible fill value
 FILL_VALUE = -9999.0
@@ -152,11 +166,24 @@ def run_streamsat_pipeline(
     # if pipeline_log:
     #     pipeline_log.info("[STREAM-Sat %s] Cleaned output dirs (state preserved)", domain)
 
+    # Optional deployment overrides (STREAM_SAT_OUTPUT_DIR / STREAM_SAT_STATE_DIR):
+    # made absolute here (relative = from the TITO project root, next to
+    # EF5_conf) and handed to the STREAM-Sat subprocess, which runs from its
+    # own repo folder. Unset = the paths in the STREAM-Sat YAML, unchanged.
+    sub_env = os.environ.copy()
+    for var in ("STREAM_SAT_OUTPUT_DIR", "STREAM_SAT_STATE_DIR"):
+        env_dir = streamsat_env_dir(var)
+        if env_dir is not None:
+            sub_env[var] = str(env_dir)
+
     # Resolve output directory paths (needed for NC file discovery below)
     output_dir = STREAMSAT_REPO / "extension" / "realtime" / "output" / domain
     alt_dir = (
         STREAMSAT_REPO / "extension" / "realtime" / "extension" / "realtime" / "output" / domain
     )
+    candidates = [output_dir, alt_dir]
+    if sub_env.get("STREAM_SAT_OUTPUT_DIR", "").strip():
+        candidates.insert(0, Path(sub_env["STREAM_SAT_OUTPUT_DIR"]) / domain)
 
     cmd = [
         sys.executable,
@@ -202,6 +229,7 @@ def run_streamsat_pipeline(
         proc = subprocess.Popen(
             cmd,
             cwd=str(STREAMSAT_REPO),
+            env=sub_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -267,6 +295,17 @@ def run_streamsat_pipeline(
             pipeline_log.info("[STREAM-Sat %s] OUTPUT:\n%s", domain, combined[-50000:])
         pipeline_log.info("[STREAM-Sat %s] elapsed: %.1fs", domain, elapsed)
 
+    # The noise-state lines ("[state] loaded ..." / "... cold start") print
+    # early and fall outside the 50,000-character tail above; log them on
+    # their own so operators can alarm on STREAM-Sat cold starts.
+    state_lines = [ln.strip() for ln in combined_chunks if "[state]" in ln]
+    for ln in state_lines:
+        log.info("[STREAM-Sat %s] %s", domain, ln)
+        if pipeline_log:
+            pipeline_log.info("[STREAM-Sat %s] %s", domain, ln)
+    if any("cold start" in ln for ln in state_lines):
+        user_print(f"    STREAM-Sat [{domain}]: noise state COLD START (see pipeline log)")
+
     if rc != 0:
         log.error("[STREAM-Sat %s] Failed (rc=%d) in %.1fs", domain, rc, elapsed)
         log.error("[STREAM-Sat %s] OUTPUT tail: %s", domain, combined[-2000:])
@@ -277,13 +316,14 @@ def run_streamsat_pipeline(
 
     # Determine which output directory got the fresh NC files
     found = None
-    for candidate in (output_dir, alt_dir):
+    for candidate in candidates:
         if candidate.exists() and list(candidate.glob("*.nc")):
             found = candidate
             break
     if found is None:
         raise FileNotFoundError(
-            f"STREAM-Sat output directory not found. Expected: {output_dir} or {alt_dir}"
+            "STREAM-Sat output directory not found. Expected one of: "
+            + ", ".join(str(c) for c in candidates)
         )
     output_dir = found
 

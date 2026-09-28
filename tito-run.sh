@@ -305,6 +305,10 @@ run_docker() {
         -e STORMLAB_USE_TITO_ENV=1
         --rm
     )
+    # Optional: EF5 concurrency override (wins over ef5_max_workers in the config)
+    if [[ -n "${EF5_MAX_WORKERS:-}" ]]; then
+        args+=(-e "EF5_MAX_WORKERS=$EF5_MAX_WORKERS")
+    fi
     # Forward offline training mode into the container
     if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
         args+=(-e TITO_OFFLINE=1)
@@ -366,6 +370,10 @@ run_apptainer() {
 
     # --cleanenv drops host env; pass offline flags explicitly when requested
     local env_csv="EF5_RUNTIME=local,EF5_LOCAL_BIN=/app/EF5/bin/ef5,TITO_FIM_ROOT=/app,PYTHONUNBUFFERED=1,TZ=Etc/UTC,STORMLAB_USE_TITO_ENV=1"
+    # Optional: EF5 concurrency override (wins over ef5_max_workers in the config)
+    if [[ -n "${EF5_MAX_WORKERS:-}" ]]; then
+        env_csv+=",EF5_MAX_WORKERS=$EF5_MAX_WORKERS"
+    fi
     local offline=0
     if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
         offline=1

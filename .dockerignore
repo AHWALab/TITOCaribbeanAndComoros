@@ -68,3 +68,8 @@ EF5/*.sif
 
 # ── Conda env file is NEEDED for build, do NOT ignore it ──
 # tito_env.yml is copied by the Dockerfile
+
+# IBF: team packages (multi GB) and superseded preloads never go in the image;
+# the operational receptor preload is ibf_data/<Country>/
+ibf_data/*.zip
+ibf_data/*/_pre_v10/

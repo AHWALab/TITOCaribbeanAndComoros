@@ -19,16 +19,19 @@ This is the production deployment package for the Antigua and Barbuda domain (30
 |--|--|
 | Region | `Antigua` |
 | Resolution | `30m` |
-| QPE / QPF | IMERG / AROME |
-| Cycle chain | IMERG + SCaMPR gap + AROME |
-| FIM | 30 m, 7 ADM1 unit sites |
-| IBF | enabled (ibf_data/Antigua) |
+| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (5 members), `region_forcing_map` |
+| Gap-fill | SCaMPR (`stream_sat_gap_fill_mode = "SCAMPR"`) |
+| Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
+| Warmup | IMERG, `warmup_days = 45` |
+| FIM | 30 m, 7 ADM1 unit sites; per-site products + country mosaic (`fim_mosaic_sites = True`) |
+| IBF | enabled — `ibf_data/Antigua/` (COD-AB 2019 ADM1 + census population; Overture buildings, roads, places from the IBFv1.0 v10 package) |
 | Control template | `EF5_conf/templates/ef5_Antigua_30m_control_template.txt` |
 | Hindcast example | `2025-10-10 01:00` |
 
-- Operational QPE is IMERG with SCaMPR gap-fill (`qpe_gap_fill_mode = IMERG_SCAMPR`), then AROME as QPE for the forecast phase.
-- FIM runs at 30 m after the forecast phase.
-- IBF receptor data ships under `ibf_data/Antigua/`.
+Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
+
+- FIM runs at 30 m after the forecast phase; each site writes `fim/<chain>/<Site>/`, then the sites are merged (max) into `fim/<chain>/<mode>/`.
+- FIM stores ship in git as `fim_store/Antigua/*.zarr.zip` (LFS); run `python fim_store/unzip_stores.py Antigua` once after cloning.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
 
@@ -145,7 +148,8 @@ EF5 runtime: Docker sibling `ef5-container:latest` or Apptainer local `EF5/bin/e
 outputs/<YYYYMMDD.HHMMSS>/antigua_30m/
   <product>/          # imerg, stream_sat, scampr, stormlab, hsaf, arome, gfs
   summary/
-  fim/<chain>/
+  fim/<chain>/<Site>/<mode>/   # per-site FIM products (+ <mode>/ mosaic on islands)
+  ibf/<Site>/                  # IBF receptor products, when the site has an IBF YAML
 logs/
   tito_hourly_<UTC>.log
   pipeline_<cycle>.log

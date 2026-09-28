@@ -1,0 +1,58 @@
+[
+  {
+    "country": "Antigua",
+    "slug": "antigua",
+    "zip": "ibf_data/IBF_v10_ANTIGUABARBUDA.zip",
+    "work_crs": "EPSG:32620",
+    "sites": [
+      {
+        "name": "Antigua_Barbuda",
+        "aoc": "fim_config/aoc/Antigua_AG01_Barbuda_aoc.geojson"
+      },
+      {
+        "name": "Antigua_SaintGeorge",
+        "aoc": "fim_config/aoc/Antigua_AG03_SaintGeorge_aoc.geojson"
+      },
+      {
+        "name": "Antigua_SaintJohnS",
+        "aoc": "fim_config/aoc/Antigua_AG04_SaintJohnS_aoc.geojson"
+      },
+      {
+        "name": "Antigua_SaintMary",
+        "aoc": "fim_config/aoc/Antigua_AG05_SaintMary_aoc.geojson"
+      },
+      {
+        "name": "Antigua_SaintPaul",
+        "aoc": "fim_config/aoc/Antigua_AG06_SaintPaul_aoc.geojson"
+      },
+      {
+        "name": "Antigua_SaintPeter",
+        "aoc": "fim_config/aoc/Antigua_AG07_SaintPeter_aoc.geojson"
+      },
+      {
+        "name": "Antigua_SaintPhilip",
+        "aoc": "fim_config/aoc/Antigua_AG08_SaintPhilip_aoc.geojson"
+      }
+    ],
+    "admin": {
+      "member": "input_data/gadm/ATG_gadm_adm1_pop.shp",
+      "id_field": "GID_1",
+      "name_field": "NAME_1",
+      "population_field": "wrldpp_sum",
+      "pop_source": "WorldPop 2025 constrained 100 m, zonal sum over GADM 4.1 adm1, IBFv1.0 package",
+      "keep_fields": [
+        "GID_1",
+        "NAME_1",
+        "HASC_1"
+      ]
+    },
+    "overture": {
+      "member": "input_data/antiguabarbuda_overture/antiguabarbuda_overture.gpkg",
+      "buildings_layer": "antiguabarbuda_overture_buildings",
+      "segments_layer": "antiguabarbuda_overture_segments",
+      "places_layer": "antiguabarbuda_overture_places"
+    },
+    "ghs_member": "input_data/AntiguaBarbuda_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif",
+    "_note": "Operational Antigua IBF keeps the COD-AB 2019 + census admin layer (ibf_data/Antigua/Antigua_adm1_population.gpkg); only the overture gpkg from this job (v10 release, adds places) replaces the deployed one."
+  }
+]

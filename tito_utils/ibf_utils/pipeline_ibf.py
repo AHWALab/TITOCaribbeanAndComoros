@@ -10,7 +10,8 @@ Steps per cycle:
     3. sample every probability grid onto buildings and roads (max)
     4. classify: risk matrix + IBFv1.0-compatible hazard/IWF fields
     5. write {outputs.root}/{cycle}/ibf_receptors.{cycle}.gpkg
-             (buildings_ibf / roads_ibf / admin_ibf),
+             (buildings_ibf / roads_ibf / admin_ibf, plus places_ibf when
+             receptors.places is configured),
              ibf_admin_summary.{cycle}.csv, ibf_summary.{cycle}.json
 """
 
@@ -67,20 +68,20 @@ def run_ibf_cycle(
     roads = sample_probabilities(receptors["roads"], layers)
     bldgs = classify_features(bldgs, sev_layers, cfg["classification"], layers)
     roads = classify_features(roads, sev_layers, cfg["classification"], layers)
-    admin = summarize_admin(receptors["admin"], bldgs, roads, cfg, sev_layers)
+    places = receptors.get("places")
+    if places is not None:
+        places = sample_probabilities(places, layers)
+        places = classify_features(places, sev_layers, cfg["classification"], layers)
+    admin = summarize_admin(receptors["admin"], bldgs, roads, cfg, sev_layers, places=places)
 
     out_root = resolve(cfg, cfg["outputs"]["root"].format(region=cfg["region"]))
     out_dir = os.path.join(out_root, cycle) if cfg["outputs"]["append_cycle"] else out_root
     os.makedirs(out_dir, exist_ok=True)
     gpkg = os.path.join(out_dir, f"ibf_receptors.{cycle}.gpkg")
-    write_gpkg_layers(
-        gpkg,
-        (
-            ("buildings_ibf", bldgs),
-            ("roads_ibf", roads),
-            ("admin_ibf", admin),
-        ),
-    )
+    out_layers = [("buildings_ibf", bldgs), ("roads_ibf", roads), ("admin_ibf", admin)]
+    if places is not None:
+        out_layers.append(("places_ibf", places))
+    write_gpkg_layers(gpkg, out_layers)
     admin.drop(columns="geometry").to_csv(
         os.path.join(out_dir, f"ibf_admin_summary.{cycle}.csv"), index=False
     )
@@ -115,6 +116,7 @@ def run_ibf_cycle(
         "receptor_manifest": manifest_path,
         "buildings_by_risk": by_risk(bldgs),
         "roads_by_risk": by_risk(roads),
+        **({"places_by_risk": by_risk(places)} if places is not None else {}),
         "admin_by_risk": by_risk(admin),
         "population_at_yellow_or_worse": float(
             bldgs.loc[bldgs["risk_class"] >= 1, "population_per_building"].sum()

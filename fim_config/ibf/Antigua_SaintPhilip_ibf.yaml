@@ -24,6 +24,13 @@ receptors:
     id_field: id
     class_field: class
     keep_classes: [motorway, trunk, primary, secondary, tertiary, residential, unclassified]
+  places:
+    # Overture places (IBFv1.0 v10 package), optional receptor layer
+    source: ibf_data/Antigua/antigua_overture_bld_rds.gpkg
+    layer: places
+    id_field: id
+    name_field: name
+    category_field: category
   admin:
     source: ibf_data/Antigua/Antigua_adm1_population.gpkg
     layer: adm1

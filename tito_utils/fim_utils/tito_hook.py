@@ -10,9 +10,17 @@ Rules:
 
 Output layout (cycle-first, chain-tagged)::
 
-  outputs/<cycle>/<rkey>/fim/<chain>/
-    e.g. outputs/20230621.070000/guatemala_90m/fim/stream_sat_stormlab/
-         outputs/20230621.070000/guatemala_90m/fim/imerg_gfs/
+  outputs/<cycle>/<rkey>/fim/<chain>/<Site>/<mode>/
+    e.g. outputs/20230621.070000/guatemala_90m/fim/stream_sat_stormlab/Guatemala_SantaInesPetapa/
+         outputs/20230621.070000/haiti_90m/fim/stream_sat_stormlab/Haiti_Gris/
+
+Every site writes its own folder (sites of one region used to share
+fim/<chain>/ and overwrote each other's products). With
+``fim_mosaic_sites = True`` (default) the per-site GeoTIFFs are also
+merged (max) into fim/<chain>/<mode>/ after all sites ran: right for
+adjacent island parishes, wrong for 90m basin sites far apart (Haiti Gris
+and La Quinte are ~100 km apart on a 2 m grid), where the config sets it
+False.
 
 Discovers ``fim_config/<Region>*.yaml``. YAMLs with ``hazards:`` → pipeline_pf;
 else → pipeline_ensemble.
@@ -477,6 +485,27 @@ def _apply_chain_templates(cfg: dict, chain: str) -> None:
     cfg["trigger"]["sources"] = [dict(x) for x in spec["trigger_sources"]]
 
 
+def _pin_rkey(cfg: dict, rkey: str) -> None:
+    """Replace the {rkey} placeholder with the resolution being processed.
+
+    Left as a placeholder, member discovery globs {rkey} as a wildcard, so a
+    region running two resolutions in one cycle folder (Guatemala and Haiti:
+    <cycle>/<region>_900m/ and <cycle>/<region>_90m/) fed the 900m members
+    into the 90m FIM ensemble under the same member ids: twice the members,
+    coarse-grid rain and no gauge discharge (NaN) for half of them.
+    """
+
+    def pin(entry: dict) -> None:
+        if isinstance(entry.get("template"), str):
+            entry["template"] = entry["template"].replace("{rkey}", rkey)
+
+    pin(cfg.setdefault("member", {}))
+    for comp in cfg.get("rain_components") or []:
+        pin(comp)
+    for src in (cfg.get("trigger") or {}).get("sources") or []:
+        pin(src)
+
+
 def _explain_no_runs(outputs_root: str, template: str, cycle: str, chain: str) -> str:
     """Human-readable reason when discover finds zero members."""
     import glob as _glob
@@ -518,6 +547,65 @@ def _explain_no_runs(outputs_root: str, template: str, cycle: str, chain: str) -
         "(imerg_gfs → …/gfs/; stream_sat_stormlab → …/stormlab/ensOut*_sl*/)"
     )
     return "\n".join(lines)
+
+
+_FIM_MODES = (
+    "pluvial",
+    "fluvial",
+    "combined",
+    "pluvial_overbank",
+    "fluvial_overbank",
+    "combined_overbank",
+)
+
+
+def _mosaic_tifs(paths: Sequence[str], out_path: str) -> None:
+    import rasterio
+    from rasterio.merge import merge
+
+    srcs = [rasterio.open(p) for p in paths]
+    try:
+        mosaic, transform = merge(srcs, method="max")
+        meta = srcs[0].meta.copy()
+        meta.update(
+            height=mosaic.shape[1],
+            width=mosaic.shape[2],
+            transform=transform,
+            compress="lzw",
+        )
+    finally:
+        for s in srcs:
+            s.close()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with rasterio.open(out_path, "w", **meta) as dst:
+        dst.write(mosaic)
+
+
+def _mosaic_fim_chain_products(chain_root: str) -> int:
+    """Merge per-site FIM GeoTIFFs into chain_root/<mode>/*.tif."""
+    from collections import defaultdict
+
+    groups = defaultdict(list)
+    if not os.path.isdir(chain_root):
+        return 0
+    for name in os.listdir(chain_root):
+        site_dir = os.path.join(chain_root, name)
+        if not os.path.isdir(site_dir) or name in _FIM_MODES:
+            continue
+        for mode in _FIM_MODES:
+            mdir = os.path.join(site_dir, mode)
+            if not os.path.isdir(mdir):
+                continue
+            for fn in os.listdir(mdir):
+                if fn.endswith(".tif"):
+                    groups[(mode, fn)].append(os.path.join(mdir, fn))
+    n = 0
+    for (mode, fn), paths in groups.items():
+        if not paths:
+            continue
+        _mosaic_tifs(paths, os.path.join(chain_root, mode, fn))
+        n += 1
+    return n
 
 
 def run_fim_for_cycle(
@@ -614,6 +702,7 @@ def run_fim_for_cycle(
     os.environ.setdefault("TITO_FIM_ROOT", root)
     data_root = getattr(config, "dataPath", "outputs/") if config else "outputs/"
     summaries: list[dict] = []
+    chain_roots: set[str] = set()
 
     for yml in yaml_paths:
         site = os.path.basename(yml)
@@ -655,7 +744,9 @@ def run_fim_for_cycle(
         chain = chains[0] if chains else "unknown"
         try:
             for chain in chains:
-                products_root = os.path.join(data_root.rstrip("/\\"), cycle, rkey, "fim", chain)
+                chain_root = os.path.join(data_root.rstrip("/\\"), cycle, rkey, "fim", chain)
+                products_root = os.path.join(chain_root, site_stem)
+                chain_roots.add(chain_root)
                 import yaml
 
                 with open(yml) as fh:
@@ -690,6 +781,7 @@ def run_fim_for_cycle(
                         if master_log:
                             master_log.info("FIM %s thresholds from fim_regions: %s", site, _thr)
                     _apply_chain_templates(cfg, chain)
+                    _pin_rkey(cfg, rkey)
                     log(f"       member template: {cfg.get('member', {}).get('template')}")
                     summary = run_pf_cycle(cfg, cycle=cycle, verbose=verbose)
                 else:
@@ -704,6 +796,7 @@ def run_fim_for_cycle(
                     cfg["products_root"] = products_root
                     cfg["append_cycle"] = False
                     _apply_chain_templates(cfg, chain)
+                    _pin_rkey(cfg, rkey)
                     log(f"       member template: {cfg.get('member', {}).get('template')}")
                     summary = run_ensemble_cycle(cfg, cycle=cycle, verbose=verbose)
 
@@ -761,5 +854,20 @@ def run_fim_for_cycle(
                     "error": str(exc),
                 }
             )
+
+    if getattr(config, "fim_mosaic_sites", True) if config is not None else True:
+        for cr in sorted(chain_roots):
+            cr_abs = cr if os.path.isabs(cr) else os.path.join(root, cr)
+            try:
+                n = _mosaic_fim_chain_products(cr_abs)
+            except Exception as exc:
+                log(f"  FIM: mosaic failed for {cr} (non-fatal): {exc}")
+                if master_log:
+                    master_log.error("FIM mosaic failed %s: %s", cr, exc)
+                continue
+            if n:
+                log(f"  FIM: mosaicked {n} site product(s) → {cr}")
+                if master_log:
+                    master_log.info("FIM mosaic %s files → %s", n, cr)
 
     return summaries

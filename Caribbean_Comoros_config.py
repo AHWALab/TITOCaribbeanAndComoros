@@ -76,7 +76,7 @@ warmup_days = 45
 imerg_max_workers = 8
 clear_precip_after_cycle = True
 postprocess_outputs = True
-states_keep_hours = 48
+states_keep_hours = 10
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/
 logs_keep_hours = 100
@@ -145,6 +145,9 @@ fim_default_thresholds_m = [0.10, 0.30, 0.70, 1.00]
 fim_regions = {
     "Antigua": {"enabled": True, "thresholds_m": fim_default_thresholds_m},
 }
+# Each site writes outputs/<cycle>/antigua_30m/fim/<chain>/<Site>/, then the
+# sites are merged (max) into fim/<chain>/<mode>/ for the whole country.
+fim_mosaic_sites = True
 
 # ── IBF ────────────────────────────────────────────────────────────────────
 ibf_enabled = True

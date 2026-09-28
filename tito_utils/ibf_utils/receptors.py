@@ -72,7 +72,10 @@ def write_gpkg_layers(path, layers):
 def _cache_key(cfg, domain) -> str:
     rec = cfg["receptors"]
     parts = []
-    for src in (rec["buildings"], rec["roads"], rec["admin"]):
+    sources = [rec["buildings"], rec["roads"], rec["admin"]]
+    if _has_places(cfg):
+        sources.append(rec["places"])
+    for src in sources:
         path = resolve(cfg, src["source"])
         try:
             stat = os.stat(path)
@@ -87,6 +90,10 @@ def _cache_key(cfg, domain) -> str:
     # (meters, not domain units); old country-wide caches must not be reused
     parts.append("cachev2")
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+
+
+def _has_places(cfg) -> bool:
+    return bool((cfg["receptors"].get("places") or {}).get("source"))
 
 
 def _read_clip(cfg, spec, work_crs, geom_types, clip_poly):
@@ -124,6 +131,12 @@ def _assign_admin(gdf, admin, fields):
         for f in fields:
             gdf[f] = pd.Series(dtype=admin[f].dtype if f in admin else "object")
         return gdf
+    if gdf.geometry.geom_type.isin(["Point", "MultiPoint"]).all():
+        hit = gpd.sjoin(
+            gdf[["feature_id", "geometry"]], admin[fields + ["geometry"]], predicate="within"
+        )
+        hit = hit.drop_duplicates("feature_id")
+        return gdf.merge(hit[["feature_id"] + fields], on="feature_id", how="left")
     inter = gpd.overlay(
         gdf[["feature_id", "geometry"]],
         admin[fields + ["geometry"]],
@@ -186,11 +199,10 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     cache_gpkg = os.path.join(cache_dir, f"receptors_{cfg['region']}_{key}.gpkg")
     manifest_path = cache_gpkg.replace(".gpkg", ".json")
 
+    layer_names = ["buildings", "roads", "admin"] + (["places"] if _has_places(cfg) else [])
     if os.path.isfile(cache_gpkg) and not rebuild:
         log(f"    receptors: cache hit {os.path.basename(cache_gpkg)}")
-        return {
-            name: gpd.read_file(cache_gpkg, layer=name) for name in ("buildings", "roads", "admin")
-        }, manifest_path
+        return {name: gpd.read_file(cache_gpkg, layer=name) for name in layer_names}, manifest_path
 
     log("    receptors: building cache (bbox-filtered read of national layers)")
     adm_spec = rec["admin"]
@@ -223,9 +235,18 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     if keep_classes and cls_field in roads.columns:
         roads = roads[roads[cls_field].isin(keep_classes)].copy()
     roads["road_class"] = roads[cls_field] if cls_field in roads.columns else pd.NA
+
+    places = None
+    if _has_places(cfg):
+        pl_spec = rec["places"]
+        places = _read_clip(cfg, pl_spec, work_crs, ["Point", "MultiPoint"], admin_union)
+        for col, field in (("place_name", "name_field"), ("place_category", "category_field")):
+            src_col = pl_spec.get(field)
+            places[col] = places[src_col] if src_col in places.columns else pd.NA
     log(
-        f"    receptors: {len(bldgs):,} buildings, {len(roads):,} road segments "
-        f"across {len(admin)} admin units (full-unit read)"
+        f"    receptors: {len(bldgs):,} buildings, {len(roads):,} road segments"
+        + (f", {len(places):,} places" if places is not None else "")
+        + f" across {len(admin)} admin units (full-unit read)"
     )
 
     # residential class from the GHS BUILT-C FUN raster (majority under feature)
@@ -233,10 +254,14 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     if lu_path and os.path.isfile(lu_path):
         bldgs["residential_class"] = sample_raster(bldgs, lu_path, op="mode")
         roads["residential_class"] = sample_raster(roads, lu_path, op="mode")
+        if places is not None:
+            places["residential_class"] = sample_raster(places, lu_path, op="mode")
     else:
         log("    receptors: no land_use raster, residential_class unset")
         bldgs["residential_class"] = np.nan
         roads["residential_class"] = np.nan
+        if places is not None:
+            places["residential_class"] = np.nan
 
     critical = [s.lower() for s in rec["critical_subtypes"]]
     bldgs["critical"] = bldgs["subtype"].astype("string").str.lower().isin(critical)
@@ -244,6 +269,8 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     fields = [admin_id, admin_pop] + ([admin_name] if admin_name else [])
     bldgs = _assign_admin(bldgs, admin, fields)
     roads = _assign_admin(roads, admin, [admin_id])
+    if places is not None:
+        places = _assign_admin(places, admin, [admin_id])
     bldgs = _dasymetric_population(bldgs, cfg, admin_id, admin_pop)
     roads["road_length_m"] = roads.geometry.length.round(2)
 
@@ -272,7 +299,18 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     res_r = _class_wide(
         roads, admin_id, "residential_class", {"rd_len_m": ("road_length_m", "sum")}
     )
-    for extra in (base_b, base_r, res_b, res_r):
+    extras = [base_b, base_r, res_b, res_r]
+    if places is not None:
+        # IBFv1.0 v10 places summary: places_count, res_{c}_places_count
+        extras.append(
+            places.groupby(admin_id).agg(places_count=("feature_id", "count")).reset_index()
+        )
+        extras.append(
+            _class_wide(
+                places, admin_id, "residential_class", {"places_count": ("feature_id", "count")}
+            )
+        )
+    for extra in extras:
         admin = admin.merge(extra, on=admin_id, how="left")
     num = admin.select_dtypes("number").columns
     admin[num] = admin[num].fillna(0)
@@ -282,9 +320,13 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     n_full_b, n_full_r = len(bldgs), len(roads)
     bldgs = bldgs[bldgs.intersects(window)].copy()
     roads = roads[roads.intersects(window)].copy()
+    n_full_p = len(places) if places is not None else 0
+    if places is not None:
+        places = places[places.intersects(window)].copy()
     log(
         f"    receptors: window subset {len(bldgs):,}/{n_full_b:,} buildings, "
         f"{len(roads):,}/{n_full_r:,} road segments"
+        + (f", {len(places):,}/{n_full_p:,} places" if places is not None else "")
     )
 
     keep_b = (
@@ -308,15 +350,20 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
     ]
     bldgs = bldgs[[c for c in keep_b if c in bldgs.columns]]
     roads = roads[[c for c in keep_r if c in roads.columns]]
+    layers = [("buildings", bldgs), ("roads", roads), ("admin", admin)]
+    if places is not None:
+        keep_p = [
+            "feature_id",
+            "place_name",
+            "place_category",
+            "residential_class",
+            admin_id,
+            "geometry",
+        ]
+        places = places[[c for c in keep_p if c in places.columns]]
+        layers.append(("places", places))
 
-    write_gpkg_layers(
-        cache_gpkg,
-        (
-            ("buildings", bldgs),
-            ("roads", roads),
-            ("admin", admin),
-        ),
-    )
+    write_gpkg_layers(cache_gpkg, layers)
     manifest = {
         "region": cfg["region"],
         "cache_key": key,
@@ -330,13 +377,21 @@ def prepare_receptors(cfg, domain, rebuild: bool = False, verbose: bool = True):
             "buildings_full": int(n_full_b),
             "roads_full": int(n_full_r),
             "admin": int(len(admin)),
+            **(
+                {"places_window": int(len(places)), "places_full": int(n_full_p)}
+                if places is not None
+                else {}
+            ),
         },
-        "sources": {k: resolve(cfg, rec[k]["source"]) for k in ("buildings", "roads", "admin")},
+        "sources": {
+            k: resolve(cfg, rec[k]["source"])
+            for k in ("buildings", "roads", "admin") + (("places",) if places is not None else ())
+        },
     }
     with open(manifest_path, "w") as fh:
         json.dump(manifest, fh, indent=2)
     log(f"    receptors: cached -> {os.path.basename(cache_gpkg)}")
-    return {"buildings": bldgs, "roads": roads, "admin": admin}, manifest_path
+    return dict(layers), manifest_path
 
 
 def _class_wide(df, admin_id, class_col, metrics, classes=(0, 1, 2)):

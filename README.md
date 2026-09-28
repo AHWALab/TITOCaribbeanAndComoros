@@ -106,7 +106,7 @@ Dependabot keeps GitHub Actions, Docker, and Python dependencies current. Workfl
 ## Data and artifacts
 
 - `outputs/`, EF5 states, and extracted FIM stores are never committed.
-- FIM stores ship through Git LFS as `fim_store/<Region>/<name>.zarr.zip` (or split `.partNN` archives); after cloning run `git lfs pull` and `python fim_store/unzip_stores.py <Region>` once.
+- FIM stores ship through Git LFS as `fim_store/<Region>/<name>.zarr.zip` (or split `.partNN` archives); `./container-build.sh` fetches them (`git lfs pull`) and unpacks them in its Step 0 (`--stores-only` runs just that step; manual: `python fim_store/unzip_stores.py <Region>`).
 - IBF receptor preloads ship through Git LFS in `ibf_data/<Country>/` (each branch carries only its own country). The IBF team's multi-GB country packages are not in the repository; `fim_dev/build_ibf_preload_v10.py` cuts them down to the FIM basins.
 - Container images are built locally (`container-build.sh`) or converted for HPC (`docker-to-apptainer.sh`).
 - Credentials are never stored in the repository; SMTP, HSAF FTP, and GPM accounts are provided through environment variables (`TITO_SMTP_*`, `TITO_HSAF_FTP_*`, `TITO_GPM_EMAIL`).

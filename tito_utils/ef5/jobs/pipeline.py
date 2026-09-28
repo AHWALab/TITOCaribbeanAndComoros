@@ -23,6 +23,7 @@ from tito_utils.ef5.jobs.builders import (
     seed_gap_states_from_streamsat,
 )
 from tito_utils.ef5.jobs.helpers import copy_tifs_from_shared, has_source
+from tito_utils.ef5.jobs.workers import _ef5_phase_workers, _usable_cpus  # noqa: F401
 from tito_utils.file_utils.cleanup import cleanup_staged_precip_folders
 from tito_utils.file_utils.file_handling import mkdir_p, newline
 from tito_utils.logging_utils import console
@@ -38,25 +39,6 @@ def _fmt_secs(s: float) -> str:
         return f"{m}m {sec:02d}s"
     h, m = divmod(m, 60)
     return f"{h}h {m:02d}m {sec:02d}s"
-
-
-def _ef5_phase_workers(n_jobs: int, config=None) -> int:
-    """Cap concurrent EF5 jobs from config / env (1 = fully sequential)."""
-    n_jobs = max(1, int(n_jobs or 1))
-    raw = None
-    if config is not None:
-        raw = getattr(config, "ef5_max_workers", None)
-    if raw is None or raw == "":
-        raw = os.environ.get("EF5_MAX_WORKERS", "").strip() or None
-    if raw is None or raw == "":
-        return min(n_jobs, max(1, (os.cpu_count() or 4)))
-    try:
-        w = int(raw)
-    except (TypeError, ValueError):
-        return min(n_jobs, max(1, (os.cpu_count() or 4)))
-    if w <= 0:
-        return min(n_jobs, max(1, (os.cpu_count() or 4)))
-    return max(1, min(n_jobs, w))
 
 
 def _run_phase_jobs(label: str, jobs: list, master_log=None, config=None) -> dict:

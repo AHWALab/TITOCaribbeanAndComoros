@@ -6,6 +6,11 @@ All notable changes to the TITO Barbados deployment package are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- `ibf_data/` and `fim_config/ibf/` hold only Barbados (Antigua IBF data and the other countries' IBF YAMLs removed).
+- README Domain defaults match the config: STREAM-Sat → SCaMPR → StormLab is the operational chain (IMERG/AROME/GFS are options); per-site FIM output layout.
+
 ### Added
 
 - GitHub Actions CI: ruff check/format, shellcheck, and pytest.

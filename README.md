@@ -19,16 +19,20 @@ This is the production deployment package for the Barbados domain (30m).
 |--|--|
 | Region | `Barbados` |
 | Resolution | `30m` |
-| QPE / QPF | IMERG / STORMLAB (50 members) |
-| Cycle chain | IMERG + SCaMPR gap + StormLab |
-| FIM | 30 m, 11 parish sites — FIM must run |
-| IBF | enabled (ibf_data/Barbados) |
+| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (5 members), `region_forcing_map` |
+| Gap-fill | SCaMPR (`stream_sat_gap_fill_mode = "SCAMPR"`) |
+| Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
+| Warmup | IMERG, `warmup_days = 90` |
+| FIM | 30 m, 11 parish sites; per-site products + country mosaic — FIM must run |
+| IBF | enabled — `ibf_data/Barbados/` (COD-AB 2019 ADM1 + census population; Overture buildings and roads) |
 | Control template | `EF5_conf/templates/ef5_Barbados_30m_control_template.txt` |
 | Hindcast example | `2010-10-30 00:00` |
 
-- Default operational chain is IMERG + StormLab (50 members). STREAM-Sat+StormLab and IMERG+AROME are supported by the same orchestrator if `region_forcing_map` is changed.
-- Hindcast locks extras: keep IMERG+StormLab for historical runs (AROME has no archive).
-- FIM is required at 30 m (do not skip STEP 8).
+Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLab**, set per region in `region_forcing_map`. IMERG, AROME, GFS and WRF remain available as options (edit `region_forcing_map`), not the operational default. The top-level `qpe_source` / `qpf_source` values are only the fallback for a region missing from `region_forcing_map`.
+
+- FIM is required at 30 m (do not skip STEP 8); each site writes `fim/<chain>/<Site>/`, then the sites are merged (max) into `fim/<chain>/<mode>/`.
+- Hindcast: AROME has no archive, so historical runs cannot use an AROME chain.
+- FIM stores ship in git as `fim_store/Barbados/*.zarr.zip` (LFS); run `python fim_store/unzip_stores.py Barbados` once after cloning.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.
 
@@ -145,7 +149,8 @@ EF5 runtime: Docker sibling `ef5-container:latest` or Apptainer local `EF5/bin/e
 outputs/<YYYYMMDD.HHMMSS>/barbados_30m/
   <product>/          # imerg, stream_sat, scampr, stormlab, hsaf, arome, gfs
   summary/
-  fim/<chain>/
+  fim/<chain>/<Site>/<mode>/   # per-site FIM products (+ <mode>/ mosaic on islands)
+  ibf/<Site>/                  # IBF receptor products, when the site has an IBF YAML
 logs/
   tito_hourly_<UTC>.log
   pipeline_<cycle>.log

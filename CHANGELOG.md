@@ -6,6 +6,10 @@ All notable changes to the TITO Antigua and Barbuda deployment package are docum
 
 ## [Unreleased]
 
+### Changed
+
+- `manage_cron.sh` picks the container runtime automatically: an exported `TITO_RUNTIME` still wins (the HPC job scripts export `apptainer`); otherwise Docker when the TITO image is loaded, else Apptainer/Singularity when `tito.sif` is present. No more per-region hard-coded `docker` / `apptainer`.
+
 ### Removed
 
 - Unused config settings `stream_sat_output_folder`, `scampr_output_folder`, `hsaf_output_folder` and `stormlab_output_folder` (left from an older layout; EF5 results follow `dataPath`, i.e. `outputs/<cycle>/<region_res>/<product>/`), and the unused `stream_sat_output_root` builder parameter they fed.

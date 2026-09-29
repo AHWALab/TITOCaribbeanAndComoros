@@ -67,4 +67,4 @@ gfs_domain:
 gfs_wind_archive_path: "/Dedicated/Humberto/Naman/TITO_Caribbean_Comoros_VM/TITOCaribbeanAndComoros/precip/gfs_winds"
 
 imerg_source: "pps" # switch to PPS (default already)
-imerg_pps_email: "vrobledodelgado@uiowa.edu" # same email as in Caribbean_Comoros_config.py
+imerg_pps_email: ""  # empty: taken from IMERG_PPS_EMAIL or TITO_GPM_EMAIL (never commit an address here)

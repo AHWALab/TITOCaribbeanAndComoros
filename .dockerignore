@@ -73,3 +73,6 @@ EF5/*.sif
 # the operational receptor preload is ibf_data/<Country>/
 ibf_data/*.zip
 ibf_data/*/_pre_v10/
+
+# host credentials never go in the image
+tito_credentials.env

@@ -120,3 +120,6 @@ tito_*_hourly_job.sh
 # fim_dev/build_ibf_preload_v10.py; only the cut ibf_data/<Country>/ ships
 ibf_data/*.zip
 ibf_data/*/_pre_v10/
+
+# host credentials (see tito_credentials.env.example)
+tito_credentials.env

@@ -180,7 +180,7 @@ pre-commit install
 
 ## Security
 
-Override credentials with env vars: `TITO_SMTP_*`, `TITO_HSAF_FTP_*`, `TITO_GPM_EMAIL`, `TITO_IMERG_SERVER`. Do not commit real passwords.
+Credentials come only from the environment (the repository is public): `TITO_GPM_EMAIL` (NASA PPS email, used as username and password by TITO and STREAM-Sat), `TITO_HSAF_FTP_USER` / `TITO_HSAF_FTP_PASS` (HSAF, Comoros gap-fill), `TITO_SMTP_*` (alerts). On a host, copy `tito_credentials.env.example` to `tito_credentials.env` (git-ignored) and `chmod 600` it: `tito-run.sh` loads it and passes the values into Docker/Apptainer by name, never on a command line. On AWS, inject them from Secrets Manager.
 
 ---
 

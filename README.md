@@ -19,7 +19,7 @@ This is the production deployment package for the Barbados domain (30m).
 |--|--|
 | Region | `Barbados` |
 | Resolution | `30m` |
-| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (50 members), `region_forcing_map` |
+| Operational chain | STREAM-Sat (10 members) → SCaMPR gap-fill → StormLab (5 members), `region_forcing_map` |
 | Gap-fill | SCaMPR (`stream_sat_gap_fill_mode = "SCAMPR"`) |
 | Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
 | Warmup | IMERG, `warmup_days = 90` |

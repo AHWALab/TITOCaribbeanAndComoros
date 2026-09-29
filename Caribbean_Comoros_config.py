@@ -60,7 +60,7 @@ modelStates = ["crest_SM", "kwr_IR", "kwr_pCQ", "kwr_pOQ"]
 qpe_source = "IMERG"
 qpf_source = "STORMLAB"
 region_forcing_map = {
-    "Barbados": {"qpe_source": "IMERG", "qpf_source": "STORMLAB"},
+    "Barbados": {"qpe_source": "STREAM_SAT", "qpf_source": "STORMLAB"},
 }
 
 # STREAM-Sat Phase B (ops): "SCAMPR" | "HSAF" | "NONE"
@@ -109,7 +109,7 @@ stream_sat_pipeline_timeout = 7200
 stormlab_repo = "tito_utils/qpf_utils/StormLab-GFS-realtime"
 stormlab_nc_root = "tito_utils/qpf_utils/StormLab-GFS-realtime/output"
 stormlab_precip_folder = "EF5_conf/precip/stormlab/"
-stormlab_ensemble_size = 50
+stormlab_ensemble_size = 5
 stormlab_forcing_members = 5
 stormlab_run_pipeline = True
 stormlab_source = "auto"

@@ -6,6 +6,10 @@ All notable changes to the TITO Barbados deployment package are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Branch brought in line with the running Barbados deployment: `region_forcing_map` is STREAM-Sat + StormLab (was IMERG), `stormlab_ensemble_size = 5` (was 50, i.e. 500 forecast runs per cycle), the 30 m control template writes `MAXSOILMOISTURE` (needed for the `maxsm` summaries), and the StormLab `lesserantilles` parameters are the current set (26 Aug, identical to TITO_Antigua) instead of the 4 Aug training copy.
+
 ### Removed
 
 - Unused config settings `stream_sat_output_folder`, `scampr_output_folder`, `hsaf_output_folder` and `stormlab_output_folder` (left from an older layout; EF5 results follow `dataPath`, i.e. `outputs/<cycle>/<region_res>/<product>/`), and the unused `stream_sat_output_root` builder parameter they fed.

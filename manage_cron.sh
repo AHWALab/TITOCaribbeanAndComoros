@@ -14,13 +14,30 @@
 
 # ── Operator knobs (edit these) ──────────────────────────────────────────
 REGION="Guatemala"
-# docker | apptainer | singularity
-TITO_RUNTIME="docker"
+# docker | apptainer | singularity, or auto (default): an exported
+# TITO_RUNTIME wins; otherwise Docker when the TITO image is loaded, else
+# Apptainer/Singularity when tito.sif is here
+TITO_RUNTIME="${TITO_RUNTIME:-auto}"
 CRON_SCHEDULE="5 * * * *"
 # ─────────────────────────────────────────────────────────────────────────
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# ── Resolve TITO_RUNTIME=auto ────────────────────────────────────────────
+if [ "$TITO_RUNTIME" = "auto" ] || [ -z "$TITO_RUNTIME" ]; then
+    # Docker only when its daemon answers AND the TITO image is loaded: a host
+    # with a Docker daemon but only tito.sif (an HPC login node) keeps Apptainer
+    if command -v docker >/dev/null 2>&1 \
+        && timeout 20 docker image inspect "${TITO_IMAGE:-tito:latest}" >/dev/null 2>&1; then
+        TITO_RUNTIME="docker"
+    elif command -v apptainer >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/tito.sif" ]; then
+        TITO_RUNTIME="apptainer"
+    elif command -v singularity >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/tito.sif" ]; then
+        TITO_RUNTIME="singularity"
+    else
+        TITO_RUNTIME="docker"  # nothing ready: keep the old default, run() reports it
+    fi
+fi
 TITO_RUN="$SCRIPT_DIR/tito-run.sh"
 LOG_DIR="$SCRIPT_DIR/outputs/logs"
 LOCK_FILE="$LOG_DIR/tito_cron.lock"

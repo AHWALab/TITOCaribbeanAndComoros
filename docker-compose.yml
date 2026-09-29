@@ -42,6 +42,15 @@ services:
       - TZ=Etc/UTC
       # StormLab uses the active TITO conda env (tito_env2), not a separate env
       - STORMLAB_USE_TITO_ENV=1
+      # credentials: passed through by name from the host environment
+      - TITO_GPM_EMAIL
+      - IMERG_PPS_EMAIL
+      - TITO_HSAF_FTP_USER
+      - TITO_HSAF_FTP_PASS
+      - TITO_SMTP_SERVER
+      - TITO_SMTP_PORT
+      - TITO_SMTP_USER
+      - TITO_SMTP_PASSWORD
 
     # ── Resource limits ────────────────────────────────────────────────
     # TITO orchestrator + 50 parallel EF5 containers can use substantial

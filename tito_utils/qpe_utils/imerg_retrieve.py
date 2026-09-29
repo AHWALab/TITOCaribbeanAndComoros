@@ -120,8 +120,17 @@ from bs4 import BeautifulSoup
 from osgeo.gdalconst import GA_ReadOnly
 
 
+def _check_email(email_gpm):
+    if not email_gpm:
+        print(
+            "    WARNING: NASA PPS email missing: set TITO_GPM_EMAIL "
+            "(tito_credentials.env or the environment); IMERG downloads will fail"
+        )
+
+
 def retrieve_imerg_files(url, email_gpm, HindCastMode, date):
     """List bare filenames ending in '30min.tif' available for *date*'s YYYY/MM folder."""
+    _check_email(email_gpm)
     url = url.rstrip("/")
     folder = date.strftime("%Y/%m/")
     url_server = url + "/" + folder

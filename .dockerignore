@@ -68,3 +68,6 @@ EF5/*.sif
 
 # ── Conda env file is NEEDED for build, do NOT ignore it ──
 # tito_env.yml is copied by the Dockerfile
+
+# host credentials never go in the image
+tito_credentials.env

@@ -165,12 +165,18 @@ GFS_precip_path = (
 )
 AROME_precip_path = "EF5_conf/precip/arome/"
 
-# Credentials: set TITO_GPM_EMAIL / TITO_HSAF_FTP_USER / TITO_HSAF_FTP_PASS
-# in the environment instead of committing real accounts here.
-email_gpm = _os.environ.get("TITO_GPM_EMAIL", "vrobledodelgado@uiowa.edu")
+# Credentials come ONLY from the environment (this repository is public):
+#   TITO_GPM_EMAIL        NASA PPS account email; PPS uses it as username AND
+#                         password. Also used by STREAM-Sat (IMERG_PPS_EMAIL
+#                         is accepted as an alias).
+#   TITO_HSAF_FTP_USER / TITO_HSAF_FTP_PASS   HSAF FTP account (Comoros gap-fill)
+# On a host, put them in tito_credentials.env (git-ignored, chmod 600; see
+# tito_credentials.env.example): tito-run.sh loads it and passes the values
+# into the container by name. On AWS, inject them from Secrets Manager.
+email_gpm = _os.environ.get("TITO_GPM_EMAIL") or _os.environ.get("IMERG_PPS_EMAIL", "")
 server = _os.environ.get(
     "TITO_IMERG_SERVER", "https://jsimpsonhttps.pps.eosdis.nasa.gov/imerg/gis/early/"
 )
-hsaf_ftp_user = _os.environ.get("TITO_HSAF_FTP_USER", "naman-mehta@uiowa.edu")
-hsaf_ftp_pass = _os.environ.get("TITO_HSAF_FTP_PASS", "change_me1234")
+hsaf_ftp_user = _os.environ.get("TITO_HSAF_FTP_USER", "")
+hsaf_ftp_pass = _os.environ.get("TITO_HSAF_FTP_PASS", "")
 hsaf_latency_minutes = 10

@@ -43,6 +43,34 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# ── Credentials ──────────────────────────────────────────────────────────
+# Values come only from the environment or from tito_credentials.env next to
+# this script (git-ignored, chmod 600; see tito_credentials.env.example).
+# Already-exported variables win over the file. They reach the container by
+# NAME (docker -e VAR, APPTAINERENV_VAR), never as values on a command line.
+TITO_CRED_VARS=(TITO_GPM_EMAIL IMERG_PPS_EMAIL TITO_HSAF_FTP_USER TITO_HSAF_FTP_PASS
+    TITO_SMTP_SERVER TITO_SMTP_PORT TITO_SMTP_USER TITO_SMTP_PASSWORD)
+load_credentials_file() {
+    local f="$SCRIPT_DIR/tito_credentials.env" line key val
+    [[ -f "$f" ]] || return 0
+    if [[ -n "$(find "$f" -perm /077 2>/dev/null)" ]]; then
+        echo "WARNING: $f is readable by others; run: chmod 600 $f" >&2
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
+        [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+        line="${line#export }"
+        key="${line%%=*}"
+        val="${line#*=}"
+        key="${key//[[:space:]]/}"
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        if [[ "$val" == \"*\" ]]; then val="${val:1:${#val}-2}"; fi
+        if [[ "$val" == \'*\' ]]; then val="${val:1:${#val}-2}"; fi
+        [[ -n "${!key:-}" ]] || export "$key=$val"
+    done < "$f"
+}
+load_credentials_file
+
 TITO_IMAGE="${TITO_IMAGE:-tito:latest}"
 TITO_SIF="${TITO_SIF:-$SCRIPT_DIR/tito.sif}"
 EF5_SIF="${EF5_SIF:-$SCRIPT_DIR/EF5/ef5-container.sif}"
@@ -309,6 +337,13 @@ run_docker() {
     if [[ -n "${EF5_MAX_WORKERS:-}" ]]; then
         args+=(-e "EF5_MAX_WORKERS=$EF5_MAX_WORKERS")
     fi
+    # Credentials by name only: docker copies the value from this environment
+    local cv
+    for cv in "${TITO_CRED_VARS[@]}"; do
+        if [[ -n "${!cv:-}" ]]; then
+            args+=(-e "$cv")
+        fi
+    done
     # Forward offline training mode into the container
     if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
         args+=(-e TITO_OFFLINE=1)
@@ -374,6 +409,14 @@ run_apptainer() {
     if [[ -n "${EF5_MAX_WORKERS:-}" ]]; then
         env_csv+=",EF5_MAX_WORKERS=$EF5_MAX_WORKERS"
     fi
+    # Credentials by name only: APPTAINERENV_/SINGULARITYENV_ variables pass
+    # through --cleanenv without putting the value on the command line
+    local cv
+    for cv in "${TITO_CRED_VARS[@]}"; do
+        if [[ -n "${!cv:-}" ]]; then
+            export "APPTAINERENV_${cv}=${!cv}" "SINGULARITYENV_${cv}=${!cv}"
+        fi
+    done
     local offline=0
     if [[ "${TITO_OFFLINE:-}" == "1" ]] || printf '%s\n' "$@" | grep -qx -- '--offline'; then
         offline=1

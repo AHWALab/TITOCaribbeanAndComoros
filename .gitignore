@@ -102,3 +102,6 @@ ibf_data/*.zip
 
 # Morales ships as .partNN files; the joined zip is made by fim_store/unzip_stores.py
 fim_store/Guatemala/fim_store_Morales_v1.zarr.zip
+
+# host credentials (see tito_credentials.env.example)
+tito_credentials.env

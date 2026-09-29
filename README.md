@@ -347,8 +347,7 @@ Dependabot (`.github/dependabot.yml`) opens weekly updates for GitHub Actions, D
 
 ## Security
 
-- **Never commit real credentials.** SMTP, HSAF FTP, and GPM values in `Caribbean_Comoros_config.py` are placeholders; override them with environment variables:
-  `TITO_SMTP_USER`, `TITO_SMTP_PASSWORD`, `TITO_SMTP_SERVER`, `TITO_SMTP_PORT`, `TITO_HSAF_FTP_USER`, `TITO_HSAF_FTP_PASS`, `TITO_GPM_EMAIL`, `TITO_IMERG_SERVER`.
+- **Never commit real credentials.** Credentials come only from the environment (the repository is public): `TITO_GPM_EMAIL` (NASA PPS email, used as username and password by TITO and STREAM-Sat), `TITO_HSAF_FTP_USER` / `TITO_HSAF_FTP_PASS` (HSAF, Comoros gap-fill), `TITO_SMTP_*` (alerts). On a host, copy `tito_credentials.env.example` to `tito_credentials.env` (git-ignored) and `chmod 600` it: `tito-run.sh` loads it and passes the values into Docker/Apptainer by name, never on a command line. On AWS, inject them from Secrets Manager.
 - For CI/CD secrets (registry, deployment), use GitHub Actions secrets and environment protection — never config files.
 - The Docker image runs as root and mounts `/var/run/docker.sock` (needed to spawn EF5 siblings); run it only on hosts where that trust level is acceptable.
 - Large data (states, outputs, stores) is gitignored; GeoTIFFs and store zips are tracked through Git LFS where required.

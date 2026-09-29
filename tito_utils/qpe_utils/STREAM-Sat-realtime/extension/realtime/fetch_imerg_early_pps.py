@@ -29,7 +29,7 @@ Usage (same CLI as fetch_imerg_early.py)::
         --out IMERG_latest.nc \\
         --tmp-dir ./imerg_raw \\
         --domain "11.05,22.95,-93.95,-57.05" \\
-        --email vrobledodelgado@uiowa.edu
+        --email you@example.org
 
 If --email is omitted, the script reads IMERG_PPS_EMAIL from the
 environment (set in your crontab or .bashrc).
@@ -403,7 +403,7 @@ def main():
                         datefmt="%H:%M:%S")
 
     # ── Resolve email ──
-    email = a.email or os.environ.get("IMERG_PPS_EMAIL")
+    email = a.email or os.environ.get("IMERG_PPS_EMAIL") or os.environ.get("TITO_GPM_EMAIL")
     if not email:
         ap.error("--email is required, or set IMERG_PPS_EMAIL in environment.")
 

@@ -16,11 +16,11 @@ This `main` branch is the repository index — it contains **no code**. Each reg
 |--------|--------|------|---------------------------|-----|-----|
 | Guatemala | [`TITO_Guatemala`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Guatemala) | 900 m + 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Santa Ines Petapa (Morales store ready, site pending) | on — 90 m FIM sites |
 | Antigua and Barbuda | [`TITO_Antigua`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Antigua) | 30 m | STREAM-Sat → SCaMPR → StormLab | 30 m — 7 ADM1 unit sites + country mosaic | on — 7 ADM1 units |
-| Barbados | [`TITO_Barbados`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Barbados) | 30 m | STREAM-Sat → SCaMPR → StormLab (50 members) | 30 m — 11 parish sites + country mosaic | on — 11 parishes |
+| Barbados | [`TITO_Barbados`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Barbados) | 30 m | STREAM-Sat → SCaMPR → StormLab | 30 m — 11 parish sites + country mosaic | on — 11 parishes |
 | Haiti | [`TITO_Haiti`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Haiti) | 900 m + 90 m | STREAM-Sat → SCaMPR → StormLab | 90 m — Riviere Grise, La Quinte | on — 90 m FIM sites |
 | Comoros | [`TITO_Comoros`](https://github.com/AHWALab/TITOCaribbeanAndComoros/tree/TITO_Comoros) | 30 m | STREAM-Sat → **HSAF** → StormLab | 30 m — 55 ADM3 municipality sites + country mosaic | off — no receptor data yet |
 
-Every region runs **STREAM-Sat (10 members) → gap-fill → StormLab (5 members; 50 in Barbados)** operationally, set per region in `region_forcing_map`. The gap-fill is **SCaMPR** everywhere except **Comoros (HSAF)**. IMERG, AROME, GFS and WRF are supported options, not the operational default. On the 90 m grids (Guatemala, Haiti) EF5 runs only the FIM basins, not the whole country.
+Every region runs **STREAM-Sat (10 members) → gap-fill → StormLab (5 members)** operationally, set per region in `region_forcing_map`. The gap-fill is **SCaMPR** everywhere except **Comoros (HSAF)**. IMERG, AROME, GFS and WRF are supported options, not the operational default. On the 90 m grids (Guatemala, Haiti) EF5 runs only the FIM basins, not the whole country.
 
 Each branch README carries the full configuration reference, `EF5_conf/` documentation, output layout, operational procedures, and troubleshooting for that domain.
 

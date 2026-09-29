@@ -153,34 +153,34 @@ def _format_stderr(stderr_text, max_lines=12):
     return "\n".join(lines)
 
 
+def _curl_auth(user, password):
+    """curl config text for `curl -K -`: the credentials travel on stdin, so
+    they never appear on the command line (readable by any user via ps)."""
+    if not user or not password:
+        print(
+            "    WARNING: HSAF FTP credentials missing: set TITO_HSAF_FTP_USER / "
+            "TITO_HSAF_FTP_PASS (tito_credentials.env or the environment)"
+        )
+    esc = f"{user}:{password}".replace("\\", "\\\\").replace('"', '\\"')
+    return f'user = "{esc}"\n'
+
+
 def _curl_head_exists(url, user, password):
-    result = _run_cmd(
-        [
-            "curl",
-            "--fail",
-            "--silent",
-            "--head",
-            "--user",
-            f"{user}:{password}",
-            url,
-        ]
+    result = subprocess.run(
+        ["curl", "--fail", "--silent", "--head", "-K", "-", url],
+        input=_curl_auth(user, password),
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     return result.returncode == 0
 
 
 def _curl_download(url, output_path, user, password):
     result = subprocess.run(
-        [
-            "curl",
-            "--fail",
-            "--silent",
-            "--show-error",
-            "--user",
-            f"{user}:{password}",
-            "-o",
-            str(output_path),
-            url,
-        ],
+        ["curl", "--fail", "--silent", "--show-error", "-K", "-", "-o", str(output_path), url],
+        input=_curl_auth(user, password),
+        text=True,
         check=False,
     )
     return result.returncode == 0

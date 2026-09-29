@@ -105,3 +105,6 @@ fim_store/Haiti/fim_store_Haiti_Gris_v1.zarr.zip
 fim_store/Haiti/fim_store_Haiti_LaQuinte_v1.zarr.zip
 # IBF land-use raster (GHS BUILT-C crop) ships with the receptor preload
 !ibf_data/**/*.tif
+
+# host credentials (see tito_credentials.env.example)
+tito_credentials.env

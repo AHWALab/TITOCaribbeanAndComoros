@@ -6,6 +6,12 @@ All notable changes to the TITO Haiti deployment package are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Credentials come only from the environment: no e-mail or password defaults in `Caribbean_Comoros_config.py` or the STREAM-Sat YAMLs. STREAM-Sat now also reads `TITO_GPM_EMAIL`, so one variable covers the NASA PPS account (`IMERG_PPS_EMAIL` still works).
+- `tito-run.sh` loads an optional git-ignored `tito_credentials.env` (see `tito_credentials.env.example`) and passes credentials into Docker/Apptainer by name (`docker -e VAR`, `APPTAINERENV_VAR`), never as values on a command line.
+- HSAF downloads pass the FTP password to curl on stdin (`-K -`) instead of `--user user:pass`, which any user could read with `ps`.
+
 ### Changed
 
 - `manage_cron.sh` picks the container runtime automatically: an exported `TITO_RUNTIME` still wins (the HPC job scripts export `apptainer`); otherwise Docker when the TITO image is loaded, else Apptainer/Singularity when `tito.sif` is present. No more per-region hard-coded `docker` / `apptainer`.

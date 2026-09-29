@@ -134,11 +134,12 @@ def stage_fetch_imerg(cfg, end, scratch, hours):
     if source == "pps":
         script = RT_DIR / "fetch_imerg_early_pps.py"
         email = (cfg.get("imerg_pps_email") or
-                 os.environ.get("IMERG_PPS_EMAIL", ""))
+                 os.environ.get("IMERG_PPS_EMAIL") or
+                 os.environ.get("TITO_GPM_EMAIL", ""))
         if not email:
             raise RuntimeError(
                 "config.yaml: 'imerg_pps_email' is required when imerg_source='pps',\n"
-                "  or set IMERG_PPS_EMAIL in the environment."
+                "  or set TITO_GPM_EMAIL (or IMERG_PPS_EMAIL) in the environment."
             )
         cmd = [sys.executable, str(script),
                "--end", end.strftime("%Y-%m-%dT%H:%M"),

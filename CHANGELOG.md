@@ -6,6 +6,10 @@ All notable changes to the TITO Barbados deployment package are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- `manage_cron.sh` picks the container runtime automatically: an exported `TITO_RUNTIME` still wins (the HPC job scripts export `apptainer`); otherwise Docker when the TITO image is loaded, else Apptainer/Singularity when `tito.sif` is present. No more per-region hard-coded `docker` / `apptainer`.
+
 ### Fixed
 
 - Branch brought in line with the running Barbados deployment: `region_forcing_map` is STREAM-Sat + StormLab (was IMERG), `stormlab_ensemble_size = 5` (was 50, i.e. 500 forecast runs per cycle), the 30 m control template writes `MAXSOILMOISTURE` (needed for the `maxsm` summaries), and the StormLab `lesserantilles` parameters are the current set (26 Aug, identical to TITO_Antigua) instead of the 4 Aug training copy.

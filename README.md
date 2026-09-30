@@ -33,6 +33,7 @@ Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLa
 
 - 90 m EF5 runs only the FIM basins, not the whole country; FIM and IBF follow the same sites.
 - FIM stores ship in git (`fim_store/Guatemala/`, LFS; Morales as `.partNN`); `./container-build.sh` fetches (Git LFS) and unpacks them automatically — or run `python fim_store/unzip_stores.py Guatemala` yourself (`./container-build.sh --stores-only` does just this step).
+- Output formats: every GeoTIFF (FIM probability / likelihood grids, country mosaics, ensemble summaries) is a Cloud Optimized GeoTIFF (`TITO_COG=0` writes plain GeoTIFF); IBF receptors also ship as GeoParquet per layer and an admin GeoJSON, in WGS84, next to the GeoPackage.
 - Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.

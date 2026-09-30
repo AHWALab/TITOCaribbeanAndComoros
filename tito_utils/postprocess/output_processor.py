@@ -180,6 +180,10 @@ def _write_stats(
     finally:
         for f in dst.values():
             f.close()
+    from tito_utils.file_utils.cog import to_cog
+
+    for path in written.values():
+        to_cog(path)
     return written
 
 
@@ -189,7 +193,9 @@ def _copy_one(src, out_dir: str, prefix: str, cycle_ts: str):
     mkdir_p(out_dir)
     dest = os.path.join(out_dir, f"{prefix}.{cycle_ts}.tif")
     shutil.copy2(src, dest)
-    return dest
+    from tito_utils.file_utils.cog import to_cog
+
+    return to_cog(dest)
 
 
 def _ens_n(dirname: str):

@@ -101,5 +101,6 @@ def _deliver(src: str, dst: str, aoc=None):
         profile.update(
             height=data.shape[1], width=data.shape[2], transform=transform, compress="lzw"
         )
-        with rasterio.open(dst, "w", **profile) as dstds:
-            dstds.write(data)
+    from tito_utils.file_utils.cog import write_cog
+
+    write_cog(dst, data, profile)

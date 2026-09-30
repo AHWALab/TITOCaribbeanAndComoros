@@ -25,6 +25,41 @@ from .receptors import prepare_receptors, write_gpkg_layers
 from .sampling import discover_probability_products, sample_probabilities
 
 
+def _write_web_layers(out_dir, cycle, layers, log) -> list:
+    """Web-friendly copies next to the GeoPackage, in WGS84 (EPSG:4326):
+    ``ibf_<layer>.<cycle>.parquet`` (GeoParquet, every layer) and
+    ``ibf_admin.<cycle>.geojson`` (small admin layer only; the building
+    layers are too large for GeoJSON). GeoParquet needs pyarrow; without
+    it the Parquet files are skipped with a note, never the cycle.
+    """
+    files = []
+    try:
+        import pyarrow  # noqa: F401
+
+        have_arrow = True
+    except ImportError:
+        have_arrow = False
+        log("    IBF: pyarrow not installed, GeoParquet copies skipped")
+    for name, gdf in layers:
+        short = name.replace("_ibf", "")
+        try:
+            wgs = gdf.to_crs(4326) if gdf.crs is not None else gdf
+            if have_arrow:
+                fn = f"ibf_{short}.{cycle}.parquet"
+                wgs.to_parquet(os.path.join(out_dir, fn), index=False)
+                files.append(fn)
+            if short == "admin":
+                fn = f"ibf_admin.{cycle}.geojson"
+                path = os.path.join(out_dir, fn)
+                if os.path.exists(path):
+                    os.remove(path)
+                wgs.to_file(path, driver="GeoJSON")
+                files.append(fn)
+        except Exception as exc:  # web copies must never fail the cycle
+            log(f"    IBF: web copy of {name} skipped: {exc}")
+    return files
+
+
 def run_ibf_cycle(
     cfg,
     cycle: str = None,
@@ -73,14 +108,9 @@ def run_ibf_cycle(
     out_dir = os.path.join(out_root, cycle) if cfg["outputs"]["append_cycle"] else out_root
     os.makedirs(out_dir, exist_ok=True)
     gpkg = os.path.join(out_dir, f"ibf_receptors.{cycle}.gpkg")
-    write_gpkg_layers(
-        gpkg,
-        (
-            ("buildings_ibf", bldgs),
-            ("roads_ibf", roads),
-            ("admin_ibf", admin),
-        ),
-    )
+    out_layers = [("buildings_ibf", bldgs), ("roads_ibf", roads), ("admin_ibf", admin)]
+    write_gpkg_layers(gpkg, out_layers)
+    web_files = _write_web_layers(out_dir, cycle, out_layers, log)
     admin.drop(columns="geometry").to_csv(
         os.path.join(out_dir, f"ibf_admin_summary.{cycle}.csv"), index=False
     )
@@ -120,7 +150,7 @@ def run_ibf_cycle(
             bldgs.loc[bldgs["risk_class"] >= 1, "population_per_building"].sum()
         ),
         "config_echo": {k: cfg[k] for k in ("classification", "fim_products", "outputs")},
-        "files": [os.path.basename(gpkg), f"ibf_admin_summary.{cycle}.csv"],
+        "files": [os.path.basename(gpkg), f"ibf_admin_summary.{cycle}.csv"] + web_files,
     }
     with open(os.path.join(out_dir, f"ibf_summary.{cycle}.json"), "w") as fh:
         json.dump(summary, fh, indent=2, default=str)

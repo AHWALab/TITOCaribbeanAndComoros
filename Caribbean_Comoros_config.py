@@ -79,6 +79,10 @@ clear_precip_after_cycle = True
 postprocess_outputs = True
 # Keep 48 h: Phase A warm-starts from the newest state within its 48 h
 # lookback, so this is the longest outage that resumes without a cold start.
+# Wall-clock cap for the postprocess summaries, in seconds (0 disables).
+# On overrun the summaries already written are kept and the rest are
+# skipped, so a slow pass cannot run into the next hourly cycle.
+postprocess_budget_s = 1200
 states_keep_hours = 48
 outputs_keep_hours = 24
 # tito_hourly_*.log and pipeline_*.log under outputs/logs/

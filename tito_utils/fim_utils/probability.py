@@ -57,7 +57,6 @@ def classify_likelihood(prob: np.ndarray, bands: dict = None) -> np.ndarray:
 
 
 def write_geotiff(path: str, data: np.ndarray, transform, crs, nodata=None):
-    import rasterio
     from rasterio.transform import Affine
 
     profile = {
@@ -72,9 +71,9 @@ def write_geotiff(path: str, data: np.ndarray, transform, crs, nodata=None):
     }
     if nodata is not None:
         profile["nodata"] = nodata
-    with rasterio.open(path, "w", **profile) as dst:
-        dst.write(data, 1)
-    return path
+    from tito_utils.file_utils.cog import write_cog
+
+    return write_cog(path, data, profile)
 
 
 def quicklook_png(path: str, prob: np.ndarray, title: str, threshold_m: float, note: str = ""):

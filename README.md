@@ -34,6 +34,7 @@ Operational chain for every TITO region is **STREAM-Sat → gap-fill → StormLa
 
 - FIM runs at 30 m after the forecast phase; each site writes `fim/<chain>/<Site>/`, then the sites are merged (max) into `fim/<chain>/<mode>/`.
 - FIM stores ship in git as `fim_store/Antigua/*.zarr.zip` (LFS); `./container-build.sh` fetches (Git LFS) and unpacks them automatically — or run `python fim_store/unzip_stores.py Antigua` yourself (`./container-build.sh --stores-only` does just this step).
+- Output formats: every GeoTIFF (FIM probability / likelihood grids, country mosaics, ensemble summaries) is a Cloud Optimized GeoTIFF (`TITO_COG=0` writes plain GeoTIFF); IBF receptors also ship as GeoParquet per layer and an admin GeoJSON, in WGS84, next to the GeoPackage.
 - Deployment environment variables (all optional): `EF5_MAX_WORKERS` sets EF5 concurrency (forwarded by `tito-run.sh`); `STREAM_SAT_OUTPUT_DIR` / `STREAM_SAT_STATE_DIR` move STREAM-Sat's half-hourly output and noise state out of the code folder (relative = from the project root). A STREAM-Sat noise-state cold start is logged as `STREAM-Sat [<domain>]: noise state COLD START`.
 
 Warmup precipitation is **always IMERG** (never HSAF), for every region.

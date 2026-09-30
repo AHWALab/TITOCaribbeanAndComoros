@@ -6,6 +6,18 @@ All notable changes to the TITO Antigua and Barbuda deployment package are docum
 
 ## [Unreleased]
 
+### Changed
+
+- Postprocess summaries stream the member rasters in 192 MB row blocks (from TITO_Guatemala, PR #5) with a `postprocess_budget_s` time cap. Measured on a real Comoros 30 m cycle: peak memory 20.4 GB -> 1.8 GB, identical results.
+- FIM grids, mosaics and summaries are written as Cloud Optimized GeoTIFFs (values unchanged; about half the size).
+- IBF also writes GeoParquet copies of every layer and an admin GeoJSON, in WGS84 (`pyarrow` added to `tito_env.yml`; skipped with a note where it is missing).
+- STREAM-Sat downloads GFS winds directly (`gfs_wind_archive_path` empty): the configured archive was stale and only produced an 'archive incomplete' warning.
+- `tito_env.yml` is identical on every branch, so one image / `tito.sif` serves all regions.
+
+### Fixed
+
+- `EF5/bin/ef5` is committed executable.
+
 ### Security
 
 - Credentials come only from the environment: no e-mail or password defaults in `Caribbean_Comoros_config.py` or the STREAM-Sat YAMLs. STREAM-Sat now also reads `TITO_GPM_EMAIL`, so one variable covers the NASA PPS account (`IMERG_PPS_EMAIL` still works).

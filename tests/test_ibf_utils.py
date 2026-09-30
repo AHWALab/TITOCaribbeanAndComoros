@@ -364,3 +364,26 @@ def test_vectorized_sampler_matches_reference_loop(tmp_path):
             np.testing.assert_array_equal(np.isnan(ref), np.isnan(got), err_msg=f"{op} {touched}")
             ok = ~np.isnan(ref)
             np.testing.assert_allclose(got[ok], ref[ok], err_msg=f"{op} touched={touched}")
+
+
+def test_web_copies_geojson_and_geoparquet(synthetic_region):
+    """Next to the GeoPackage: admin GeoJSON always, GeoParquet per layer when
+    pyarrow is installed; both in WGS84 for web tools."""
+    gpd = pytest.importorskip("geopandas")
+    from tito_utils.ibf_utils.pipeline_ibf import run_ibf_cycle
+
+    s = run_ibf_cycle(synthetic_region, products_dir=synthetic_region["_root"], verbose=False)
+    out = os.path.join(synthetic_region["outputs"]["root"], "20230621.070000")
+    gj = os.path.join(out, "ibf_admin.20230621.070000.geojson")
+    assert os.path.basename(gj) in s["files"]
+    admin = gpd.read_file(gj)
+    assert admin.crs.to_epsg() == 4326 and len(admin) == 1 and "risk_class" in admin.columns
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError:
+        pytest.skip("pyarrow not installed: GeoParquet copies are skipped by design")
+    for layer in ("buildings", "roads", "admin"):
+        pq = os.path.join(out, f"ibf_{layer}.20230621.070000.parquet")
+        assert os.path.basename(pq) in s["files"]
+        df = gpd.read_parquet(pq)
+        assert df.crs.to_epsg() == 4326 and len(df) > 0

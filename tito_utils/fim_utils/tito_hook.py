@@ -577,8 +577,9 @@ def _mosaic_tifs(paths: Sequence[str], out_path: str) -> None:
         for s in srcs:
             s.close()
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with rasterio.open(out_path, "w", **meta) as dst:
-        dst.write(mosaic)
+    from tito_utils.file_utils.cog import write_cog
+
+    write_cog(out_path, mosaic, meta)
 
 
 def _mosaic_fim_chain_products(chain_root: str) -> int:

@@ -55,8 +55,9 @@ def write_mask_like(path_out: str, mask: np.ndarray, like_path: str, window_boun
     with rasterio.open(like_path) as src:
         profile = src.profile.copy()
     profile.update(dtype="uint8", count=1, nodata=0, compress="lzw")
-    with rasterio.open(path_out, "w", **profile) as dst:
-        dst.write(mask.astype("uint8"), 1)
+    from tito_utils.file_utils.cog import write_cog
+
+    write_cog(path_out, mask.astype("uint8"), profile)
 
 
 def nan_stat(arr: np.ndarray, stat: str) -> float:

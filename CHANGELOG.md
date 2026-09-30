@@ -6,6 +6,10 @@ All notable changes to the TITO Haiti deployment package are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- 90 m and 900 m control templates now write `MAXSOILMOISTURE` (QPE and QPF tasks), so Haiti gets the soil-saturation (`maxsm`) summaries like the other four countries.
+
 ### Security
 
 - Credentials come only from the environment: no e-mail or password defaults in `Caribbean_Comoros_config.py` or the STREAM-Sat YAMLs. STREAM-Sat now also reads `TITO_GPM_EMAIL`, so one variable covers the NASA PPS account (`IMERG_PPS_EMAIL` still works).

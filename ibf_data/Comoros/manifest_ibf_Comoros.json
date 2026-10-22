@@ -1,0 +1,70 @@
+{
+  "country": "Comoros",
+  "built_by": "fim_dev/build_comoros_ibf_preload.py",
+  "package": "IBF_v1_Comoros_20240427.zip",
+  "sources": {
+    "admin": {
+      "boundaries": "com_admin3 municipalities via fim_config/aoc/Comoros_KM*_aoc.geojson",
+      "pop_source": "WorldPop 2025 constrained 100 m (com_pop_2025_CN_100m_R2025A_v1), zonal sum over com_admin3 municipalities, IBF_v1_Comoros package",
+      "island_check_vs_gadm_adm1": {
+        "Anjouan (Ndzouani)": {
+          "adm3_units": 20,
+          "worldpop_adm3_sum": 375463.2,
+          "gadm_adm1_wrldpp_sum": 377308.1
+        },
+        "Grande Comore (Ngazidja)": {
+          "adm3_units": 29,
+          "worldpop_adm3_sum": 437343.2,
+          "gadm_adm1_wrldpp_sum": 437505.0
+        },
+        "Mohéli (Mwali)": {
+          "adm3_units": 6,
+          "worldpop_adm3_sum": 58731.2,
+          "gadm_adm1_wrldpp_sum": 59365.6
+        }
+      }
+    },
+    "overture": {
+      "release": "2026-10-21.0",
+      "download": "overturemaps package, admin bbox"
+    },
+    "land_use": {
+      "member": "IBF_v1_Comoros/input_data/residential_use/Comoros_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif"
+    }
+  },
+  "bbox_4326": [
+    43.228556000000026,
+    -12.42277915099993,
+    44.540672000000086,
+    -11.365275999999938
+  ],
+  "counts": {
+    "admin_units": 55,
+    "population_total": 871537.6,
+    "buildings": 234577,
+    "buildings_with_subtype": 9567,
+    "road_segments": 9770,
+    "road_class_top": {
+      "residential": 6206,
+      "tertiary": 1125,
+      "unclassified": 527,
+      "primary": 517,
+      "secondary": 478,
+      "track": 310,
+      "service": 293,
+      "path": 161
+    },
+    "places": 426,
+    "ghs_value_histogram": {
+      "0": 15949188,
+      "1": 913212,
+      "2": 3293,
+      "255": 144675141
+    }
+  },
+  "files": {
+    "Comoros_admin_population.gpkg": 434176,
+    "comoros_overture_bld_rds.gpkg": 63406080,
+    "Comoros_GHS_BUILT_C_FUN_E2018_R2023A_54009_10.tif": 3247274
+  }
+}

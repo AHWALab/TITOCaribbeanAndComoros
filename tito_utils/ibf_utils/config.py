@@ -90,6 +90,13 @@ def load_ibf_config(path: str, root: str = None) -> dict:
     adm.setdefault("layer", "")
     rec.setdefault("land_use", {})  # optional GHS BUILT-C FUN raster
     rec["land_use"].setdefault("source", "")
+    # optional Overture places (points of interest), IBFv1.0 package v10
+    rec.setdefault("places", {})
+    rec["places"].setdefault("source", "")
+    rec["places"].setdefault("layer", "")
+    rec["places"].setdefault("id_field", "id")
+    rec["places"].setdefault("name_field", "name")
+    rec["places"].setdefault("category_field", "category")
     # IBFv1.0 dasymetric weights, unchanged
     rec.setdefault("land_class_weights", {0: 0.1, 1: 0.9, 2: 0.0})
     rec.setdefault("subtype_weights", {"residential": 1.0})

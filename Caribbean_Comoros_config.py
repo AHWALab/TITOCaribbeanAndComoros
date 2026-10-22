@@ -157,7 +157,12 @@ fim_regions = {
 # ── IBF ────────────────────────────────────────────────────────────────────
 ibf_enabled = True
 ibf_regions = {
-    "Comoros": {"enabled": False},  # FIM is on; IBF waits for receptor data
+    "Comoros": {
+        "enabled": True,
+        "severity_thresholds_m": {"minor": 0.10, "significant": 0.30, "severe": 0.70},
+        "hazard_flag_cutoff": 0.50,
+        "reporting_threshold": 0.05,
+    },
 }
 
 # ── NWP archives ───────────────────────────────────────────────────────────

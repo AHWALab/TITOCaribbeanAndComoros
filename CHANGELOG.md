@@ -6,6 +6,12 @@ All notable changes to the TITO Comoros deployment package are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- IBF for Comoros: `ibf_regions["Comoros"]` enabled (likelihood cutoff 0.50, severity 0.10 / 0.30 / 0.70 m, reporting 0.05) with one `fim_config/ibf/Comoros_<Site>_ibf.yaml` per FIM site (55, from `fim_dev/gen_island_ibf_yamls.py`), reading the `pluvial_overbank` products.
+- `ibf_data/Comoros/` receptor preload, built by the new `fim_dev/build_comoros_ibf_preload.py` from the IBF team's `IBF_v1_Comoros_20240427.zip`: Overture 2026-10-21.0 buildings / roads / places, the 55 com_admin3 municipalities with WorldPop 2025 population, GHS BUILT-C crop.
+- `tito_utils/ibf_utils` synced with TITO_Antigua / Haiti / Guatemala: optional `places` receptors and vectorized probability sampling.
+
 ### Changed
 
 - Postprocess summaries stream the member rasters in 192 MB row blocks (from TITO_Guatemala, PR #5) with a `postprocess_budget_s` time cap. Measured on a real Comoros 30 m cycle: peak memory 20.4 GB -> 1.8 GB, identical results.

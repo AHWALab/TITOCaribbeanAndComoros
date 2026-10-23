@@ -366,6 +366,28 @@ def test_vectorized_sampler_matches_reference_loop(tmp_path):
             np.testing.assert_allclose(got[ok], ref[ok], err_msg=f"{op} touched={touched}")
 
 
+def test_sample_raster_receptors_all_off_grid(tmp_path):
+    """Every receptor outside the FIM grid (Comoros Djoumoichongo: its only
+    places lie in a neighbouring unit, past the grid edge) gives NaN, not a
+    rasterio WindowError for the empty read window."""
+    rasterio = pytest.importorskip("rasterio")
+    gpd = pytest.importorskip("geopandas")
+    from rasterio.transform import from_origin
+    from shapely.geometry import Point
+
+    from tito_utils.ibf_utils.sampling import sample_raster
+
+    path = tmp_path / "grid.tif"
+    with rasterio.open(
+        path, "w", driver="GTiff", height=20, width=20, count=1, dtype="float32",
+        crs="EPSG:32738", transform=from_origin(0, 100, 5, 5), nodata=np.nan,
+    ) as dst:  # fmt: skip
+        dst.write(np.ones((20, 20), dtype="float32"), 1)
+    pts = gpd.GeoDataFrame(geometry=[Point(-500, 50), Point(-450, 60)], crs="EPSG:32738")
+    vals = sample_raster(pts, str(path), op="max", all_touched=True)
+    assert len(vals) == 2 and vals.isna().all()
+
+
 def test_web_copies_geojson_and_geoparquet(synthetic_region):
     """Next to the GeoPackage: admin GeoJSON always, GeoParquet per layer when
     pyarrow is installed; both in WGS84 for web tools."""

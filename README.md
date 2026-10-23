@@ -23,7 +23,7 @@ This is the production deployment package for the Guatemala domain. It orchestra
 | Gap-fill | SCaMPR (`stream_sat_gap_fill_mode = "SCAMPR"`) |
 | Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
 | Warmup | IMERG, `warmup_days = 45` |
-| FIM | 90 m only (900 m skipped): Santa Ines Petapa (pluvial + fluvial); Morales store ready, site pending the Motagua gauges in the 90 m basin list |
+| FIM | 90 m only (900 m skipped): Santa Ines Petapa and Morales (pluvial + fluvial; Morales fluvial on gauge `cuenca_motagua_2`) |
 | IBF | enabled — `ibf_data/Guatemala/` (INE 2018 census per municipio; Overture buildings and roads from the IBFv1.0 v10 package, cut to the FIM basins) |
 | EF5 workers | `ef5_max_workers = 2`; the `EF5_MAX_WORKERS` environment variable overrides it |
 | State retention | `states_keep_hours = 48` (the 48 h state lookback) |
@@ -293,13 +293,13 @@ Current sites:
 | YAML | Site | Hazards |
 |------|------|---------|
 | `fim_config/Guatemala_SantaInesPetapa.yaml` | Santa Ines Petapa (cuenca Villalobos) | pluvial + fluvial + combined |
-| `fim_config/Guatemala_Morales.yaml` | Morales (Rio Motagua) | store ready (`fim_store/Guatemala/`); `enabled: false` until the 90 m basin list simulates the Motagua gauges |
+| `fim_config/Guatemala_Morales.yaml` | Morales (Rio Motagua) | active: store `fim_store/Guatemala/` (`.partNN`), AOC `fim_config/aoc/Guatemala_Morales_aoc.geojson`, fluvial boundary `cuenca_motagua_2` from the 90 m basin list |
 
 Add a site by dropping `<Region>_<Site>.yaml` in `fim_config/` (see `fim_config/README.md` and `fim_config/examples/`); matching `<Region>*.yaml` files are picked up automatically.
 
 ## IBF receptor products
 
-When `fim_config/ibf/<Site>_ibf.yaml` exists and `ibf_regions["Guatemala"]` is enabled, the FIM hook runs the IBF pipeline (`tito_utils/ibf_utils/`) on the site's fresh `combined_overbank` probability grids and writes receptor-level products to `outputs/<cycle>/guatemala_90m/ibf/<Site>/` (buildings / roads / admin GPKG, admin summary CSV, summary JSON). Receptors come from `ibf_data/Guatemala/`, the IBFv1.0 v10 package cut to the municipios touching the FIM sites by `fim_dev/build_ibf_preload_v10.py` (the multi GB team package itself is not in the repo). IBF YAMLs exist for Santa Ines Petapa and Morales; Morales runs once its FIM site is enabled.
+When `fim_config/ibf/<Site>_ibf.yaml` exists and `ibf_regions["Guatemala"]` is enabled, the FIM hook runs the IBF pipeline (`tito_utils/ibf_utils/`) on the site's fresh `combined_overbank` probability grids and writes receptor-level products to `outputs/<cycle>/guatemala_90m/ibf/<Site>/` (buildings / roads / admin GPKG, admin summary CSV, summary JSON). Receptors come from `ibf_data/Guatemala/`, the IBFv1.0 v10 package cut to the municipios touching the FIM sites by `fim_dev/build_ibf_preload_v10.py` (the multi GB team package itself is not in the repo). IBF runs for both FIM sites, Santa Ines Petapa and Morales.
 
 ## Maintenance and recovery
 

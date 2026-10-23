@@ -12,4 +12,5 @@
 gauge=cuenca_villalobos_1
 gauge=cuenca_villalobos_2
 gauge=cuenca_villalobos_out
+gauge=cuenca_motagua_2
 gauge=1

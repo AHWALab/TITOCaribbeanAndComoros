@@ -14,7 +14,7 @@ Toggle: `fim_enabled = False` skips FIM entirely (EF5 unchanged).
 | file | site | hazards | status |
 | --- | --- | --- | --- |
 | `Guatemala_SantaInesPetapa.yaml` | Santa Ines Petapa, cuenca Villalobos | pluvial + fluvial + combined | READY (unzip the store once, see below) |
-| `Guatemala_Morales.yaml` | Morales, Rio Motagua | pluvial + fluvial + combined | prepared, `enabled: false`, waiting for the flood map library |
+| `Guatemala_Morales.yaml` | Morales, Rio Motagua | pluvial + fluvial + combined | active; fluvial matches gauge `cuenca_motagua_2` only (gauge 1 returns no discharge in the delivered scenarios) |
 
 Guatemala carries two basins, so it has two YAML files. Any country can hold
 any number of sites the same way: `Haiti_SiteA.yaml`, `Haiti_SiteB.yaml`, and
@@ -46,7 +46,7 @@ uses the original ensemble runner, so older configs keep working.
 ## Switching a site off and on
 
 Add a top level line `enabled: false` to skip a site without deleting its
-file (`Guatemala_Morales.yaml` ships that way until its store is built).
+file.
 Remove the line to activate it.
 
 ## Depth thresholds are a user input

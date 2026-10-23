@@ -6,6 +6,14 @@ All notable changes to the TITO Guatemala deployment package are documented here
 
 ## [Unreleased]
 
+### Added
+
+- Morales FIM site active (pluvial + fluvial, IBF on): `fim_config/Guatemala_Morales.yaml` enabled, AOC `fim_config/aoc/Guatemala_Morales_aoc.geojson`, and `gauge=cuenca_motagua_2` in the 90 m basin list for the fluvial boundary. Gauge `cuenca_motagua_1` returns no discharge in any delivered scenario, so the fluvial match uses gauge 2 only. Running on the HPC deployment since 2026-10-12.
+
+### Fixed
+
+- IBF probability sampling no longer fails a whole site when every receptor of a layer lies outside the FIM grid (rasterio `WindowError: Intersection is empty`); those receptors sample as NaN like any other off-grid receptor. Found on TITO_Comoros (a site whose only Overture places lie past its grid edge); regression test `test_sample_raster_receptors_all_off_grid`.
+
 ### Changed
 
 - FIM grids, mosaics and summaries are written as Cloud Optimized GeoTIFFs (values unchanged; about half the size).

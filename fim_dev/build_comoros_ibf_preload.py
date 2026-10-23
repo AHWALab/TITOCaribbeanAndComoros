@@ -1,30 +1,38 @@
 """Build the Comoros IBF receptor preload from the IBF team's package.
 
-The IBF team's Comoros package (IBF_v1_Comoros_20240427.zip) differs from
-the IBFv1.0 v10 packages that fim_dev/build_ibf_preload_v10.py reads:
+The IBF team's Comoros package (IBF_v1_Comoros_20240427_updated.zip)
+differs from the IBFv1.0 v10 packages that fim_dev/build_ibf_preload_v10.py
+reads:
 
-    admin         GADM 4.1 adm1 only (the three islands) with a WorldPop 2025
-                  zonal sum; the FIM sites are the 55 adm3 municipalities
+    admin         input_data/boundary_commune/COM_communes.shp: the 55 adm3
+                  communes (ADM3_PCODE, ADM3_EN, ADM1_EN), the same units and
+                  pcodes as the FIM sites, with worldpop20 and population
+                  (RGPH 2017 census island totals shared dasymetrically)
     overture      NOT shipped: the team's workflow downloads buildings and
                   roads at run time with the overturemaps package
     worldpop      com_pop_2025_CN_100m_R2025A_v1.tif (constrained, 100 m)
     GHS BUILT-C   Comoros_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif
 
-An island-wide adm1 unit would make every municipality's IBF read and
-baseline the whole island (the receptor layer keeps admin units WHOLE), so
-the admin layer here is the 55 municipalities, taken from the FIM AOC
-geojsons (each AOC is the full com_admin3 polygon, see
-build_comoros_stores.py), with population summed from the package's
-WorldPop raster: the same source the team used for adm1. The per-island
-totals are checked against the package's GADM adm1 sums.
+Population: the team's workflow reads COM_communes.worldpop20, but in the
+2026-10-23 package that field does not match the WorldPop raster it was
+taken from (Anjouan 64,759 for ~375,000 people, Moheli 343,316 for
+~59,000). The preload therefore recomputes the WorldPop 2025 sum per
+commune from the package's own raster (`population`) and keeps the
+package values as `pop_worldpop20_pkg` and `pop_rgph2017` for reference.
+manifest_ibf_Comoros.json records the per-island comparison.
+
+The communes are checked against the FIM AOCs (fim_config/aoc): every FIM
+site pcode must exist in the commune layer.
 
 Output, under --out/Comoros/ (the layout the other preloads use):
 
     comoros_overture_bld_rds.gpkg      layers buildings (id, subtype, class),
                                        roads (id, class), places (id, name,
                                        category, confidence)
-    Comoros_admin_population.gpkg      layer admin: ADM_ID (adm3 pcode),
-                                       ADM_NAME, island, population, pop_source
+    Comoros_admin_population.gpkg      layer admin: ADM_ID (ADM3_PCODE),
+                                       ADM_NAME, island, population,
+                                       pop_source, pop_worldpop20_pkg,
+                                       pop_rgph2017
     Comoros_GHS_BUILT_C_FUN_E2018_R2023A_54009_10.tif
     manifest_ibf_Comoros.json          sources, counts, file sizes
 
@@ -33,8 +41,8 @@ the TITO image has its dependencies), pinned with --release so a rebuild is
 reproducible. Run inside the container:
 
     python fim_dev/build_comoros_ibf_preload.py \
-        --package /path/IBF_v1_Comoros_20240427.zip --root . --out ibf_data \
-        --workdir /scratch/ibf_comoros [--release 2026-09-17.0]
+        --package /path/IBF_v1_Comoros_20240427_updated.zip --root . \
+        --out ibf_data --workdir /scratch/ibf_comoros --release 2026-10-21.0
 """
 
 import argparse
@@ -55,21 +63,15 @@ from rasterio.windows import Window, from_bounds
 
 COUNTRY, SLUG = "Comoros", "comoros"
 WORLDPOP = "IBF_v1_Comoros/input_data/worldpop2025/com_pop_2025_CN_100m_R2025A_v1.tif"
-GADM_ADM1 = "IBF_v1_Comoros/input_data/gadm/COM_gadm_adm1_pop.shp"
+COMMUNES = "IBF_v1_Comoros/input_data/boundary_commune/COM_communes.shp"
 GHS = (
     "IBF_v1_Comoros/input_data/residential_use/"
     "Comoros_GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0.tif"
 )
 POP_SOURCE = (
     "WorldPop 2025 constrained 100 m (com_pop_2025_CN_100m_R2025A_v1), "
-    "zonal sum over com_admin3 municipalities, IBF_v1_Comoros package"
+    "zonal sum over the COM_communes adm3 communes, IBF_v1_Comoros package"
 )
-# FIM AOC island names -> GADM 4.1 NAME_1
-GADM_ISLAND = {
-    "Anjouan (Ndzouani)": "Nzwani",
-    "Mohéli (Mwali)": "Mwali",
-    "Grande Comore (Ngazidja)": "Njazídja",
-}
 
 
 def log(msg):
@@ -94,23 +96,28 @@ def unpack(package, workdir):
 
 
 def admin_units(root, aoc_glob, pkg):
-    """The 55 municipalities from the FIM AOCs, WorldPop summed per unit."""
-    rows = []
-    for path in sorted(glob.glob(os.path.join(root, aoc_glob))):
-        g = gpd.read_file(path).to_crs(4326)
-        p = g.iloc[0]
-        rows.append(
-            {
-                "ADM_ID": p["pcode"],
-                "ADM_NAME": p["name"],
-                "island": p["island"],
-                "geometry": g.geometry.union_all(),
-            }
-        )
-    if not rows:
-        raise SystemExit(f"no AOC geojsons match {aoc_glob}")
-    admin = gpd.GeoDataFrame(rows, crs=4326)
-    assert admin["ADM_ID"].is_unique, "duplicate adm3 pcodes in the AOCs"
+    """The 55 communes of the package, WorldPop 2025 summed per commune."""
+    com = gpd.read_file(os.path.join(pkg, COMMUNES))
+    admin = gpd.GeoDataFrame(
+        {
+            "ADM_ID": com["ADM3_PCODE"].astype(str),
+            "ADM_NAME": com["ADM3_EN"].astype(str),
+            "island": com["ADM1_EN"].astype(str),
+            "pop_worldpop20_pkg": com["worldpop20"].astype(float),
+            "pop_rgph2017": com["population"].astype(float),
+        },
+        geometry=com.geometry.make_valid(),
+        crs=com.crs,
+    ).to_crs(4326)
+    assert admin["ADM_ID"].is_unique, "duplicate ADM3_PCODE in COM_communes"
+
+    # every FIM site must find its commune (sites are keyed by pcode)
+    aoc_pcodes = set()
+    for path in glob.glob(os.path.join(root, aoc_glob)):
+        aoc_pcodes |= set(gpd.read_file(path)["pcode"].astype(str))
+    missing = sorted(aoc_pcodes - set(admin["ADM_ID"]))
+    if missing:
+        raise SystemExit(f"FIM site pcodes missing from COM_communes: {missing}")
 
     with rasterio.open(os.path.join(pkg, WORLDPOP)) as src:
         nod = src.nodata
@@ -124,22 +131,24 @@ def admin_units(root, aoc_glob, pkg):
             pops.append(float(np.ma.masked_invalid(band).sum() or 0.0))
     admin["population"] = np.round(pops, 1)
     admin["pop_source"] = POP_SOURCE
+    admin = admin[
+        ["ADM_ID", "ADM_NAME", "island", "population", "pop_source"]
+        + ["pop_worldpop20_pkg", "pop_rgph2017", "geometry"]
+    ]
 
-    # cross check: per-island totals against the package's GADM adm1 sums
-    gadm = gpd.read_file(os.path.join(pkg, GADM_ADM1))
+    # per-island comparison with the package's own population fields
     check = {}
     for island, sub in admin.groupby("island"):
-        name1 = GADM_ISLAND.get(island, island)
-        ref = gadm.loc[gadm["NAME_1"] == name1, "wrldpp_sum"]
-        ref = float(ref.iloc[0]) if len(ref) else None
         check[island] = {
             "adm3_units": int(len(sub)),
-            "worldpop_adm3_sum": round(float(sub["population"].sum()), 1),
-            "gadm_adm1_wrldpp_sum": round(ref, 1) if ref is not None else None,
+            "worldpop2025_recomputed": round(float(sub["population"].sum()), 1),
+            "worldpop20_package_field": round(float(sub["pop_worldpop20_pkg"].sum()), 1),
+            "rgph2017_package_field": round(float(sub["pop_rgph2017"].sum()), 1),
         }
         log(
-            f"  {island}: {len(sub)} units, population {sub['population'].sum():,.0f}"
-            + (f" (GADM adm1 {ref:,.0f})" if ref is not None else " (no GADM match)")
+            f"  {island}: {len(sub)} units, WorldPop 2025 {sub['population'].sum():,.0f} "
+            f"(package worldpop20 {sub['pop_worldpop20_pkg'].sum():,.0f}, "
+            f"RGPH 2017 {sub['pop_rgph2017'].sum():,.0f})"
         )
     return admin, check
 
@@ -215,7 +224,7 @@ def ghs_crop(pkg, bbox, out):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--package", required=True, help="IBF_v1_Comoros zip or extracted folder")
-    ap.add_argument("--root", default=".", help="deployment folder (AOCs resolve against it)")
+    ap.add_argument("--root", default=".", help="deployment folder (AOC check, output)")
     ap.add_argument("--aoc-glob", default="fim_config/aoc/Comoros_KM*_aoc.geojson")
     ap.add_argument("--out", default="ibf_data")
     ap.add_argument("--workdir", required=True, help="scratch folder (unzip, overture cache)")
@@ -259,12 +268,12 @@ def main():
     manifest = {
         "country": COUNTRY,
         "built_by": "fim_dev/build_comoros_ibf_preload.py",
-        "package": "IBF_v1_Comoros_20240427.zip",
+        "package": os.path.basename(a.package.rstrip("/")),
         "sources": {
             "admin": {
-                "boundaries": "com_admin3 municipalities via fim_config/aoc/Comoros_KM*_aoc.geojson",
+                "boundaries": COMMUNES,
                 "pop_source": POP_SOURCE,
-                "island_check_vs_gadm_adm1": pop_check,
+                "island_population_check": pop_check,
             },
             "overture": {"release": release, "download": "overturemaps package, admin bbox"},
             "land_use": {"member": GHS},

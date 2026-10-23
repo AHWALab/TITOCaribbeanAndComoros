@@ -53,17 +53,18 @@ warm; small units in seconds.
   census per municipio; Haiti: WorldPop 2025 per GADM adm4). A new FIM
   site needs a `sites` entry in the jobs file and a rebuild; Guatemala
   Morales is already included.
-- Comoros (30m, 55 municipality sites): `ibf_data/Comoros/`, built by
+- Comoros (30m, 55 commune sites): `ibf_data/Comoros/`, built by
   `fim_dev/build_comoros_ibf_preload.py` from the IBF team's
-  `IBF_v1_Comoros_20240427.zip`. That package has no Overture data (the
-  team's workflow downloads it at run time), so the builder downloads
+  `IBF_v1_Comoros_20240427_updated.zip`. That package has no Overture data
+  (the team's workflow downloads it at run time), so the builder downloads
   buildings, roads and places with the `overturemaps` package, pinned to
-  one release (manifest). The package's admin layer is GADM adm1 (whole
-  islands); the receptor layer keeps admin units whole, so the admin layer
-  is instead the 55 com_admin3 municipalities (the FIM AOCs, `ADM_ID` =
-  pcode) with the package's WorldPop 2025 summed per municipality (island
-  totals within about 1 % of the package's adm1 sums). IBF reads the
-  `pluvial_overbank` grids, as the team's Comoros run did.
+  one release (manifest). Admin units are the package's 55 communes
+  (`COM_communes.shp`, the same pcodes as the FIM sites; `ADM_ID` =
+  ADM3_PCODE). Population is the WorldPop 2025 sum per commune recomputed
+  from the package raster: the package's own `worldpop20` field does not
+  match that raster (Anjouan 64,759, Moheli 343,316) and is kept only as
+  `pop_worldpop20_pkg`, with the RGPH 2017 field as `pop_rgph2017`. IBF
+  reads the `pluvial_overbank` grids, as the team's Comoros run did.
 
 `ibf_data/` is bind-mounted by `tito-run.sh` / `tito-run.cmd` (never baked
 into the image; the zips are in `.dockerignore`).

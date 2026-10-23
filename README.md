@@ -24,7 +24,7 @@ This is the production deployment package for the Comoros domain (30m).
 | Optional sources | IMERG, AROME, GFS, WRF — via `region_forcing_map` |
 | Warmup | IMERG, `warmup_days = 90` (never HSAF) |
 | FIM | 30 m, 55 ADM3 municipality sites (pluvial); per-site products + country mosaic |
-| IBF | on, one receptor product per FIM site (`fim_config/ibf/Comoros_*_ibf.yaml`, pluvial overbank grids); static data in `ibf_data/Comoros/` from the IBF team's IBF_v1_Comoros package (`fim_dev/build_comoros_ibf_preload.py`) |
+| IBF | on, one receptor product per FIM site (`fim_config/ibf/Comoros_*_ibf.yaml`, pluvial overbank grids); static data in `ibf_data/Comoros/` from the IBF team's IBF_v1_Comoros_20240427_updated package (`fim_dev/build_comoros_ibf_preload.py`) |
 | EF5 workers | `ef5_max_workers = 4`; the `EF5_MAX_WORKERS` environment variable overrides it |
 | State retention | `states_keep_hours = 48` (the 48 h state lookback) |
 | Control template | `EF5_conf/templates/ef5_Comoros_30m_control_template.txt` |

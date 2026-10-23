@@ -1,26 +1,29 @@
 {
   "country": "Comoros",
   "built_by": "fim_dev/build_comoros_ibf_preload.py",
-  "package": "IBF_v1_Comoros_20240427.zip",
+  "package": "IBF_v1_Comoros_20240427_updated.zip",
   "sources": {
     "admin": {
-      "boundaries": "com_admin3 municipalities via fim_config/aoc/Comoros_KM*_aoc.geojson",
-      "pop_source": "WorldPop 2025 constrained 100 m (com_pop_2025_CN_100m_R2025A_v1), zonal sum over com_admin3 municipalities, IBF_v1_Comoros package",
-      "island_check_vs_gadm_adm1": {
+      "boundaries": "IBF_v1_Comoros/input_data/boundary_commune/COM_communes.shp",
+      "pop_source": "WorldPop 2025 constrained 100 m (com_pop_2025_CN_100m_R2025A_v1), zonal sum over the COM_communes adm3 communes, IBF_v1_Comoros package",
+      "island_population_check": {
         "Anjouan (Ndzouani)": {
           "adm3_units": 20,
-          "worldpop_adm3_sum": 375463.2,
-          "gadm_adm1_wrldpp_sum": 377308.1
+          "worldpop2025_recomputed": 375463.2,
+          "worldpop20_package_field": 64759.3,
+          "rgph2017_package_field": 327382.0
         },
         "Grande Comore (Ngazidja)": {
           "adm3_units": 29,
-          "worldpop_adm3_sum": 437343.2,
-          "gadm_adm1_wrldpp_sum": 437505.0
+          "worldpop2025_recomputed": 437343.2,
+          "worldpop20_package_field": 446565.6,
+          "rgph2017_package_field": 379364.0
         },
         "Mohéli (Mwali)": {
           "adm3_units": 6,
-          "worldpop_adm3_sum": 58731.2,
-          "gadm_adm1_wrldpp_sum": 59365.6
+          "worldpop2025_recomputed": 58731.2,
+          "worldpop20_package_field": 343315.7,
+          "rgph2017_package_field": 51565.0
         }
       }
     },
@@ -33,10 +36,10 @@
     }
   },
   "bbox_4326": [
-    43.228556000000026,
-    -12.42277915099993,
-    44.540672000000086,
-    -11.365275999999938
+    43.228556,
+    -12.422779150999933,
+    44.540672,
+    -11.365275999999993
   ],
   "counts": {
     "admin_units": 55,
@@ -63,7 +66,7 @@
     }
   },
   "files": {
-    "Comoros_admin_population.gpkg": 434176,
+    "Comoros_admin_population.gpkg": 425984,
     "comoros_overture_bld_rds.gpkg": 63406080,
     "Comoros_GHS_BUILT_C_FUN_E2018_R2023A_54009_10.tif": 3247274
   }

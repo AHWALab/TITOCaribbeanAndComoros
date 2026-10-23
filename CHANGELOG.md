@@ -6,6 +6,14 @@ All notable changes to the TITO Comoros deployment package are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- IBF failed on every Comoros site in Apptainer/Docker runs (`ibf_data/Comoros/Comoros_admin_population.gpkg: No such file or directory`): `tito-run.sh`, `tito-run.cmd` and `docker-compose.yml` now bind-mount `ibf_data/` (and, in docker-compose, `fim_config/` and `fim_store/`), as on TITO_Antigua / Haiti / Guatemala; `.dockerignore` keeps `ibf_data/*.zip` out of the image.
+
+### Changed
+
+- Comoros IBF admin layer from the IBF team's updated package (`IBF_v1_Comoros_20240427_updated.zip`, `COM_communes.shp`): same 55 communes and pcodes; population is the WorldPop 2025 sum recomputed per commune, because the package's `worldpop20` field does not match its raster (kept as `pop_worldpop20_pkg`, plus `pop_rgph2017`). Overture layers unchanged (release 2026-10-21.0).
+
 ### Added
 
 - IBF for Comoros: `ibf_regions["Comoros"]` enabled (likelihood cutoff 0.50, severity 0.10 / 0.30 / 0.70 m, reporting 0.05) with one `fim_config/ibf/Comoros_<Site>_ibf.yaml` per FIM site (55, from `fim_dev/gen_island_ibf_yamls.py`), reading the `pluvial_overbank` products.

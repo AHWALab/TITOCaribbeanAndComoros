@@ -38,10 +38,12 @@ META = {
         "work_crs": "EPSG:32738",
         "label": "Comoros",
         "data": """# Static data: ibf_data/Comoros/, built by fim_dev/build_comoros_ibf_preload.py
-# from the IBF team's package (IBF_v1_Comoros_20240427.zip; see
+# from the IBF team's package (IBF_v1_Comoros_20240427_updated.zip; see
 # manifest_ibf_Comoros.json): Overture Maps buildings, roads and places,
-# the 55 municipalities (com_admin3, the FIM site units) with a WorldPop
-# 2025 population sum, and the GHS BUILT-C functional class raster.""",
+# the 55 communes of COM_communes.shp (the FIM site units) with the WorldPop
+# 2025 population recomputed per commune, and the GHS BUILT-C functional
+# class raster. The team's IBFv1.0 Comoros run used a 0.40 likelihood
+# cutoff; TITO keeps the 0.50 user default (ibf_regions).""",
         "admin": """  admin:
     source: ibf_data/{country}/{country}_admin_population.gpkg
     layer: admin

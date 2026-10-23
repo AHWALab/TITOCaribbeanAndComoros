@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 import shapely
+from rasterio.errors import WindowError
 from rasterio.features import rasterize
 from rasterio.windows import Window, from_bounds
 
@@ -141,11 +142,18 @@ class _InMemoryRaster:
             self.crs = coerce_crs(src.crs)
             if bounds is not None:
                 win = from_bounds(*bounds, transform=src.transform)
-                win = (
-                    win.round_offsets()
-                    .round_lengths()
-                    .intersection(Window(0, 0, src.width, src.height))
-                )
+                try:
+                    win = (
+                        win.round_offsets()
+                        .round_lengths()
+                        .intersection(Window(0, 0, src.width, src.height))
+                    )
+                except WindowError:
+                    # receptors entirely off the grid (a few places in a
+                    # neighbouring admin unit): no cells, every value NaN
+                    self.transform = src.transform
+                    self.data = np.empty((0, 0), dtype="float64")
+                    return
                 data = src.read(1, window=win, masked=True)
                 self.transform = src.window_transform(win)
             else:

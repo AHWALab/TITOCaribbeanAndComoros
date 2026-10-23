@@ -6,6 +6,10 @@ All notable changes to the TITO Antigua and Barbuda deployment package are docum
 
 ## [Unreleased]
 
+### Fixed
+
+- IBF probability sampling no longer fails a whole site when every receptor of a layer lies outside the FIM grid (rasterio `WindowError: Intersection is empty`); those receptors sample as NaN like any other off-grid receptor. Found on TITO_Comoros (a site whose only Overture places lie past its grid edge); regression test `test_sample_raster_receptors_all_off_grid`.
+
 ### Changed
 
 - Postprocess summaries stream the member rasters in 192 MB row blocks (from TITO_Guatemala, PR #5) with a `postprocess_budget_s` time cap. Measured on a real Comoros 30 m cycle: peak memory 20.4 GB -> 1.8 GB, identical results.

@@ -13,6 +13,17 @@
 #     tito:latest
 # ============================================================================
 
+# Solve tito_env.yml with pixi: conda's own solve of this file can run for over
+# an hour, pixi takes seconds. The result is an explicit package list that the
+# conda step below installs without solving. tito_env.yml stays the source of truth.
+FROM ghcr.io/prefix-dev/pixi:0.48.2 AS solve
+WORKDIR /solve
+COPY tito_env.yml .
+RUN pixi init --import tito_env.yml --platform linux-64 . \
+    && pixi lock \
+    && pixi workspace export conda-explicit-spec --frozen --ignore-pypi-errors out \
+    && awk '/- pip:/{p=1; next} p && /^ *- /{sub(/^ *- /, ""); print}' tito_env.yml > out/requirements.txt
+
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -44,10 +55,12 @@ RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.s
 
 ENV PATH=/opt/conda/bin:$PATH
 
-COPY tito_env.yml /tmp/tito_env.yml
+COPY --from=solve /solve/out/default_linux-64_conda_spec.txt /tmp/tito_env.lock
+COPY --from=solve /solve/out/requirements.txt /tmp/tito_env.pip.txt
 RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main \
     && conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r \
-    && conda env create -f /tmp/tito_env.yml \
+    && conda create -y -p /opt/conda/envs/tito_env2 --file /tmp/tito_env.lock \
+    && /opt/conda/envs/tito_env2/bin/pip install --no-cache-dir -r /tmp/tito_env.pip.txt \
     && . /opt/conda/etc/profile.d/conda.sh \
     && conda activate tito_env2 \
     && { conda remove -y --force \
